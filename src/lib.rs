@@ -50,7 +50,7 @@ impl<T: Float> ResamplerFixedIn<T> {
 
 
 
-    pub fn resample_chunk_cubic(mut self, wave_in: Vec<Vec<T>>) -> Vec<Vec<T>> {
+    pub fn resample_chunk_cubic(&mut self, wave_in: Vec<Vec<T>>) -> Vec<Vec<T>> {
 //        if chunk == (nchunks-1):
 //            curr=wave[chunk*chunksize:]
 //            end_idx = len(curr) - sinclen/2
@@ -70,7 +70,7 @@ impl<T: Float> ResamplerFixedIn<T> {
 
         let mut wave_out = vec![Vec::new();self.nbr_channels];
         let mut points = vec![T::zero();4];
-        println!("start loop");
+        //println!("start loop");
         while idx<end_idx as f64 {
             idx = idx + t_ratio;
             //println!("idx {}", idx);
