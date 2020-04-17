@@ -51,20 +51,17 @@ impl<T: Float> ResamplerFixedIn<T> {
 
 
     pub fn resample_chunk_cubic(&mut self, wave_in: Vec<Vec<T>>) -> Vec<Vec<T>> {
-//        if chunk == (nchunks-1):
-//            curr=wave[chunk*chunksize:]
-//            end_idx = len(curr) - sinclen/2
-//            end = np.zeros(2*sinclen)
-//            wave_long = np.concatenate((prev, curr, end))
-//        else:
+
         let end_idx = self.chunk_size - (self.sinc_len + 1);
-        //let curr = wave_in;
+        
+        //update buffer with new data
         for idx in 0..self.chunk_size {
             for chan in 0..self.nbr_channels {
                 self.buffer[chan][idx] = self.buffer[chan][idx+self.chunk_size];
                 self.buffer[chan][idx+self.chunk_size] = wave_in[chan][idx];
             }
         }
+
         let mut idx = self.last_index;
         let t_ratio = 1.0/self.resample_ratio as f64;
 
@@ -76,15 +73,20 @@ impl<T: Float> ResamplerFixedIn<T> {
             //println!("idx {}", idx);
             let nearest = get_nearest_times_4(idx, self.upsample_factor as isize);
             //println!("nearest {:?}", nearest);
-            let frac = T::from((idx*self.upsample_factor as f64).fract() + 1.0).unwrap();
+            let frac = idx*self.upsample_factor as f64 - (idx*self.upsample_factor as f64).floor();
+            //let frac = T::from(((idx+self.chunk_size as f64)*self.upsample_factor as f64).fract() + 1.0).unwrap();
+            let frac_offset = T::from(frac + 1.0).unwrap();
+            //println!("frac {:?}",frac as f64);
             for chan in 0..self.nbr_channels {
                 for p in 0..4 {
                     //println!("get {}",nearest[p].0+self.chunk_size as isize);
                     points[p] = get_sinc_interpolated(&self.buffer[chan], &self.sincs, (nearest[p].0+self.chunk_size as isize) as usize, nearest[p].1 as usize);
                 }
-                wave_out[chan].push(interp_cubic(frac, &points));
+                wave_out[chan].push(interp_cubic(frac_offset, &points));
             }
         }
+        // store last index for next iteration
+        self.last_index = idx - self.chunk_size as f64;
         wave_out
     }
 }
@@ -233,12 +235,13 @@ fn get_nearest_times_2<T:Float>(t: T, factor: isize) -> Vec<(isize, isize)> {
 fn get_nearest_times_4<T:Float>(t: T, factor: isize) -> Vec<(isize, isize)> {
     // Get nearest sample time points, as index:subindex
     let start = t.floor().to_isize().unwrap();
-    let frac = if start >= 0 {
-        (t.fract()*T::from(factor).unwrap()).floor().to_isize().unwrap()
-    }
-    else {
-        factor + (t.fract()*T::from(factor).unwrap()).floor().to_isize().unwrap()
-    };
+    let frac = ((t-t.floor())*T::from(factor).unwrap()).floor().to_isize().unwrap();
+    //let frac = if start >= 0 {
+    //    (t.fract()*T::from(factor).unwrap()).floor().to_isize().unwrap()
+    //}
+    //else {
+    //    factor + (t.fract()*T::from(factor).unwrap()).floor().to_isize().unwrap()
+    //};
     let mut times = Vec::new();
     for sub in -1..3 {
         let mut index = start;
@@ -337,12 +340,22 @@ mod tests {
 
     #[test]
     fn get_nearest_4_neg() {
-        let t = -5.9f64;
+        let t = -5.999f64;
         let times = get_nearest_times_4(t, 8);
         assert_eq!(times[0], (-7, 7));
         assert_eq!(times[1], (-6, 0));
         assert_eq!(times[2], (-6, 1));
         assert_eq!(times[3], (-6, 2));
+    }
+
+    #[test]
+    fn get_nearest_4_zero() {
+        let t = -0.00001f64;
+        let times = get_nearest_times_4(t, 8);
+        assert_eq!(times[0], (-1, 6));
+        assert_eq!(times[1], (-1, 7));
+        assert_eq!(times[2], (0, 0));
+        assert_eq!(times[3], (0, 1));
     }
 
     #[test]
@@ -354,7 +367,7 @@ mod tests {
 
     #[test]
     fn make_resampler_fi() {
-        let resampler = ResamplerFixedIn::<f64>::new(10000, 12000, 64, 0.95, 16, 1000, 2);
+        let mut resampler = ResamplerFixedIn::<f64>::new(10000, 12000, 64, 0.95, 16, 1000, 2);
         let waves = vec![vec![0.0f64; 1024]; 2];
         let out = resampler.resample_chunk_cubic(waves);
         assert_eq!(out.len(), 2);

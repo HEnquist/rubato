@@ -7,17 +7,17 @@ use std::time::{Duration, Instant};
 use std::io::prelude::{Read, Write, Seek};
 use std::convert::TryInto;
 
-fn read_frames<R: Read + Seek>(inbuffer: &mut R, nbr: usize, channels: usize) -> Vec<Vec<f64>> {
-    let mut buffer = vec![0u8; 8];
+fn read_frames<R: Read + Seek>(inbuffer: &mut R, nbr: usize, channels: usize) -> Vec<Vec<f32>> {
+    let mut buffer = vec![0u8; 4];
     let mut wfs = Vec::with_capacity(channels);
     for _chan in 0..channels {
         wfs.push(Vec::with_capacity(nbr));
     }
-    let mut value: f64;
+    let mut value: f32;
     for _frame in 0..nbr {
         for wf in wfs.iter_mut().take(channels) {
             inbuffer.read(&mut buffer);
-            value = f64::from_le_bytes(buffer.as_slice().try_into().unwrap()) as f64;
+            value = f32::from_le_bytes(buffer.as_slice().try_into().unwrap()) as f32;
             //idx += 8;
             wf.push(value);
         }
@@ -25,13 +25,13 @@ fn read_frames<R: Read + Seek>(inbuffer: &mut R, nbr: usize, channels: usize) ->
     wfs
 }
 
-fn write_frames<W: Write + Seek>(waves: Vec<Vec<f64>>, outbuffer: &mut W, channels: usize) {
-    let mut buffer = vec![0u8; 8];
+fn write_frames<W: Write + Seek>(waves: Vec<Vec<f32>>, outbuffer: &mut W, channels: usize) {
+    let mut buffer = vec![0u8; 4];
     let nbr = waves[0].len();
     for frame in 0..nbr {
         for chan in 0..channels {
-            let value64 = waves[chan][frame];
-            let bytes = value64.to_le_bytes();
+            let value32 = waves[chan][frame];
+            let bytes = value32.to_le_bytes();
             outbuffer.write(&bytes);
         }
     }
@@ -64,11 +64,11 @@ fn main() {
     let mut f_out = Cursor::new(&mut f_out_ram);
 
 
-    let mut resampler = ResamplerFixedIn::<f64>::new(fs_in, fs_out, 64, 0.95, 128, 1024, 2);
+    let mut resampler = ResamplerFixedIn::<f32>::new(fs_in, fs_out, 64, 0.95, 128, 1024, 2);
     //let waves = vec![vec![0.0f64; 1024]; 2];
     //let out = resampler.resample_chunk_cubic(waves);
 
-    let num_chunks = f_in_ram.len()/(8*channels*1024);
+    let num_chunks = f_in_ram.len()/(4*channels*1024);
     let start = Instant::now();
     for _chunk in 0..num_chunks {
         let waves = read_frames(&mut f_in, 1024, 2);
