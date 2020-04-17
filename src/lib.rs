@@ -65,7 +65,7 @@ impl<T: Float> ResamplerFixedIn<T> {
         let mut idx = self.last_index;
         let t_ratio = 1.0/self.resample_ratio as f64;
 
-        let mut wave_out = vec![Vec::new();self.nbr_channels];
+        let mut wave_out = vec![Vec::with_capacity((self.chunk_size as f32 * self.resample_ratio+10.0) as usize);self.nbr_channels];
         let mut points = vec![T::zero();4];
         //println!("start loop");
         while idx<end_idx as f64 {
@@ -91,52 +91,7 @@ impl<T: Float> ResamplerFixedIn<T> {
     }
 }
             
-//                points[p] = get_upsampled(wave_long, sincs, nearest[p]+factor*chunksize)
-//            out[n] = interp(frac+1, points)
-//            n+=1
-//        prev = curr
-//        last_idx = idx-chunksize
-//def resample_cubic_fixedin(fs, wave, fs_new):
-//    #resample original (time, wave) at sample times time_new
-//    factor = 256
-//    sinclen = 64
-//    sincs = make_sincs(sinclen, factor)
-//    tdiff = 1/fs
-//    tdiff_new = 1/fs_new
-//    t_ratio = tdiff_new/tdiff
-//    out = np.zeros(int(np.ceil(len(wave)*fs_new/fs)))
-//    points = np.zeros(4)
-//    start = time.time()
-//    chunksize = 1024
-//    nchunks = int(np.ceil(len(wave)/chunksize))
-//    prev = np.zeros(chunksize)
-//    last_idx = -(sinclen/2)
-//    n = 0
-//    for chunk in range(nchunks):
-//        if chunk == (nchunks-1):
-//            curr=wave[chunk*chunksize:]
-//            end_idx = len(curr) - sinclen/2
-//            end = np.zeros(2*sinclen)
-//            wave_long = np.concatenate((prev, curr, end))
-//        else:
-//            end_idx = chunksize - (sinclen + 1)
-//            curr=wave[chunk*chunksize:(chunk+1)*chunksize]
-//            wave_long = np.concatenate((prev, curr))
-//        idx = last_idx
-//        while idx<end_idx:
-//            
-//            idx = idx + t_ratio
-//            print("chunk: {}, idx: {}".format(chunk, idx))
-//            nearest = get_nearest_times_4(idx, factor)
-//            frac = (idx*factor)%1
-//            for p in range(4):
-//                points[p] = get_upsampled(wave_long, sincs, nearest[p]+factor*chunksize)
-//            out[n] = interp(frac+1, points)
-//            n+=1
-//        prev = curr
-//        last_idx = idx-chunksize
-//    print("took {}".format(time.time()-start))
-//    return out
+
 
 
 
@@ -188,10 +143,10 @@ fn make_sincs<T:Float>(npoints: usize, factor: usize, f_cutoff: f32) -> Vec<Vec<
     sincs
 }
 
-fn cj<T: Float>(x:T, j: isize) -> T {
+fn cj<T: Float>(x:T, j: usize) -> T {
     //helper for Lagrange polynomials
     //xvals = [m for m in range(4) if m!=j]
-    let mut out = T::from(1.0).unwrap();
+    let mut out = T::one();
     let xj = T::from(j).unwrap();
     for xm in (0..4).filter(|xx| *xx != j).map(|xx| T::from(xx).unwrap()) {
         out = out*(x-xm)/(xj-xm);
@@ -203,7 +158,7 @@ fn interp_cubic<T: Float>(x: T, yvals: &Vec<T>) -> T {
     //fit a cubic polynimial to four points (at x=0..3), return interpolated at x
     let mut val = T::zero();
     for (j, y) in yvals.iter().enumerate() {
-        val = val + *y*cj(x,j as isize);
+        val = val + *y*cj(x,j);
     }
     val
 }
@@ -211,18 +166,12 @@ fn interp_cubic<T: Float>(x: T, yvals: &Vec<T>) -> T {
 
 fn interp_lin<T: Float>(x: T, yvals: &Vec<T>) -> T {
     //linear interpolation
-    (T::from(1.0).unwrap()-x)*yvals[0] + x*yvals[1]
+    (T::one()-x)*yvals[0] + x*yvals[1]
 }
-
 
 fn get_sinc_interpolated<T: Float>(wave: &[T], sincs: &Vec<Vec<T>>, index: usize, subindex: usize) -> T {
     // get the sinc-interpolated point at index:subindex
-    //let ycut = wave[index..(index+sincs[subindex].len())];
-    let mut ynew = T::zero(); 
-    for (s, y) in wave.iter().skip(index).take(sincs[subindex].len()).zip(sincs[subindex].iter()) {
-        ynew = ynew + *s * *y;
-    }
-    ynew
+    wave.iter().skip(index).take(sincs[subindex].len()).zip(sincs[subindex].iter()).fold(T::zero(), |acc, (x, y)| acc.add(*x * *y))
 }
 
 fn get_nearest_times_2<T:Float>(t: T, factor: isize) -> Vec<(isize, isize)> {
@@ -236,12 +185,6 @@ fn get_nearest_times_4<T:Float>(t: T, factor: isize) -> Vec<(isize, isize)> {
     // Get nearest sample time points, as index:subindex
     let start = t.floor().to_isize().unwrap();
     let frac = ((t-t.floor())*T::from(factor).unwrap()).floor().to_isize().unwrap();
-    //let frac = if start >= 0 {
-    //    (t.fract()*T::from(factor).unwrap()).floor().to_isize().unwrap()
-    //}
-    //else {
-    //    factor + (t.fract()*T::from(factor).unwrap()).floor().to_isize().unwrap()
-    //};
     let mut times = Vec::new();
     for sub in -1..3 {
         let mut index = start;
@@ -256,11 +199,6 @@ fn get_nearest_times_4<T:Float>(t: T, factor: isize) -> Vec<(isize, isize)> {
         }
         times.push((index, subindex));
     }
-    //let times_ups = vec![((start-1)/factor, (start-1)%factor),
-    //                     (start/factor, start%factor), 
-    //                     ((start+1)/factor, (start+1)%factor),
-    //                     ((start+2)/factor, (start+2)%factor)];
-    //times_ups
     times
 }
 
