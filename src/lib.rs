@@ -61,7 +61,7 @@ impl<T: Float> ResamplerFixedIn<T> {
     pub fn resample_chunk(&mut self, wave_in: Vec<Vec<T>>) -> Vec<Vec<T>> {
 
         let end_idx = self.chunk_size - (self.sinc_len + 1);
-        let start = Instant::now();
+        //let start = Instant::now();
         //update buffer with new data
         for wav in self.buffer.iter_mut() {
             for idx in 0..(2*self.sinc_len) {
@@ -74,8 +74,8 @@ impl<T: Float> ResamplerFixedIn<T> {
             }
         }
 
-        let duration = start.elapsed();
-        println!("copy: {:?}", duration);
+        //let duration = start.elapsed();
+        //println!("copy: {:?}", duration);
 
         let mut idx = self.last_index;
         let t_ratio = 1.0/self.resample_ratio as f64;
