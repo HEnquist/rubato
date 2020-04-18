@@ -2,6 +2,12 @@
 name = "camillaresampler"
 version = "0.1.0"
 authors = ["HEnquist <henrik.enquist@gmail.com>"]
+description = "Asynchronous resampling intended for audio data"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/HEnquist/camillaresampler"
+keywords = ["interpolation", "resampling"]
+categories = ["multimedia::audio"]
+readme = "README.md"
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
