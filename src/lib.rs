@@ -58,7 +58,7 @@ impl<T: Float> ResamplerFixedIn<T> {
 
 
 
-    pub fn resample_chunk_cubic(&mut self, wave_in: Vec<Vec<T>>) -> Vec<Vec<T>> {
+    pub fn resample_chunk(&mut self, wave_in: Vec<Vec<T>>) -> Vec<Vec<T>> {
 
         let end_idx = self.chunk_size - (self.sinc_len + 1);
         let start = Instant::now();
@@ -73,7 +73,6 @@ impl<T: Float> ResamplerFixedIn<T> {
                 self.buffer[chan][idx+2*self.sinc_len] = *sample;
             }
         }
-
 
         let duration = start.elapsed();
         println!("copy: {:?}", duration);
@@ -360,7 +359,7 @@ mod tests {
     fn make_resampler_fi() {
         let mut resampler = ResamplerFixedIn::<f64>::new(1.2, 64, 0.95, 16, Interpolation::Cubic, 1024, 2);
         let waves = vec![vec![0.0f64; 1024]; 2];
-        let out = resampler.resample_chunk_cubic(waves);
+        let out = resampler.resample_chunk(waves);
         assert_eq!(out.len(), 2);
         assert!(out[0].len()>1150 && out[0].len()<1250 );
     }
