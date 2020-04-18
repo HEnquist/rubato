@@ -1,5 +1,5 @@
 extern crate camillaresampler;
-use camillaresampler::ResamplerFixedIn;
+use camillaresampler::{ResamplerFixedIn, Interpolation};
 use std::env;
 use std::fs::File;
 use std::io::Cursor;
@@ -63,10 +63,14 @@ fn main() {
     let mut f_in = Cursor::new(&f_in_ram);
     let mut f_out = Cursor::new(&mut f_out_ram);
 
+    // Best quality for async
+    //let mut resampler = ResamplerFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, 64, 0.95, 128, Interpolation::Cubic, 1024, 2);
 
-    let mut resampler = ResamplerFixedIn::<f64>::new(fs_in, fs_out, 64, 0.95, 128, 1024, 2);
-    //let waves = vec![vec![0.0f64; 1024]; 2];
-    //let out = resampler.resample_chunk_cubic(waves);
+    // Fast and good for doubling 44100 -> 88200 etc
+    //let mut resampler = ResamplerFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, 64, 0.95, 4, Interpolation::Nearest, 1024, 2);
+
+    // Fast and good for  44100 -> 48000
+    let mut resampler = ResamplerFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, 64, 0.95, 160, Interpolation::Nearest, 1024, 2);
 
     let num_chunks = f_in_ram.len()/(8*channels*1024);
     let start = Instant::now();

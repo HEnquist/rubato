@@ -1,5 +1,5 @@
 extern crate camillaresampler;
-use camillaresampler::ResamplerFixedIn;
+use camillaresampler::{ResamplerFixedIn, Interpolation};
 use std::env;
 use std::fs::File;
 use std::io::Cursor;
@@ -64,7 +64,7 @@ fn main() {
     let mut f_out = Cursor::new(&mut f_out_ram);
 
 
-    let mut resampler = ResamplerFixedIn::<f32>::new(fs_in, fs_out, 64, 0.95, 128, 1024, 2);
+    let mut resampler = ResamplerFixedIn::<f32>::new(fs_out as f32 / fs_in as f32, 64, 0.95, 128, Interpolation::Cubic, 1024, 2);
     //let waves = vec![vec![0.0f64; 1024]; 2];
     //let out = resampler.resample_chunk_cubic(waves);
 
