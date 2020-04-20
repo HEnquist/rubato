@@ -1,11 +1,11 @@
 extern crate camillaresampler;
-use camillaresampler::{ResamplerFixedOut, Interpolation};
+use camillaresampler::{Interpolation, ResamplerFixedOut};
+use std::convert::TryInto;
 use std::env;
 use std::fs::File;
+use std::io::prelude::{Read, Seek, Write};
 use std::io::Cursor;
 use std::time::Instant;
-use std::io::prelude::{Read, Write, Seek};
-use std::convert::TryInto;
 
 fn read_frames<R: Read + Seek>(inbuffer: &mut R, nbr: usize, channels: usize) -> Vec<Vec<f64>> {
     let mut buffer = vec![0u8; 8];
@@ -38,19 +38,24 @@ fn write_frames<W: Write + Seek>(waves: Vec<Vec<f64>>, outbuffer: &mut W, channe
     }
 }
 
-
 fn main() {
     let file_in = env::args().nth(1).expect("Please specify an input file.");
     let file_out = env::args().nth(2).expect("Please specify an output file.");
     println!("Opening files: {}, {}", file_in, file_out);
 
-    let fs_in_str = env::args().nth(3).expect("Please specify an input sample rate");
-    let fs_out_str = env::args().nth(4).expect("Please specify an output sample rate");
+    let fs_in_str = env::args()
+        .nth(3)
+        .expect("Please specify an input sample rate");
+    let fs_out_str = env::args()
+        .nth(4)
+        .expect("Please specify an output sample rate");
     let fs_in = fs_in_str.parse::<usize>().unwrap();
     let fs_out = fs_out_str.parse::<usize>().unwrap();
     println!("Resampling from {} to {}", fs_in, fs_out);
 
-    let channels_str = env::args().nth(5).expect("Please specify number of channels");
+    let channels_str = env::args()
+        .nth(5)
+        .expect("Please specify number of channels");
     let channels = channels_str.parse::<usize>().unwrap();
 
     //open files
@@ -60,12 +65,20 @@ fn main() {
 
     println!("Copy input file to buffer");
     std::io::copy(&mut f_in_disk, &mut f_in_ram).unwrap();
-    
+
     let mut f_in = Cursor::new(&f_in_ram);
     let mut f_out = Cursor::new(&mut f_out_ram);
 
     // Best quality for async
-    let mut resampler = ResamplerFixedOut::<f64>::new(fs_out as f32 / fs_in as f32, 64, 0.95, 128, Interpolation::Cubic, 1024, channels);
+    let mut resampler = ResamplerFixedOut::<f64>::new(
+        fs_out as f32 / fs_in as f32,
+        64,
+        0.95,
+        128,
+        Interpolation::Cubic,
+        1024,
+        channels,
+    );
 
     // Fast and good for doubling 44100 -> 88200 etc
     //let mut resampler = ResamplerFixedOut::<f64>::new(fs_out as f32 / fs_in as f32, 64, 0.95, 4, Interpolation::Nearest, 1024, channels);
@@ -77,7 +90,7 @@ fn main() {
     loop {
         let nbr_frames = resampler.frames_needed();
         let waves = read_frames(&mut f_in, nbr_frames, channels);
-        if waves[0].len()<nbr_frames {
+        if waves[0].len() < nbr_frames {
             break;
         }
         let waves_out = resampler.resample_chunk(waves);
