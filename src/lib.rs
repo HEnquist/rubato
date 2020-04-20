@@ -295,7 +295,9 @@ impl<T: Float> ResamplerFixedOut<T> {
         self.last_index = idx - self.current_buffer_fill as f64;
         //println!("last_idx: {}".format(last_idx))
         //println!("adjust: {}".format(int(last_idx + 2*sinclen)))
-        self.needed_input_size = (self.needed_input_size as isize + self.last_index.round() as isize + self.sinc_len as isize) as usize;
+        self.needed_input_size = (self.needed_input_size as isize
+            + self.last_index.round() as isize
+            + self.sinc_len as isize) as usize;
         println!(
             "idx {}, last index {}, needed len {}",
             idx, self.last_index, self.needed_input_size
@@ -552,6 +554,8 @@ mod tests {
         let mut resampler =
             ResamplerFixedOut::<f64>::new(1.2, 64, 0.95, 16, Interpolation::Cubic, 1024, 2);
         let frames = resampler.frames_needed();
+        println!("{}", frames);
+        assert!(frames > 800 && frames < 900);
         let waves = vec![vec![0.0f64; frames]; 2];
         let out = resampler.resample_chunk(waves);
         assert_eq!(out.len(), 2);
