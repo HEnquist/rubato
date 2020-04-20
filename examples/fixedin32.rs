@@ -3,7 +3,7 @@ use camillaresampler::{ResamplerFixedIn, Interpolation};
 use std::env;
 use std::fs::File;
 use std::io::Cursor;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use std::io::prelude::{Read, Write, Seek};
 use std::convert::TryInto;
 
@@ -16,7 +16,7 @@ fn read_frames<R: Read + Seek>(inbuffer: &mut R, nbr: usize, channels: usize) ->
     let mut value: f32;
     for _frame in 0..nbr {
         for wf in wfs.iter_mut().take(channels) {
-            inbuffer.read(&mut buffer);
+            inbuffer.read(&mut buffer).unwrap();
             value = f32::from_le_bytes(buffer.as_slice().try_into().unwrap()) as f32;
             //idx += 8;
             wf.push(value);
@@ -26,13 +26,12 @@ fn read_frames<R: Read + Seek>(inbuffer: &mut R, nbr: usize, channels: usize) ->
 }
 
 fn write_frames<W: Write + Seek>(waves: Vec<Vec<f32>>, outbuffer: &mut W, channels: usize) {
-    let mut buffer = vec![0u8; 4];
     let nbr = waves[0].len();
     for frame in 0..nbr {
         for chan in 0..channels {
             let value32 = waves[chan][frame];
             let bytes = value32.to_le_bytes();
-            outbuffer.write(&bytes);
+            outbuffer.write(&bytes).unwrap();
         }
     }
 }
@@ -81,6 +80,6 @@ fn main() {
     println!("Resampling took: {:?}", duration);
 
     let mut f_out_disk = File::create(file_out).unwrap();
-    f_out.seek(std::io::SeekFrom::Start(0));
+    f_out.seek(std::io::SeekFrom::Start(0)).unwrap();
     std::io::copy(&mut f_out, &mut f_out_disk).unwrap();
 }

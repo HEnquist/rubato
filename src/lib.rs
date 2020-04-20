@@ -2,7 +2,7 @@
 use num::traits::Float;
 //use num::traits::NumCast;
 //type Float = f64;
-use std::time::{Duration, Instant};
+//use std::time::{Duration, Instant};
 
 pub enum Interpolation {
     Cubic,
@@ -25,12 +25,17 @@ pub struct ResamplerFixedIn<T: Float> {
 pub struct ResamplerFixedOut<T: Float> {
     nbr_channels: usize,
     chunk_size: usize,
+    needed_input_size: usize,
     upsample_factor: usize,
     last_index: f64,
+    current_buffer_fill: usize,
+    resample_ratio: f32,
     sinc_len: usize,
     sincs: Vec<Vec<T>>,
-    prev: Vec<Vec<T>>,
+    buffer: Vec<Vec<T>>,
+    interpolation: Interpolation,
 }
+
 
 impl<T: Float> ResamplerFixedIn<T> {
     pub fn new(resample_ratio: f32, sinc_len: usize, f_cutoff: f32, upsample_factor: usize, interpolation: Interpolation, chunk_size: usize, nbr_channels: usize) -> Self {
@@ -135,7 +140,122 @@ impl<T: Float> ResamplerFixedIn<T> {
     }
 }
             
+impl<T: Float> ResamplerFixedOut<T> {
+    pub fn new(resample_ratio: f32, sinc_len: usize, f_cutoff: f32, upsample_factor: usize, interpolation: Interpolation, chunk_size: usize, nbr_channels: usize) -> Self {
+        let sinc_cutoff = if resample_ratio >= 0.0 {
+            f_cutoff
+        }
+        else {
+            f_cutoff*resample_ratio
+        };
+        let sincs = make_sincs(sinc_len, upsample_factor, sinc_cutoff);
+        let needed_input_size = (chunk_size as f32 / resample_ratio).ceil() as usize + 1;
+        let buffer = vec![vec![T::zero();3*needed_input_size/2+2*sinc_len]; nbr_channels];
+        ResamplerFixedOut {
+            nbr_channels,
+            chunk_size,
+            needed_input_size,
+            upsample_factor,
+            last_index: -(sinc_len as f64),
+            current_buffer_fill: needed_input_size,
+            resample_ratio,
+            sinc_len,
+            sincs,
+            buffer,
+            interpolation,
+        }
+    }
 
+    pub fn frames_needed(&self) -> usize {
+        self.needed_input_size
+    }
+
+    pub fn set_resample_ratio(&mut self) {}
+
+    pub fn resample_chunk(&mut self, wave_in: Vec<Vec<T>>) -> Vec<Vec<T>> {
+        //let start = Instant::now();
+        //update buffer with new data
+        for wav in self.buffer.iter_mut() {
+            for idx in 0..(2*self.sinc_len) {
+                wav[idx] = wav[idx+self.current_buffer_fill];
+            }
+        }
+        self.current_buffer_fill = wave_in[0].len();
+        for (chan, wav) in wave_in.iter().enumerate() {
+            for (idx, sample) in wav.iter().enumerate() {
+                self.buffer[chan][idx+2*self.sinc_len] = *sample;
+            }
+        }
+        println!("copied {} frames", self.current_buffer_fill);
+        
+
+        //let duration = start.elapsed();
+        //println!("copy: {:?}", duration);
+
+        let mut idx = self.last_index;
+        let t_ratio = 1.0/self.resample_ratio as f64;
+
+        let mut wave_out = vec![Vec::with_capacity((self.chunk_size) as usize);self.nbr_channels];
+
+        match self.interpolation {
+            Interpolation::Cubic => {
+                let mut points = vec![T::zero();4];
+                let mut nearest = vec![(0isize, 0isize); 4]; 
+                for _n in 0..self.chunk_size {
+                    idx += t_ratio;
+                    get_nearest_times_4(idx, self.upsample_factor as isize, &mut nearest);
+                    let frac = idx*self.upsample_factor as f64 - (idx*self.upsample_factor as f64).floor();
+                    let frac_offset = T::from(frac).unwrap();
+                    for (chan, buf) in self.buffer.iter().enumerate() {
+                        for (n, p) in nearest.iter().zip(points.iter_mut()) {
+                            *p = get_sinc_interpolated(&buf, &self.sincs, (n.0+2*self.sinc_len as isize) as usize, n.1 as usize);
+                        }
+                        wave_out[chan].push(interp_cubic(frac_offset, &points));              
+                    }
+                }
+                
+            }
+            Interpolation::Linear => {
+                let mut points = vec![T::zero();2];
+                let mut nearest = vec![(0isize, 0isize); 2]; 
+                for _n in 0..self.chunk_size {
+                    idx += t_ratio;
+                    get_nearest_times_2(idx, self.upsample_factor as isize, &mut nearest);
+                    let frac = idx*self.upsample_factor as f64 - (idx*self.upsample_factor as f64).floor();
+                    let frac_offset = T::from(frac).unwrap();
+                    for (chan, buf) in self.buffer.iter().enumerate() {
+                        for (n, p) in nearest.iter().zip(points.iter_mut()) {
+                            *p = get_sinc_interpolated(&buf, &self.sincs, (n.0+2*self.sinc_len as isize) as usize, n.1 as usize);
+                        }
+                        wave_out[chan].push(interp_lin(frac_offset, &points));              
+                    }
+                }
+            }
+            Interpolation::Nearest => {
+                let mut point;
+                let mut nearest;
+                for _n in 0..self.chunk_size {
+                    idx += t_ratio;
+                    nearest = get_nearest_time(idx, self.upsample_factor as isize);
+                    for (chan, buf) in self.buffer.iter().enumerate() {
+                        point = get_sinc_interpolated(&buf, &self.sincs, (nearest.0+2*self.sinc_len as isize) as usize, nearest.1 as usize);
+                        wave_out[chan].push(point);              
+                    }
+                }
+            }
+        }
+        
+        // store last index for next iteration
+
+        //println!("chunk: {}, capture_len: {}, prev len: {}".format(chunk, capture_len, len(prev)))
+        self.last_index = idx - self.current_buffer_fill as f64;
+        //println!("last_idx: {}".format(last_idx))
+        //println!("adjust: {}".format(int(last_idx + 2*sinclen)))
+        self.needed_input_size += self.last_index.round() as usize + self.sinc_len;
+        println!("idx {}, last index {}, needed len {}", idx, self.last_index, self.needed_input_size);
+        wave_out
+    }
+}
 
 
 

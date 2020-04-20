@@ -1,5 +1,5 @@
 extern crate camillaresampler;
-use camillaresampler::{ResamplerFixedIn, Interpolation};
+use camillaresampler::{ResamplerFixedOut, Interpolation};
 use std::env;
 use std::fs::File;
 use std::io::Cursor;
@@ -16,7 +16,9 @@ fn read_frames<R: Read + Seek>(inbuffer: &mut R, nbr: usize, channels: usize) ->
     let mut value: f64;
     for _frame in 0..nbr {
         for wf in wfs.iter_mut().take(channels) {
-            inbuffer.read(&mut buffer).unwrap();
+            if inbuffer.read(&mut buffer).unwrap() < 8 {
+                return wfs;
+            }
             value = f64::from_le_bytes(buffer.as_slice().try_into().unwrap()) as f64;
             //idx += 8;
             wf.push(value);
@@ -63,20 +65,24 @@ fn main() {
     let mut f_out = Cursor::new(&mut f_out_ram);
 
     // Best quality for async
-    //let mut resampler = ResamplerFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, 64, 0.95, 128, Interpolation::Cubic, 1024, channels);
+    let mut resampler = ResamplerFixedOut::<f64>::new(fs_out as f32 / fs_in as f32, 64, 0.95, 128, Interpolation::Cubic, 1024, channels);
 
     // Fast and good for doubling 44100 -> 88200 etc
-    //let mut resampler = ResamplerFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, 64, 0.95, 4, Interpolation::Nearest, 1024, channels);
+    //let mut resampler = ResamplerFixedOut::<f64>::new(fs_out as f32 / fs_in as f32, 64, 0.95, 4, Interpolation::Nearest, 1024, channels);
 
     // Fast and good for  44100 -> 48000
-    let mut resampler = ResamplerFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, 64, 0.95, 160, Interpolation::Nearest, 1024, channels);
+    //let mut resampler = ResamplerFixedOut::<f64>::new(fs_out as f32 / fs_in as f32, 64, 0.95, 160, Interpolation::Nearest, 1024, channels);
 
-    let num_chunks = f_in_ram.len()/(8*channels*1024);
     let start = Instant::now();
-    for _chunk in 0..num_chunks {
-        let waves = read_frames(&mut f_in, 1024, 2);
+    loop {
+        let nbr_frames = resampler.frames_needed();
+        let waves = read_frames(&mut f_in, nbr_frames, channels);
+        if waves[0].len()<nbr_frames {
+            break;
+        }
         let waves_out = resampler.resample_chunk(waves);
-        write_frames(waves_out, &mut f_out, 2);
+        println!("got {} frames", waves_out[0].len());
+        write_frames(waves_out, &mut f_out, channels);
     }
 
     let duration = start.elapsed();
