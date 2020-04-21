@@ -623,7 +623,7 @@ mod tests {
         let mut resampler =
             ResamplerFixedIn::<f64>::new(1.2, 64, 0.95, 16, Interpolation::Cubic, 1024, 2);
         let waves = vec![vec![0.0f64; 1024]; 2];
-        let out = resampler.resample_chunk(waves);
+        let out = resampler.resample_chunk(waves).unwrap();
         assert_eq!(out.len(), 2);
         assert!(out[0].len() > 1150 && out[0].len() < 1250);
     }
@@ -636,7 +636,7 @@ mod tests {
         println!("{}", frames);
         assert!(frames > 800 && frames < 900);
         let waves = vec![vec![0.0f64; frames]; 2];
-        let out = resampler.resample_chunk(waves);
+        let out = resampler.resample_chunk(waves).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 1024);
     }
