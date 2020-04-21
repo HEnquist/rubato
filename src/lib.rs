@@ -32,12 +32,17 @@ impl ResamplerError {
     }
 }
 
+/// Inerpolation format
 pub enum Interpolation {
+    /// Cubic polynomial interpolation. Best for asynchronous resampling but requires calculating four points per output point.
     Cubic,
+    /// Linear interpolation. About a factor 2 faster than Cubic, but is less accurate.
     Linear,
+    /// No interpolation, just pick nearest point. Suitable for synchronous resampling if the resampling ration can be expressed as a fraction, for example 48000/44100 = 160/147
     Nearest,
 }
 
+/// A resampler that accepts a fixed number of audio chunks for input and returns a variable number of frames.
 pub struct ResamplerFixedIn<T: Float> {
     nbr_channels: usize,
     chunk_size: usize,
@@ -51,6 +56,7 @@ pub struct ResamplerFixedIn<T: Float> {
     interpolation: Interpolation,
 }
 
+/// A resampler that return a fixed number of audio chunks. The number of input frames required is given by the frames_needed function.
 pub struct ResamplerFixedOut<T: Float> {
     nbr_channels: usize,
     chunk_size: usize,
@@ -67,6 +73,14 @@ pub struct ResamplerFixedOut<T: Float> {
 }
 
 impl<T: Float> ResamplerFixedIn<T> {
+    /// Create a new ResamplerFixedIn
+    /// Parameters are:
+    /// resample_ratio: ratio of output and input sample rates
+    /// sinc_len: length of the windowed sinc interpolation filters
+    /// f_cutoff: relative cutoff frequency, to the smaller one of fs_in/2 or fs_out/2
+    /// interpolation: interpolation type
+    /// chunk_size: size of input data in frames
+    /// nbr_channels: number of channels in input/output
     pub fn new(
         resample_ratio: f32,
         sinc_len: usize,
@@ -97,6 +111,7 @@ impl<T: Float> ResamplerFixedIn<T> {
         }
     }
 
+    /// Update the resample ratio. New value must be within +-10% of the original one
     pub fn set_resample_ratio(&mut self, new_ratio: f32) -> Res<()> {
         if (new_ratio / self.resample_ratio_original > 0.9)
             && (new_ratio / self.resample_ratio_original < 1.1)
@@ -110,6 +125,7 @@ impl<T: Float> ResamplerFixedIn<T> {
         }
     }
 
+    /// Resample a chunk of audio. Returns a new chunk as a Vec<Vec>>
     pub fn resample_chunk(&mut self, wave_in: Vec<Vec<T>>) -> Res<Vec<Vec<T>>> {
         if wave_in.len() != self.nbr_channels {
             return Err(Box::new(ResamplerError::new(
@@ -218,6 +234,14 @@ impl<T: Float> ResamplerFixedIn<T> {
 }
 
 impl<T: Float> ResamplerFixedOut<T> {
+    /// Create a new ResamplerFixedOut
+    /// Parameters are:
+    /// resample_ratio: ratio of output and input sample rates
+    /// sinc_len: length of the windowed sinc interpolation filters
+    /// f_cutoff: relative cutoff frequency, to the smaller one of fs_in/2 or fs_out/2
+    /// interpolation: interpolation type
+    /// chunk_size: size of input data in frames
+    /// nbr_channels: number of channels in input/output
     pub fn new(
         resample_ratio: f32,
         sinc_len: usize,
@@ -251,10 +275,12 @@ impl<T: Float> ResamplerFixedOut<T> {
         }
     }
 
+    /// Query for the number of frames needed for the next call to resample_chunk
     pub fn frames_needed(&self) -> usize {
         self.needed_input_size
     }
 
+    /// Update the resample ratio. New value must be within +-10% of the original one
     pub fn set_resample_ratio(&mut self, new_ratio: f32) -> Res<()> {
         if (new_ratio / self.resample_ratio_original > 0.9)
             && (new_ratio / self.resample_ratio_original < 1.1)
@@ -270,6 +296,7 @@ impl<T: Float> ResamplerFixedOut<T> {
         }
     }
 
+    /// Resample a chunk of audio. Returns a new chunk as a Vec<Vec>>
     pub fn resample_chunk(&mut self, wave_in: Vec<Vec<T>>) -> Res<Vec<Vec<T>>> {
         //let start = Instant::now();
         //update buffer with new data
@@ -294,10 +321,6 @@ impl<T: Float> ResamplerFixedOut<T> {
                 self.buffer[chan][idx + 2 * self.sinc_len] = *sample;
             }
         }
-        //println!("copied {} frames", self.current_buffer_fill);
-
-        //let duration = start.elapsed();
-        //println!("copy: {:?}", duration);
 
         let mut idx = self.last_index;
         let t_ratio = 1.0 / self.resample_ratio as f64;
@@ -385,6 +408,7 @@ impl<T: Float> ResamplerFixedOut<T> {
     }
 }
 
+/// Helper function. Standard Blackman-Harris window
 fn blackman_harris<T: Float>(npoints: usize) -> Vec<T> {
     // blackman-harris window
     let mut window = vec![T::zero(); npoints];
@@ -404,6 +428,7 @@ fn blackman_harris<T: Float>(npoints: usize) -> Vec<T> {
     window
 }
 
+/// Helper function: sinc(x) = sin(pi*x)/(pi*x)
 fn sinc<T: Float>(value: T) -> T {
     let pi = T::from(std::f64::consts::PI).unwrap();
     if value == T::zero() {
@@ -413,6 +438,7 @@ fn sinc<T: Float>(value: T) -> T {
     }
 }
 
+/// Helper function. Make a set of windowed sincs.  
 fn make_sincs<T: Float>(npoints: usize, factor: usize, f_cutoff: f32) -> Vec<Vec<T>> {
     let totpoints = (npoints * factor) as isize;
     let mut y = Vec::with_capacity(totpoints as usize);
@@ -436,6 +462,7 @@ fn make_sincs<T: Float>(npoints: usize, factor: usize, f_cutoff: f32) -> Vec<Vec
     sincs
 }
 
+/// Perform cubic polynomial interpolation to get value at x. Input points are assumed to be at x = -1, 0, 1, 2
 fn interp_cubic<T: Float>(x: T, yvals: &[T]) -> T {
     //fit a cubic polynimial to four points (at x=0..3), return interpolated at x
     let a0 = yvals[1];
@@ -447,11 +474,13 @@ fn interp_cubic<T: Float>(x: T, yvals: &[T]) -> T {
     a0 + a1 * x + a2 * x.powi(2) + a3 * x.powi(3)
 }
 
+/// Linear interpolation between two points at x=0 and x=1
 fn interp_lin<T: Float>(x: T, yvals: &[T]) -> T {
     //linear interpolation
     (T::one() - x) * yvals[0] + x * yvals[1]
 }
 
+/// Calculate the scalar produt of an input wave and the elected sinc filter
 fn get_sinc_interpolated<T: Float>(
     wave: &[T],
     sincs: &[Vec<T>],
@@ -466,6 +495,7 @@ fn get_sinc_interpolated<T: Float>(
         .fold(T::zero(), |acc, (x, y)| acc.add(*x * *y))
 }
 
+/// Get the two nearest time points for time t in format (index, subindex)
 fn get_nearest_times_2<T: Float>(t: T, factor: isize, points: &mut [(isize, isize)]) {
     // Get nearest sample time points, as index:subindex
     let mut index = t.floor().to_isize().unwrap();
@@ -482,6 +512,7 @@ fn get_nearest_times_2<T: Float>(t: T, factor: isize, points: &mut [(isize, isiz
     points[1] = (index, subindex);
 }
 
+/// Get the four nearest time points for time t in format (index, subindex)
 fn get_nearest_times_4<T: Float>(t: T, factor: isize, points: &mut [(isize, isize)]) {
     // Get nearest sample time points, as index:subindex
     let start = t.floor().to_isize().unwrap();
@@ -506,6 +537,7 @@ fn get_nearest_times_4<T: Float>(t: T, factor: isize, points: &mut [(isize, isiz
     }
 }
 
+/// Get the nearest time point for time t in format (index, subindex)
 fn get_nearest_time<T: Float>(t: T, factor: isize) -> (isize, isize) {
     // Get nearest sample time points, as index:subindex
     let mut index = t.floor().to_isize().unwrap();
@@ -519,14 +551,6 @@ fn get_nearest_time<T: Float>(t: T, factor: isize) -> (isize, isize) {
     }
     (index, subindex)
 }
-//def get_nearest_time(t, factor):
-//    # Get nearest sample time points, in upsampled sample number
-//    t = np.round(t*factor)
-//    return t
-
-//impl<T> ResamplerFixedOut<T> {
-//    fn make_sincs
-//}
 
 #[cfg(test)]
 mod tests {
