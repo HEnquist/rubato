@@ -67,7 +67,6 @@ fn main() {
     let mut f_in = Cursor::new(&f_in_ram);
     let mut f_out = Cursor::new(&mut f_out_ram);
 
-
     // Best quality for async
     //let mut resampler = ResamplerFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, 64, 0.95, 128, Interpolation::Cubic, 1024, channels);
     // Best quality for async
@@ -86,12 +85,12 @@ fn main() {
         1024,
         channels,
     );
-//
+    //
     let num_chunks = f_in_ram.len() / (8 * channels * 1024);
     let start = Instant::now();
     for _chunk in 0..num_chunks {
         let waves = read_frames(&mut f_in, 1024, 2);
-        let waves_out = resampler.resample_chunk(waves);
+        let waves_out = resampler.resample_chunk(waves).unwrap();
         write_frames(waves_out, &mut f_out, 2);
     }
 

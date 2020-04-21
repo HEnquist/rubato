@@ -1,7 +1,36 @@
 use num::traits::Float;
+use std::error;
+use std::fmt;
 //use num::traits::NumCast;
 //type Float = f64;
 //use std::time::{Duration, Instant};
+
+type Res<T> = Result<T, Box<dyn error::Error>>;
+
+#[derive(Debug)]
+pub struct ResamplerError {
+    desc: String,
+}
+
+impl fmt::Display for ResamplerError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.desc)
+    }
+}
+
+impl error::Error for ResamplerError {
+    fn description(&self) -> &str {
+        &self.desc
+    }
+}
+
+impl ResamplerError {
+    pub fn new(desc: &str) -> Self {
+        ResamplerError {
+            desc: desc.to_owned(),
+        }
+    }
+}
 
 pub enum Interpolation {
     Cubic,
@@ -68,13 +97,30 @@ impl<T: Float> ResamplerFixedIn<T> {
         }
     }
 
-    pub fn set_resample_ratio(&mut self, new_ratio: f32) {
-        if (new_ratio/self.resample_ratio_original > 0.9) && (new_ratio/self.resample_ratio_original < 1.1) {
+    pub fn set_resample_ratio(&mut self, new_ratio: f32) -> Res<()> {
+        if (new_ratio / self.resample_ratio_original > 0.9)
+            && (new_ratio / self.resample_ratio_original < 1.1)
+        {
             self.resample_ratio = new_ratio;
+            Ok(())
+        } else {
+            Err(Box::new(ResamplerError::new(
+                "New resample ratio is too far off from original",
+            )))
         }
     }
 
-    pub fn resample_chunk(&mut self, wave_in: Vec<Vec<T>>) -> Vec<Vec<T>> {
+    pub fn resample_chunk(&mut self, wave_in: Vec<Vec<T>>) -> Res<Vec<Vec<T>>> {
+        if wave_in.len() != self.nbr_channels {
+            return Err(Box::new(ResamplerError::new(
+                "Wrong number of channels in input",
+            )));
+        }
+        if wave_in[0].len() != self.chunk_size {
+            return Err(Box::new(ResamplerError::new(
+                "Wrong number of frames in input",
+            )));
+        }
         let end_idx = self.chunk_size as isize - (self.sinc_len as isize + 1);
         //let start = Instant::now();
         //update buffer with new data
@@ -167,7 +213,7 @@ impl<T: Float> ResamplerFixedIn<T> {
 
         // store last index for next iteration
         self.last_index = idx - self.chunk_size as f64;
-        wave_out
+        Ok(wave_out)
     }
 }
 
@@ -209,16 +255,34 @@ impl<T: Float> ResamplerFixedOut<T> {
         self.needed_input_size
     }
 
-    pub fn set_resample_ratio(&mut self, new_ratio: f32) {
-        if (new_ratio/self.resample_ratio_original > 0.9) && (new_ratio/self.resample_ratio_original < 1.1) {
+    pub fn set_resample_ratio(&mut self, new_ratio: f32) -> Res<()> {
+        if (new_ratio / self.resample_ratio_original > 0.9)
+            && (new_ratio / self.resample_ratio_original < 1.1)
+        {
             self.resample_ratio = new_ratio;
-            self.needed_input_size = (self.chunk_size as f32 / self.resample_ratio).ceil() as usize + 1;
+            self.needed_input_size =
+                (self.chunk_size as f32 / self.resample_ratio).ceil() as usize + 1;
+            Ok(())
+        } else {
+            Err(Box::new(ResamplerError::new(
+                "New resample ratio is too far off from original",
+            )))
         }
     }
 
-    pub fn resample_chunk(&mut self, wave_in: Vec<Vec<T>>) -> Vec<Vec<T>> {
+    pub fn resample_chunk(&mut self, wave_in: Vec<Vec<T>>) -> Res<Vec<Vec<T>>> {
         //let start = Instant::now();
         //update buffer with new data
+        if wave_in.len() != self.nbr_channels {
+            return Err(Box::new(ResamplerError::new(
+                "Wrong number of channels in input",
+            )));
+        }
+        if wave_in[0].len() != self.needed_input_size {
+            return Err(Box::new(ResamplerError::new(
+                "Wrong number of frames in input",
+            )));
+        }
         for wav in self.buffer.iter_mut() {
             for idx in 0..(2 * self.sinc_len) {
                 wav[idx] = wav[idx + self.current_buffer_fill];
@@ -317,7 +381,7 @@ impl<T: Float> ResamplerFixedOut<T> {
         //    "idx {}, last index {}, needed len {}",
         //    idx, self.last_index, self.needed_input_size
         //);
-        wave_out
+        Ok(wave_out)
     }
 }
 
