@@ -67,22 +67,25 @@ fn main() {
     let mut f_in = Cursor::new(&f_in_ram);
     let mut f_out = Cursor::new(&mut f_out_ram);
 
+
     // Best quality for async
-    let mut resampler = ResamplerFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, 64, 0.95, 128, Interpolation::Cubic, 1024, channels);
+    //let mut resampler = ResamplerFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, 64, 0.95, 128, Interpolation::Cubic, 1024, channels);
+    // Best quality for async
+    //let mut resampler = ResamplerFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, 64, 0.95, 128, Interpolation::Cubic, 1024, channels);
 
     // Fast and good for doubling 44100 -> 88200 etc
     //let mut resampler = ResamplerFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, 64, 0.95, 4, Interpolation::Nearest, 1024, channels);
 
     // Fast and good for  44100 -> 48000
-    //let mut resampler = ResamplerFixedIn::<f64>::new(
-    //    fs_out as f32 / fs_in as f32,
-    //    64,
-    //    0.95,
-    //    160,
-    //    Interpolation::Nearest,
-    //    1024,
-    //    channels,
-    //);
+    let mut resampler = ResamplerFixedIn::<f64>::new(
+        fs_out as f32 / fs_in as f32,
+        1024,
+        0.95,
+        160,
+        Interpolation::Nearest,
+        1024,
+        channels,
+    );
 //
     let num_chunks = f_in_ram.len() / (8 * channels * 1024);
     let start = Instant::now();

@@ -15,6 +15,7 @@ pub struct ResamplerFixedIn<T: Float> {
     upsample_factor: usize,
     last_index: f64,
     resample_ratio: f32,
+    resample_ratio_original: f32,
     sinc_len: usize,
     sincs: Vec<Vec<T>>,
     buffer: Vec<Vec<T>>,
@@ -29,6 +30,7 @@ pub struct ResamplerFixedOut<T: Float> {
     last_index: f64,
     current_buffer_fill: usize,
     resample_ratio: f32,
+    resample_ratio_original: f32,
     sinc_len: usize,
     sincs: Vec<Vec<T>>,
     buffer: Vec<Vec<T>>,
@@ -58,6 +60,7 @@ impl<T: Float> ResamplerFixedIn<T> {
             upsample_factor,
             last_index: -(sinc_len as f64),
             resample_ratio,
+            resample_ratio_original: resample_ratio,
             sinc_len,
             sincs,
             buffer,
@@ -65,8 +68,14 @@ impl<T: Float> ResamplerFixedIn<T> {
         }
     }
 
+    pub fn set_resample_ratio(&mut self, new_ratio: f32) {
+        if (new_ratio/self.resample_ratio_original > 0.9) && (new_ratio/self.resample_ratio_original < 1.1) {
+            self.resample_ratio = new_ratio;
+        }
+    }
+
     pub fn resample_chunk(&mut self, wave_in: Vec<Vec<T>>) -> Vec<Vec<T>> {
-        let end_idx = self.chunk_size - (self.sinc_len + 1);
+        let end_idx = self.chunk_size as isize - (self.sinc_len as isize + 1);
         //let start = Instant::now();
         //update buffer with new data
         for wav in self.buffer.iter_mut() {
@@ -188,6 +197,7 @@ impl<T: Float> ResamplerFixedOut<T> {
             last_index: -(sinc_len as f64),
             current_buffer_fill: needed_input_size,
             resample_ratio,
+            resample_ratio_original: resample_ratio,
             sinc_len,
             sincs,
             buffer,
@@ -199,7 +209,12 @@ impl<T: Float> ResamplerFixedOut<T> {
         self.needed_input_size
     }
 
-    pub fn set_resample_ratio(&mut self) {}
+    pub fn set_resample_ratio(&mut self, new_ratio: f32) {
+        if (new_ratio/self.resample_ratio_original > 0.9) && (new_ratio/self.resample_ratio_original < 1.1) {
+            self.resample_ratio = new_ratio;
+            self.needed_input_size = (self.chunk_size as f32 / self.resample_ratio).ceil() as usize + 1;
+        }
+    }
 
     pub fn resample_chunk(&mut self, wave_in: Vec<Vec<T>>) -> Vec<Vec<T>> {
         //let start = Instant::now();
@@ -215,7 +230,7 @@ impl<T: Float> ResamplerFixedOut<T> {
                 self.buffer[chan][idx + 2 * self.sinc_len] = *sample;
             }
         }
-        println!("copied {} frames", self.current_buffer_fill);
+        //println!("copied {} frames", self.current_buffer_fill);
 
         //let duration = start.elapsed();
         //println!("copy: {:?}", duration);
@@ -298,10 +313,10 @@ impl<T: Float> ResamplerFixedOut<T> {
         self.needed_input_size = (self.needed_input_size as isize
             + self.last_index.round() as isize
             + self.sinc_len as isize) as usize;
-        println!(
-            "idx {}, last index {}, needed len {}",
-            idx, self.last_index, self.needed_input_size
-        );
+        //println!(
+        //    "idx {}, last index {}, needed len {}",
+        //    idx, self.last_index, self.needed_input_size
+        //);
         wave_out
     }
 }
