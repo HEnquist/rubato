@@ -325,13 +325,13 @@ impl<T: Float> ResamplerFixedOut<T> {
         let mut idx = self.last_index;
         let t_ratio = 1.0 / self.resample_ratio as f64;
 
-        let mut wave_out = vec![Vec::with_capacity((self.chunk_size) as usize); self.nbr_channels];
+        let mut wave_out = vec![vec![T::zero(); self.chunk_size]; self.nbr_channels];
 
         match self.interpolation {
             Interpolation::Cubic => {
                 let mut points = vec![T::zero(); 4];
                 let mut nearest = vec![(0isize, 0isize); 4];
-                for _n in 0..self.chunk_size {
+                for n in 0..self.chunk_size {
                     idx += t_ratio;
                     get_nearest_times_4(idx, self.upsample_factor as isize, &mut nearest);
                     let frac = idx * self.upsample_factor as f64
@@ -346,14 +346,14 @@ impl<T: Float> ResamplerFixedOut<T> {
                                 n.1 as usize,
                             );
                         }
-                        wave_out[chan].push(interp_cubic(frac_offset, &points));
+                        wave_out[chan][n] = interp_cubic(frac_offset, &points);
                     }
                 }
             }
             Interpolation::Linear => {
                 let mut points = vec![T::zero(); 2];
                 let mut nearest = vec![(0isize, 0isize); 2];
-                for _n in 0..self.chunk_size {
+                for n in 0..self.chunk_size {
                     idx += t_ratio;
                     get_nearest_times_2(idx, self.upsample_factor as isize, &mut nearest);
                     let frac = idx * self.upsample_factor as f64
@@ -368,14 +368,14 @@ impl<T: Float> ResamplerFixedOut<T> {
                                 n.1 as usize,
                             );
                         }
-                        wave_out[chan].push(interp_lin(frac_offset, &points));
+                        wave_out[chan][n] = interp_lin(frac_offset, &points);
                     }
                 }
             }
             Interpolation::Nearest => {
                 let mut point;
                 let mut nearest;
-                for _n in 0..self.chunk_size {
+                for n in 0..self.chunk_size {
                     idx += t_ratio;
                     nearest = get_nearest_time(idx, self.upsample_factor as isize);
                     for (chan, buf) in self.buffer.iter().enumerate() {
@@ -385,7 +385,7 @@ impl<T: Float> ResamplerFixedOut<T> {
                             (nearest.0 + 2 * self.sinc_len as isize) as usize,
                             nearest.1 as usize,
                         );
-                        wave_out[chan].push(point);
+                        wave_out[chan][n] = point;
                     }
                 }
             }
