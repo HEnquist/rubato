@@ -159,9 +159,10 @@ impl<T: Float> ResamplerFixedIn<T> {
 
         let mut wave_out =
             vec![
-                Vec::with_capacity((self.chunk_size as f32 * self.resample_ratio + 10.0) as usize);
+                vec![T::zero(); (self.chunk_size as f32 * self.resample_ratio + 10.0) as usize];
                 self.nbr_channels
             ];
+        let mut n = 0;
 
         match self.interpolation {
             Interpolation::Cubic => {
@@ -182,8 +183,9 @@ impl<T: Float> ResamplerFixedIn<T> {
                                 n.1 as usize,
                             );
                         }
-                        wave_out[chan].push(interp_cubic(frac_offset, &points));
+                        wave_out[chan][n] = interp_cubic(frac_offset, &points);
                     }
+                    n += 1;
                 }
             }
             Interpolation::Linear => {
@@ -204,8 +206,9 @@ impl<T: Float> ResamplerFixedIn<T> {
                                 n.1 as usize,
                             );
                         }
-                        wave_out[chan].push(interp_lin(frac_offset, &points));
+                        wave_out[chan][n] = interp_lin(frac_offset, &points);
                     }
+                    n += 1;
                 }
             }
             Interpolation::Nearest => {
@@ -221,14 +224,18 @@ impl<T: Float> ResamplerFixedIn<T> {
                             (nearest.0 + 2 * self.sinc_len as isize) as usize,
                             nearest.1 as usize,
                         );
-                        wave_out[chan].push(point);
+                        wave_out[chan][n] = point;
                     }
+                    n += 1;
                 }
             }
         }
 
         // store last index for next iteration
         self.last_index = idx - self.chunk_size as f64;
+        for w in wave_out.iter_mut() {
+            w.truncate(n);
+        }
         Ok(wave_out)
     }
 }
