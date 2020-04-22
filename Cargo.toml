@@ -2,8 +2,8 @@
 name = "camillaresampler"
 version = "0.1.0"
 authors = ["HEnquist <henrik.enquist@gmail.com>"]
-description = "Asynchronous resampling intended for audio data"
-license = "GPL-3.0-or-later"
+description = "Asynchronous resampling library intended for audio data"
+license = "MIT"
 repository = "https://github.com/HEnquist/camillaresampler"
 keywords = ["interpolation", "resampling"]
 categories = ["multimedia::audio"]
