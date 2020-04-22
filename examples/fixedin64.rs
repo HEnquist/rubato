@@ -67,24 +67,32 @@ fn main() {
     let mut f_in = Cursor::new(&f_in_ram);
     let mut f_out = Cursor::new(&mut f_out_ram);
 
+    // parameters
+    let sinc_len = 256;
+    let f_cutoff = 0.5f32.powf(16.0/sinc_len as f32);
+
     // Best quality for async
-    //let mut resampler = ResamplerFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, 64, 0.95, 128, Interpolation::Cubic, 1024, channels);
-    // Best quality for async
-    //let mut resampler = ResamplerFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, 64, 0.95, 128, Interpolation::Cubic, 1024, channels);
+    //let mut resampler = ResamplerFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, sinc_len, f_cutoff, 128, Interpolation::Cubic, 1024, channels);
+    
+    // Compromise
+    let mut resampler = ResamplerFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, sinc_len, f_cutoff, 2048, Interpolation::Linear, 1024, channels);
+
+    // fast
+    //let mut resampler = ResamplerFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, sinc_len, f_cutoff, 4096, Interpolation::Nearest, 1024, channels);
 
     // Fast and good for doubling 44100 -> 88200 etc
     //let mut resampler = ResamplerFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, 64, 0.95, 4, Interpolation::Nearest, 1024, channels);
 
     // Fast and good for  44100 -> 48000
-    let mut resampler = ResamplerFixedIn::<f64>::new(
-        fs_out as f32 / fs_in as f32,
-        1024,
-        0.95,
-        160,
-        Interpolation::Nearest,
-        1024,
-        channels,
-    );
+    //let mut resampler = ResamplerFixedIn::<f64>::new(
+    //    fs_out as f32 / fs_in as f32,
+    //    sinc_len,
+    //    f_cutoff,
+    //    160,
+    //    Interpolation::Nearest,
+    //    1024,
+    //    channels,
+    //);
     //
     let num_chunks = f_in_ram.len() / (8 * channels * 1024);
     let start = Instant::now();
