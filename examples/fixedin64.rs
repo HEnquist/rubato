@@ -75,13 +75,13 @@ fn main() {
     //let mut resampler = ResamplerFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, sinc_len, f_cutoff, 128, Interpolation::Cubic, 1024, channels);
     
     // Compromise
-    let mut resampler = ResamplerFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, sinc_len, f_cutoff, 2048, Interpolation::Linear, 1024, channels);
+    //let mut resampler = ResamplerFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, sinc_len, f_cutoff, 2048, Interpolation::Linear, 1024, channels);
 
     // fast
     //let mut resampler = ResamplerFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, sinc_len, f_cutoff, 4096, Interpolation::Nearest, 1024, channels);
 
-    // Fast and good for doubling 44100 -> 88200 etc
-    //let mut resampler = ResamplerFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, 64, 0.95, 4, Interpolation::Nearest, 1024, channels);
+    // Fast and good for 44100 -> 96000 etc
+    let mut resampler = ResamplerFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, sinc_len, f_cutoff, 320, Interpolation::Nearest, 1024, channels);
 
     // Fast and good for  44100 -> 48000
     //let mut resampler = ResamplerFixedIn::<f64>::new(

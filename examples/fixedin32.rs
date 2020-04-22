@@ -67,10 +67,14 @@ fn main() {
     let mut f_in = Cursor::new(&f_in_ram);
     let mut f_out = Cursor::new(&mut f_out_ram);
 
+    // parameters
+    let sinc_len = 256;
+    let f_cutoff = 0.5f32.powf(16.0/sinc_len as f32);
+
     let mut resampler = ResamplerFixedIn::<f32>::new(
         fs_out as f32 / fs_in as f32,
-        64,
-        0.95,
+        sinc_len,
+        f_cutoff,
         128,
         Interpolation::Cubic,
         1024,

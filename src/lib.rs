@@ -7,6 +7,7 @@ use std::fmt;
 
 type Res<T> = Result<T, Box<dyn error::Error>>;
 
+/// Custom error returned by resamplers
 #[derive(Debug)]
 pub struct ResamplerError {
     desc: String,
@@ -32,7 +33,7 @@ impl ResamplerError {
     }
 }
 
-/// Inerpolation format
+/// Interpolation method
 pub enum Interpolation {
     /// Cubic polynomial interpolation. Best for asynchronous resampling but requires calculating four points per output point.
     Cubic,
@@ -75,12 +76,12 @@ pub struct ResamplerFixedOut<T: Float> {
 impl<T: Float> ResamplerFixedIn<T> {
     /// Create a new ResamplerFixedIn
     /// Parameters are:
-    /// resample_ratio: ratio of output and input sample rates
-    /// sinc_len: length of the windowed sinc interpolation filters
-    /// f_cutoff: relative cutoff frequency, to the smaller one of fs_in/2 or fs_out/2
-    /// interpolation: interpolation type
-    /// chunk_size: size of input data in frames
-    /// nbr_channels: number of channels in input/output
+    /// - resample_ratio: ratio of output and input sample rates
+    /// - sinc_len: length of the windowed sinc interpolation filters
+    /// - f_cutoff: relative cutoff frequency, to the smaller one of fs_in/2 or fs_out/2
+    /// - interpolation: interpolation type
+    /// - chunk_size: size of input data in frames
+    /// - nbr_channels: number of channels in input/output
     pub fn new(
         resample_ratio: f32,
         sinc_len: usize,
@@ -243,12 +244,12 @@ impl<T: Float> ResamplerFixedIn<T> {
 impl<T: Float> ResamplerFixedOut<T> {
     /// Create a new ResamplerFixedOut
     /// Parameters are:
-    /// resample_ratio: ratio of output and input sample rates
-    /// sinc_len: length of the windowed sinc interpolation filters
-    /// f_cutoff: relative cutoff frequency, to the smaller one of fs_in/2 or fs_out/2
-    /// interpolation: interpolation type
-    /// chunk_size: size of input data in frames
-    /// nbr_channels: number of channels in input/output
+    /// - resample_ratio: ratio of output and input sample rates
+    /// - sinc_len: length of the windowed sinc interpolation filters
+    /// - f_cutoff: relative cutoff frequency, to the smaller one of fs_in/2 or fs_out/2
+    /// - interpolation: interpolation type
+    /// - chunk_size: size of input data in frames
+    /// - nbr_channels: number of channels in input/output
     pub fn new(
         resample_ratio: f32,
         sinc_len: usize,
