@@ -103,7 +103,7 @@ fn main() {
         if waves[0].len() < nbr_frames {
             break;
         }
-        let waves_out = resampler.resample_chunk(waves).unwrap();
+        let waves_out = resampler.resample_chunk(&waves).unwrap();
         //println!("got {} frames", waves_out[0].len());
         write_frames(waves_out, &mut f_out, channels);
     }

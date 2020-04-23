@@ -127,7 +127,7 @@ impl<T: Float> ResamplerFixedIn<T> {
     }
 
     /// Resample a chunk of audio. Returns a new chunk as a Vec<Vec>>
-    pub fn resample_chunk(&mut self, wave_in: Vec<Vec<T>>) -> Res<Vec<Vec<T>>> {
+    pub fn resample_chunk(&mut self, wave_in: &[Vec<T>]) -> Res<Vec<Vec<T>>> {
         if wave_in.len() != self.nbr_channels {
             return Err(Box::new(ResamplerError::new(
                 "Wrong number of channels in input",
@@ -305,7 +305,7 @@ impl<T: Float> ResamplerFixedOut<T> {
     }
 
     /// Resample a chunk of audio. Returns a new chunk as a Vec<Vec>>
-    pub fn resample_chunk(&mut self, wave_in: Vec<Vec<T>>) -> Res<Vec<Vec<T>>> {
+    pub fn resample_chunk(&mut self, wave_in: &[Vec<T>]) -> Res<Vec<Vec<T>>> {
         //let start = Instant::now();
         //update buffer with new data
         if wave_in.len() != self.nbr_channels {
@@ -655,7 +655,7 @@ mod tests {
         let mut resampler =
             ResamplerFixedIn::<f64>::new(1.2, 64, 0.95, 16, Interpolation::Cubic, 1024, 2);
         let waves = vec![vec![0.0f64; 1024]; 2];
-        let out = resampler.resample_chunk(waves).unwrap();
+        let out = resampler.resample_chunk(&waves).unwrap();
         assert_eq!(out.len(), 2);
         assert!(out[0].len() > 1150 && out[0].len() < 1250);
     }
@@ -668,7 +668,7 @@ mod tests {
         println!("{}", frames);
         assert!(frames > 800 && frames < 900);
         let waves = vec![vec![0.0f64; frames]; 2];
-        let out = resampler.resample_chunk(waves).unwrap();
+        let out = resampler.resample_chunk(&waves).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 1024);
     }
