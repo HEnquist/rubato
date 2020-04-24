@@ -29,7 +29,7 @@
 //!
 //! ## Compatibility
 //!
-//! The `camillaresampler` crate only depend on the `num` crate and should work with any rustc version that crate supports.
+//! The `camillaresampler` crate only depends on the `num` crate and should work with any rustc version that crate supports.
 
 use num::traits::Float;
 use std::error;
@@ -63,15 +63,36 @@ impl ResamplerError {
     }
 }
 
-/// Interpolation methods that can be selected.
+/// Interpolation methods that can be selected. For asynchronous interpolation where the
+/// ratio between inut and output sample rates can be any number, it's not possible to
+/// pre-calculate all the needed interpolation filters.
+/// Instead they have to be computed as needed, which becomes impractical since the
+/// sincs are very expensive to generate in terms of cpu time.
+/// It's more efficient to combine the sinc filters with some other interpolation technique.
+/// Then sinc filters are used to provide a fixed number of interpolated points between input samples,
+/// and then the new value is calculated by interpolation between those points.
+
 pub enum Interpolation {
-    /// Cubic polynomial interpolation. Best for asynchronous resampling
-    /// but requires calculating four points per output point.
+    /// For cubic interpolation, the four nearest intermediate points are calculated
+    /// using sinc interpolation.
+    /// Then a cubic polynomial is fitted to these points, and is then used to calculate the new sample value.
+    /// The computation time as about twice the one for linear interpolation,
+    /// but it requires much fewer intermediate points for a good result.
     Cubic,
-    /// Linear interpolation. About a factor 2 faster than Cubic, but is less accurate.
+    /// With linear interpolation the new sample value is calculated by linear interpolation
+    /// between the two nearest points.
+    /// This requires two intermediate points to be calcuated using sinc interpolation,
+    /// and te output is a weighted average of these two.
+    /// This is relatively fast, but needs a large number of intermediate points to
+    /// push the resampling artefacts below the noise floor.
     Linear,
-    /// No interpolation, just pick nearest point. Suitable for synchronous resampling
-    /// if the resampling ration can be expressed as a fraction, for example 48000/44100 = 160/147
+    /// The Nearest mode doesn't do any interpolation, but simply picks the nearest intermediate point.
+    /// This is useful when the nearest point is actually the correct one, for example when upsampling by a factor 2,
+    /// like 48kHz->96kHz.
+    /// Then setting the upsample_factor to 2, and using Nearest mode,
+    /// no unneccesary computations are performed and the result is the same as for synchronous resampling.
+    /// This also works for other ratios that can be expressed by a fraction. For 44.1kHz -> 48 kHz,
+    /// setting upsample_factor to 160 gives the desired result (since 48kHz = 160/147 * 44.1kHz).
     Nearest,
 }
 
@@ -267,12 +288,19 @@ impl<T: Float> SincFixedIn<T> {
     /// Create a new SincFixedIn
     ///
     /// Parameters are:
-    /// - resample_ratio: ratio of output and input sample rates
-    /// - sinc_len: length of the windowed sinc interpolation filters
-    /// - f_cutoff: relative cutoff frequency, to the smaller one of fs_in/2 or fs_out/2
-    /// - interpolation: interpolation type
-    /// - chunk_size: size of input data in frames
-    /// - nbr_channels: number of channels in input/output
+    /// - `resample_ratio`: The number of intermediate points go use for interpolation.
+    ///   Higher values use more memory for storing the sinc filters.
+    ///   Only the points actually needed are calculated dusing processing
+    ///   so a larger number does not directly lead to higher cpu usage.
+    ///   But keeping it down helps in keeping the sincs in the cpu cache. Start at 128.
+    /// - `sinc_len`: Length of the windowed sinc interpolation filter.
+    ///   Higher values can allow a higher cut-off frequency leading to less high frequency roll-off
+    ///   at the expense of higher cpu usage. 256 is a good starting point.
+    /// - `f_cutoff`: Relative cutoff frequency of the sinc interpolation filter
+    ///   (relative to the lowest one of fs_in/2 or fs_out/2). Start at 0.95, and increase if needed.
+    /// - `interpolation`: Interpolation type, see `Interpolation`
+    /// - `chunk_size`: size of input data in frames
+    /// - `nbr_channels`: number of channels in input/output
     pub fn new(
         resample_ratio: f32,
         sinc_len: usize,
@@ -308,12 +336,19 @@ impl<T: Float> SincFixedOut<T> {
     /// Create a new SincFixedOut
     ///
     /// Parameters are:
-    /// - resample_ratio: ratio of output and input sample rates
-    /// - sinc_len: length of the windowed sinc interpolation filters
-    /// - f_cutoff: relative cutoff frequency, to the smaller one of fs_in/2 or fs_out/2
-    /// - interpolation: interpolation type
-    /// - chunk_size: size of input data in frames
-    /// - nbr_channels: number of channels in input/output
+    /// - `resample_ratio`: The number of intermediate points go use for interpolation.
+    ///   Higher values use more memory for storing the sinc filters.
+    ///   Only the points actually needed are calculated dusing processing
+    ///   so a larger number does not directly lead to higher cpu usage.
+    ///   But keeping it down helps in keeping the sincs in the cpu cache. Start at 128.
+    /// - `sinc_len`: Length of the windowed sinc interpolation filter.
+    ///   Higher values can allow a higher cut-off frequency leading to less high frequency roll-off
+    ///   at the expense of higher cpu usage. 256 is a good starting point.
+    /// - `f_cutoff`: Relative cutoff frequency of the sinc interpolation filter
+    ///   (relative to the lowest one of fs_in/2 or fs_out/2). Start at 0.95, and increase if needed.
+    /// - `interpolation`: Interpolation type, see `Interpolation`
+    /// - `chunk_size`: size of output data in frames
+    /// - `nbr_channels`: number of channels in input/output
     pub fn new(
         resample_ratio: f32,
         sinc_len: usize,
