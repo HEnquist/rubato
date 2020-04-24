@@ -1,5 +1,5 @@
 extern crate camillaresampler;
-use camillaresampler::{Interpolation, ResamplerFixedIn, Resampler};
+use camillaresampler::{Interpolation, Resampler, SincFixedIn};
 use std::convert::TryInto;
 use std::env;
 use std::fs::File;
@@ -69,9 +69,9 @@ fn main() {
 
     // parameters
     let sinc_len = 256;
-    let f_cutoff = 0.5f32.powf(16.0/sinc_len as f32);
+    let f_cutoff = 0.5f32.powf(16.0 / sinc_len as f32);
 
-    let mut resampler = ResamplerFixedIn::<f32>::new(
+    let mut resampler = SincFixedIn::<f32>::new(
         fs_out as f32 / fs_in as f32,
         sinc_len,
         f_cutoff,

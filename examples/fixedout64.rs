@@ -1,5 +1,5 @@
 extern crate camillaresampler;
-use camillaresampler::{Interpolation, ResamplerFixedOut, Resampler};
+use camillaresampler::{Interpolation, Resampler, SincFixedOut};
 use std::convert::TryInto;
 use std::env;
 use std::fs::File;
@@ -70,7 +70,7 @@ fn main() {
     let mut f_out = Cursor::new(&mut f_out_ram);
 
     // Best quality for async
-    //let mut resampler = ResamplerFixedOut::<f64>::new(
+    //let mut resampler = SincFixedOut::<f64>::new(
     //    fs_out as f32 / fs_in as f32,
     //    64,
     //    0.95,
@@ -81,10 +81,10 @@ fn main() {
     //);
 
     // Fast and good for doubling 44100 -> 88200 etc
-    //let mut resampler = ResamplerFixedOut::<f64>::new(fs_out as f32 / fs_in as f32, 64, 0.95, 4, Interpolation::Nearest, 1024, channels);
+    //let mut resampler = SincFixedOut::<f64>::new(fs_out as f32 / fs_in as f32, 64, 0.95, 4, Interpolation::Nearest, 1024, channels);
 
     // Fast and good for  44100 -> 48000
-    let mut resampler = ResamplerFixedOut::<f64>::new(
+    let mut resampler = SincFixedOut::<f64>::new(
         fs_out as f32 / fs_in as f32,
         64,
         0.95,

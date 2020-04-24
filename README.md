@@ -9,15 +9,15 @@ Audio data is processed in chunks. Two implementations are provided, one that ac
 
 Fixed input size
 ---
-Create a ResamplerFixedIn:
+Create a SincFixedIn:
 ```
-let mut resampler = ResamplerFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, 64, 0.95, 128, Interpolation::Cubic, 1024, 2);
+let mut resampler = SincFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, 64, 0.95, 128, Interpolation::Cubic, 1024, 2);
 let waves_out = resampler.resample_chunk(waves_in);
 ```
 
-The arguments for creating a ResamplerFixed in are:
+The arguments for creating a SincFixed in are:
 ```
-ResamplerFixedIn::new(resample_ratio: f32, sinc_len: usize, f_cutoff: f32, upsample_factor: usize, interpolation: Interpolation, chunk_size: usize, nbr_channels: usize)
+SincFixedIn::new(resample_ratio: f32, sinc_len: usize, f_cutoff: f32, upsample_factor: usize, interpolation: Interpolation, chunk_size: usize, nbr_channels: usize)
    
 ```
 - resample_ratio: Ratio, rate_out/rate_in

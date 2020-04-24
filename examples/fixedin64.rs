@@ -1,5 +1,5 @@
 extern crate camillaresampler;
-use camillaresampler::{Interpolation, ResamplerFixedIn, Resampler};
+use camillaresampler::{Interpolation, Resampler, SincFixedIn};
 use std::convert::TryInto;
 use std::env;
 use std::fs::File;
@@ -69,22 +69,30 @@ fn main() {
 
     // parameters
     let sinc_len = 256;
-    let f_cutoff = 0.5f32.powf(16.0/sinc_len as f32);
+    let f_cutoff = 0.5f32.powf(16.0 / sinc_len as f32);
 
     // Best quality for async
-    //let mut resampler = ResamplerFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, sinc_len, f_cutoff, 128, Interpolation::Cubic, 1024, channels);
-    
+    //let mut resampler = SincFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, sinc_len, f_cutoff, 128, Interpolation::Cubic, 1024, channels);
+
     // Compromise
-    //let mut resampler = ResamplerFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, sinc_len, f_cutoff, 2048, Interpolation::Linear, 1024, channels);
+    //let mut resampler = SincFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, sinc_len, f_cutoff, 2048, Interpolation::Linear, 1024, channels);
 
     // fast
-    //let mut resampler = ResamplerFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, sinc_len, f_cutoff, 4096, Interpolation::Nearest, 1024, channels);
+    //let mut resampler = SincFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, sinc_len, f_cutoff, 4096, Interpolation::Nearest, 1024, channels);
 
     // Fast and good for 44100 -> 96000 etc
-    let mut resampler = ResamplerFixedIn::<f64>::new(fs_out as f32 / fs_in as f32, sinc_len, f_cutoff, 320, Interpolation::Nearest, 1024, channels);
+    let mut resampler = SincFixedIn::<f64>::new(
+        fs_out as f32 / fs_in as f32,
+        sinc_len,
+        f_cutoff,
+        320,
+        Interpolation::Nearest,
+        1024,
+        channels,
+    );
 
     // Fast and good for  44100 -> 48000
-    //let mut resampler = ResamplerFixedIn::<f64>::new(
+    //let mut resampler = SincFixedIn::<f64>::new(
     //    fs_out as f32 / fs_in as f32,
     //    sinc_len,
     //    f_cutoff,
