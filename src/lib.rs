@@ -1,9 +1,44 @@
+//! An audio sample rate conversion library for Rust.
+//!
+//! This library provides resamplers to process audio in chunks.
+//! The ratio between input and output sample rates is completely free.
+//! Implementations are available that accept a fixed length input
+//! while returning a variable length output, and vice versa.
+//! The resampling is based on band-limited interpolation using sinc
+//! interpolation filters. The sinc interpolation upsamples by an adjustable factor,
+//! and then the new sample points are calculated by interpolating between these points.
+//!
+//! ## Example
+//! Resample an audio file from 44100 to 48000 Hz.
+//! This code is taken from the "fixedin64" example.
+//! The functions "read_frames" and "write_frames" are simple
+//! helpers that are used to read and write audio data from/to buffers.
+//! See the example source for details.
+//! ```
+//! let mut resampler = SincFixedIn::<f64>::new(
+//!     fs_out as f32 / fs_in as f32,
+//!     256,
+//!     0.95,
+//!     160,
+//!     Interpolation::Nearest,
+//!     1024,
+//!     2,
+//! );
+//!
+//! for _chunk in 0..num_chunks {
+//!     let waves_in = read_frames(&mut f_in, 1024, 2);
+//!     let waves_out = resampler.process(&waves_in).unwrap();
+//!     write_frames(waves_out, &mut f_out, 2);
+//! }
+//! ```
+//!
+//! ## Compatibility
+//!
+//! The `camillaresampler` crate only depend on the `num` crate and should work with any rustc version that crate supports.
+
 use num::traits::Float;
 use std::error;
 use std::fmt;
-//use num::traits::NumCast;
-//type Float = f64;
-//use std::time::{Duration, Instant};
 
 type Res<T> = Result<T, Box<dyn error::Error>>;
 
@@ -115,7 +150,6 @@ impl<T: Float> Resampler<T> for SincFixedIn<T> {
             )));
         }
         let end_idx = self.chunk_size as isize - (self.sinc_len as isize + 1);
-        //let start = Instant::now();
         //update buffer with new data
         for wav in self.buffer.iter_mut() {
             for idx in 0..(2 * self.sinc_len) {
@@ -127,9 +161,6 @@ impl<T: Float> Resampler<T> for SincFixedIn<T> {
                 self.buffer[chan][idx + 2 * self.sinc_len] = *sample;
             }
         }
-
-        //let duration = start.elapsed();
-        //println!("copy: {:?}", duration);
 
         let mut idx = self.last_index;
         let t_ratio = 1.0 / self.resample_ratio as f64;
@@ -352,7 +383,6 @@ impl<T: Float> Resampler<T> for SincFixedOut<T> {
     /// equal to the number of channels defined when creating the instance,
     /// and the number of audio frames given by "nbr_frames"required".
     fn process(&mut self, wave_in: &[Vec<T>]) -> Res<Vec<Vec<T>>> {
-        //let start = Instant::now();
         //update buffer with new data
         if wave_in.len() != self.nbr_channels {
             return Err(Box::new(ResamplerError::new(
@@ -446,25 +476,16 @@ impl<T: Float> Resampler<T> for SincFixedOut<T> {
         }
 
         // store last index for next iteration
-
-        //println!("chunk: {}, capture_len: {}, prev len: {}".format(chunk, capture_len, len(prev)))
         self.last_index = idx - self.current_buffer_fill as f64;
-        //println!("last_idx: {}".format(last_idx))
-        //println!("adjust: {}".format(int(last_idx + 2*sinclen)))
         self.needed_input_size = (self.needed_input_size as isize
             + self.last_index.round() as isize
             + self.sinc_len as isize) as usize;
-        //println!(
-        //    "idx {}, last index {}, needed len {}",
-        //    idx, self.last_index, self.needed_input_size
-        //);
         Ok(wave_out)
     }
 }
 
 /// Helper function. Standard Blackman-Harris window
 fn blackman_harris<T: Float>(npoints: usize) -> Vec<T> {
-    // blackman-harris window
     let mut window = vec![T::zero(); npoints];
     let pi2 = T::from(2.0 * std::f64::consts::PI).unwrap();
     let pi4 = T::from(4.0 * std::f64::consts::PI).unwrap();
@@ -506,7 +527,6 @@ fn make_sincs<T: Float>(npoints: usize, factor: usize, f_cutoff: f32) -> Vec<Vec
             );
         y.push(val);
     }
-    //println!("{:?}",y);
     let mut sincs = vec![vec![T::zero(); npoints]; factor];
     for p in 0..npoints {
         for n in 0..factor {
@@ -519,7 +539,6 @@ fn make_sincs<T: Float>(npoints: usize, factor: usize, f_cutoff: f32) -> Vec<Vec
 /// Perform cubic polynomial interpolation to get value at x.
 /// Input points are assumed to be at x = -1, 0, 1, 2
 fn interp_cubic<T: Float>(x: T, yvals: &[T]) -> T {
-    //fit a cubic polynimial to four points (at x=0..3), return interpolated at x
     let a0 = yvals[1];
     let a1 = -T::from(1.0 / 3.0).unwrap() * yvals[0] - T::from(0.5).unwrap() * yvals[1] + yvals[2]
         - T::from(1.0 / 6.0).unwrap() * yvals[3];
@@ -531,18 +550,16 @@ fn interp_cubic<T: Float>(x: T, yvals: &[T]) -> T {
 
 /// Linear interpolation between two points at x=0 and x=1
 fn interp_lin<T: Float>(x: T, yvals: &[T]) -> T {
-    //linear interpolation
     (T::one() - x) * yvals[0] + x * yvals[1]
 }
 
-/// Calculate the scalar produt of an input wave and the elected sinc filter
+/// Calculate the scalar produt of an input wave and the selected sinc filter
 fn get_sinc_interpolated<T: Float>(
     wave: &[T],
     sincs: &[Vec<T>],
     index: usize,
     subindex: usize,
 ) -> T {
-    // get the sinc-interpolated point at index:subindex
     wave.iter()
         .skip(index)
         .take(sincs[subindex].len())
@@ -552,7 +569,6 @@ fn get_sinc_interpolated<T: Float>(
 
 /// Get the two nearest time points for time t in format (index, subindex)
 fn get_nearest_times_2<T: Float>(t: T, factor: isize, points: &mut [(isize, isize)]) {
-    // Get nearest sample time points, as index:subindex
     let mut index = t.floor().to_isize().unwrap();
     let mut subindex = ((t - t.floor()) * T::from(factor).unwrap())
         .floor()
@@ -569,13 +585,11 @@ fn get_nearest_times_2<T: Float>(t: T, factor: isize, points: &mut [(isize, isiz
 
 /// Get the four nearest time points for time t in format (index, subindex).
 fn get_nearest_times_4<T: Float>(t: T, factor: isize, points: &mut [(isize, isize)]) {
-    // Get nearest sample time points, as index:subindex
     let start = t.floor().to_isize().unwrap();
     let frac = ((t - t.floor()) * T::from(factor).unwrap())
         .floor()
         .to_isize()
         .unwrap();
-    //let mut times = Vec::new();
     let mut index;
     let mut subindex;
     for (idx, sub) in (-1..3).enumerate() {
@@ -594,7 +608,6 @@ fn get_nearest_times_4<T: Float>(t: T, factor: isize, points: &mut [(isize, isiz
 
 /// Get the nearest time point for time t in format (index, subindex).
 fn get_nearest_time<T: Float>(t: T, factor: isize) -> (isize, isize) {
-    // Get nearest sample time points, as index:subindex
     let mut index = t.floor().to_isize().unwrap();
     let mut subindex = ((t - t.floor()) * T::from(factor).unwrap())
         .round()
