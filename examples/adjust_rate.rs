@@ -70,33 +70,31 @@ fn main() {
     let mut f_out = Cursor::new(&mut f_out_ram);
 
     // Best quality for async
-    //let mut resampler = ResamplerFixedOut::<f64>::new(
-    //    fs_out as f32 / fs_in as f32,
-    //    64,
-    //    0.95,
-    //    128,
-    //    Interpolation::Cubic,
-    //    1024,
-    //    channels,
-    //);
+    let mut resampler = ResamplerFixedOut::<f64>::new(
+        fs_out as f32 / fs_in as f32,
+        64,
+        0.95,
+        128,
+        Interpolation::Cubic,
+        1024,
+        channels,
+    );
 
     // Fast and good for doubling 44100 -> 88200 etc
     //let mut resampler = ResamplerFixedOut::<f64>::new(fs_out as f32 / fs_in as f32, 64, 0.95, 4, Interpolation::Nearest, 1024, channels);
 
     // Fast and good for  44100 -> 48000
-    let mut resampler = ResamplerFixedOut::<f64>::new(
-        fs_out as f32 / fs_in as f32,
-        64,
-        0.95,
-        320,
-        Interpolation::Nearest,
-        1024,
-        channels,
-    );
+    //let mut resampler = ResamplerFixedOut::<f64>::new(fs_out as f32 / fs_in as f32, 64, 0.95, 160, Interpolation::Nearest, 1024, channels);
 
     let start = Instant::now();
+    let mut idx = 0;
     loop {
         //let start2 = Instant::now();
+        if idx == 48 {
+            resampler
+                .set_resample_ratio(1.00001 * fs_out as f32 / fs_in as f32)
+                .unwrap();
+        }
         let nbr_frames = resampler.nbr_frames_needed();
         let waves = read_frames(&mut f_in, nbr_frames, channels);
         //println!("Read took: {:?}", start2.elapsed());
@@ -106,6 +104,7 @@ fn main() {
         let waves_out = resampler.process(&waves).unwrap();
         //println!("got {} frames", waves_out[0].len());
         write_frames(waves_out, &mut f_out, channels);
+        idx += 1;
     }
 
     let duration = start.elapsed();

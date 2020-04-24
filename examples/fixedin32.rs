@@ -1,5 +1,5 @@
 extern crate camillaresampler;
-use camillaresampler::{Interpolation, ResamplerFixedIn};
+use camillaresampler::{Interpolation, ResamplerFixedIn, Resampler};
 use std::convert::TryInto;
 use std::env;
 use std::fs::File;
@@ -87,7 +87,7 @@ fn main() {
     let start = Instant::now();
     for _chunk in 0..num_chunks {
         let waves = read_frames(&mut f_in, 1024, 2);
-        let waves_out = resampler.resample_chunk(&waves).unwrap();
+        let waves_out = resampler.process(&waves).unwrap();
         write_frames(waves_out, &mut f_out, 2);
     }
 
