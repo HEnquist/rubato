@@ -9,14 +9,12 @@
 //! and then the new sample points are calculated by interpolating between these points.
 //!
 //! ## Example
-//! Resample an audio file from 44100 to 48000 Hz.
-//! This code is taken from the "fixedin64" example.
-//! The functions "read_frames" and "write_frames" are simple
-//! helpers that are used to read and write audio data from/to buffers.
-//! See the example source for details.
+//! Resample a single chunk of a dummy audio file from 44100 to 48000 Hz.
+//! See also the "fixedin64" example that can be used to process a file from disk.
 //! ```
+//! use camillaresampler::{Resampler, SincFixedIn, Interpolation};
 //! let mut resampler = SincFixedIn::<f64>::new(
-//!     fs_out as f32 / fs_in as f32,
+//!     48000 as f32 / 44100 as f32,
 //!     256,
 //!     0.95,
 //!     160,
@@ -25,11 +23,8 @@
 //!     2,
 //! );
 //!
-//! for _chunk in 0..num_chunks {
-//!     let waves_in = read_frames(&mut f_in, 1024, 2);
-//!     let waves_out = resampler.process(&waves_in).unwrap();
-//!     write_frames(waves_out, &mut f_out, 2);
-//! }
+//! let waves_in = vec![vec![0.0f64; 1024];2];
+//! let waves_out = resampler.process(&waves_in).unwrap();
 //! ```
 //!
 //! ## Compatibility
