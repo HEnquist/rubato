@@ -40,7 +40,7 @@ def plot_spect(indata, window=True):
         #plt.gca().set(xlim=(10, srate/2.0))
         #plt.subplot(2,1,2)
         plt.figure(2)
-        plt.plot(t, wf)
+        plt.plot(t, wf, marker='.')
     plt.show()
 
 file_in = sys.argv[1]

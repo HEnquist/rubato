@@ -141,6 +141,25 @@ pub struct SincFixedOut<T: Float> {
     interpolation: Interpolation,
 }
 
+/// A resampler that accepts a fixed number of audio chunks for input
+/// and returns a variable number of frames.
+///
+/// The resampling is done by interpolation with Lagrange polynomials. 
+/// The number of points is adjustable.
+/// This type of interpolation is fast and works well if the target 
+/// sample rate is equal to or larger that the source sample rate. 
+/// It does not provide the low-pass filtering that is necessary to
+/// reduce the sample rate without aliasing issues.  
+pub struct LagrangeFixedIn<T: Float> {
+    nbr_channels: usize,
+    chunk_size: usize,
+    last_index: f64,
+    resample_ratio: f32,
+    resample_ratio_original: f32,
+    order: usize,
+    buffer: Vec<Vec<T>>,
+}
+
 /// A resampler that us used to resample a chunk of audio to a new sample rate.
 /// The rate can be adjusted as required.
 pub trait Resampler<T: Float> {
@@ -295,7 +314,8 @@ impl<T: Float> SincFixedIn<T> {
     /// Create a new SincFixedIn
     ///
     /// Parameters are:
-    /// - `resample_ratio`: The number of intermediate points go use for interpolation.
+    /// - `resample_ratio`: The output sample rate divided by the input sample rate.
+    /// - `upsample_factor`: The number of intermediate points go use for interpolation.
     ///   Higher values use more memory for storing the sinc filters.
     ///   Only the points actually needed are calculated dusing processing
     ///   so a larger number does not directly lead to higher cpu usage.
@@ -343,7 +363,8 @@ impl<T: Float> SincFixedOut<T> {
     /// Create a new SincFixedOut
     ///
     /// Parameters are:
-    /// - `resample_ratio`: The number of intermediate points go use for interpolation.
+    /// - `resample_ratio`: The output sample rate divided by the input sample rate.
+    /// - `upsample_factor`: The number of intermediate points go use for interpolation.
     ///   Higher values use more memory for storing the sinc filters.
     ///   Only the points actually needed are calculated dusing processing
     ///   so a larger number does not directly lead to higher cpu usage.
@@ -386,6 +407,33 @@ impl<T: Float> SincFixedOut<T> {
             sincs,
             buffer,
             interpolation,
+        }
+    }
+}
+
+impl<T: Float> LagrangeFixedIn<T> {
+    /// Create a new LagrangeFixedIn
+    ///
+    /// Parameters are:
+    /// - `resample_ratio`: The output sample rate divided by the input sample rate.
+    /// - `order`: The polynomial order to use. Larger values give better results but use more CPU time.
+    /// - `chunk_size`: size of input data in frames
+    /// - `nbr_channels`: number of channels in input/output
+    pub fn new(
+        resample_ratio: f32,
+        order: usize,
+        chunk_size: usize,
+        nbr_channels: usize,
+    ) -> Self {
+        let buffer = vec![vec![T::zero(); chunk_size + 2 * order]; nbr_channels];
+        LagrangeFixedIn {
+            nbr_channels,
+            order,
+            chunk_size,
+            last_index: -(order as f64),
+            resample_ratio,
+            resample_ratio_original: resample_ratio,
+            buffer,
         }
     }
 }
@@ -520,6 +568,97 @@ impl<T: Float> Resampler<T> for SincFixedOut<T> {
         Ok(wave_out)
     }
 }
+
+
+impl<T: Float> Resampler<T> for LagrangeFixedIn<T> {
+    /// Resample a chunk of audio. The input length is fixed, and the output varies in length.
+    /// # Errors
+    ///
+    /// The function returns an error if the length of the input data is not equal
+    /// to the number of channels and chunk size defined when creating the instance.
+    fn process(&mut self, wave_in: &[Vec<T>]) -> Res<Vec<Vec<T>>> {
+        if wave_in.len() != self.nbr_channels {
+            return Err(Box::new(ResamplerError::new(
+                "Wrong number of channels in input",
+            )));
+        }
+        if wave_in[0].len() != self.chunk_size {
+            return Err(Box::new(ResamplerError::new(
+                "Wrong number of frames in input",
+            )));
+        }
+        let end_idx = self.chunk_size as isize - (self.order as isize + 1);
+        //update buffer with new data
+        for wav in self.buffer.iter_mut() {
+            for idx in 0..(2 * self.order) {
+                wav[idx] = wav[idx + self.chunk_size];
+            }
+        }
+        for (chan, wav) in wave_in.iter().enumerate() {
+            for (idx, sample) in wav.iter().enumerate() {
+                self.buffer[chan][idx + 2 * self.order] = *sample;
+            }
+        }
+
+        let mut idx = self.last_index;
+        let t_ratio = 1.0 / self.resample_ratio as f64;
+
+        let mut wave_out =
+            vec![
+                vec![T::zero(); (self.chunk_size as f32 * self.resample_ratio + 10.0) as usize];
+                self.nbr_channels
+            ];
+        let mut n = 0;
+
+        
+        let mut point;
+        let mut nearest;
+        let mut start;
+        let mut end;
+        let mut idx_rel;
+        while idx < end_idx as f64 {
+            idx += t_ratio;
+            nearest = (idx.floor() + (2*self.order) as f64) as usize;
+            start = nearest - self.order/2 + 1;
+            end = start + self.order;
+            idx_rel = idx - start as f64 + (2*self.order) as f64;
+            //println!("idx {}, nearest {}, start {}, end {}, idx_rel {}", idx, nearest, start, end, idx_rel);
+            for (chan, buf) in self.buffer.iter().enumerate() {
+                point = interp_lagrange(idx_rel, &buf[start..end]);
+                wave_out[chan][n] = point;
+            }
+            n += 1;
+        }
+
+        // store last index for next iteration
+        self.last_index = idx - self.chunk_size as f64;
+        for w in wave_out.iter_mut() {
+            w.truncate(n);
+        }
+        Ok(wave_out)
+    }
+
+    /// Update the resample ratio. New value must be within +-10% of the original one
+    fn set_resample_ratio(&mut self, new_ratio: f32) -> Res<()> {
+        if (new_ratio / self.resample_ratio_original > 0.9)
+            && (new_ratio / self.resample_ratio_original < 1.1)
+        {
+            self.resample_ratio = new_ratio;
+            Ok(())
+        } else {
+            Err(Box::new(ResamplerError::new(
+                "New resample ratio is too far off from original",
+            )))
+        }
+    }
+
+    /// Query for the number of frames needed for the next call to "process".
+    /// Will always return the chunk_size defined when creating the instance.
+    fn nbr_frames_needed(&self) -> usize {
+        self.chunk_size
+    }
+}
+
 
 /// Helper function. Standard Blackman-Harris window
 fn blackman_harris<T: Float>(npoints: usize) -> Vec<T> {
@@ -657,6 +796,26 @@ fn get_nearest_time<T: Float>(t: T, factor: isize) -> (isize, isize) {
     (index, subindex)
 }
 
+/// Helper function for Lagrange polynomials
+fn cj<T: Float>(x: f64, j: isize, m: isize) -> T {
+    let mut out = T::one();
+    let xj = T::from(j).unwrap();
+    for xm in (0..m).filter(|xx| *xx != j).map(|xx| T::from(xx).unwrap()) {
+        out = out*(T::from(x).unwrap()-xm)/(xj-xm);
+    }
+    out
+}
+
+/// Fit a Lagrange polynomial of order n to the n points in `yvals`, assumed to be located at x=0..n-1. Return interpolated at xi.
+fn interp_lagrange<T: Float>(xi: f64, yvals: &[T]) -> T {
+    let mut val = T::zero();
+    let m = yvals.len() as isize;
+    for (j, y) in yvals.iter().enumerate() {
+        val = val + *y*cj(xi,j as isize, m);
+    }
+    val
+}
+
 #[cfg(test)]
 mod tests {
     use crate::blackman_harris;
@@ -665,6 +824,7 @@ mod tests {
     use crate::get_nearest_times_4;
     use crate::interp_cubic;
     use crate::interp_lin;
+    use crate::interp_lagrange;
     use crate::make_sincs;
     use crate::Interpolation;
     use crate::Resampler;
@@ -769,5 +929,24 @@ mod tests {
         let out = resampler.process(&waves).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 1024);
+    }
+
+    #[test]
+    fn int_lagrange() {
+        let yvals = vec![0.0f64, 2.0f64, 4.0f64, 6.0f64, 8.0f64];
+        let interp = interp_lagrange(2.5f64, &yvals);
+        assert_eq!(interp, 5.0f64);
+    }
+
+
+    #[test]
+    fn int_lagrange_lin() {
+        let yvals = vec![5.0f64, 6.0f64];
+        let interp = interp_lagrange(0.5f64, &yvals);
+        assert_eq!(interp, 5.5f64);
+        let interp = interp_lagrange(0.0f64, &yvals);
+        assert_eq!(interp, 5.0f64);
+        let interp = interp_lagrange(1.0f64, &yvals);
+        assert_eq!(interp, 6.0f64);
     }
 }
