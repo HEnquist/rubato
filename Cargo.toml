@@ -1,10 +1,10 @@
 [package]
-name = "camillaresampler"
+name = "rubato"
 version = "0.1.0"
 authors = ["HEnquist <henrik.enquist@gmail.com>"]
 description = "Asynchronous resampling library intended for audio data"
 license = "MIT"
-repository = "https://github.com/HEnquist/camillaresampler"
+repository = "https://github.com/HEnquist/rubato"
 keywords = ["interpolation", "resampling"]
 categories = ["multimedia::audio"]
 readme = "README.md"

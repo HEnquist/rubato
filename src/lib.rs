@@ -19,7 +19,7 @@
 //! Resample a single chunk of a dummy audio file from 44100 to 48000 Hz.
 //! See also the "fixedin64" example that can be used to process a file from disk.
 //! ```
-//! use camillaresampler::{Resampler, SincFixedIn, Interpolation};
+//! use rubato::{Resampler, SincFixedIn, Interpolation};
 //! let mut resampler = SincFixedIn::<f64>::new(
 //!     48000 as f32 / 44100 as f32,
 //!     256,
@@ -36,7 +36,7 @@
 //!
 //! ## Compatibility
 //!
-//! The `camillaresampler` crate only depends on the `num` crate and should work with any rustc version that crate supports.
+//! The `rubato` crate only depends on the `num` crate and should work with any rustc version that crate supports.
 
 use num::traits::Float;
 use std::error;

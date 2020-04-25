@@ -1,5 +1,5 @@
-extern crate camillaresampler;
-use camillaresampler::{Interpolation, Resampler, SincFixedIn};
+extern crate rubato;
+use rubato::{Interpolation, Resampler, SincFixedIn};
 use std::convert::TryInto;
 use std::env;
 use std::fs::File;
