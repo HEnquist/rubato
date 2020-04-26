@@ -151,6 +151,9 @@ pub trait Resampler<T: Float> {
     /// Update the resample ratio. New value must be within +-10% of the original one.
     fn set_resample_ratio(&mut self, new_ratio: f32) -> Res<()>;
 
+    /// Update the resample ratio relative to the original one. Must be in the range 0.9 - 1.1.
+    fn set_resample_ratio_relative(&mut self, rel_ratio: f32) -> Res<()>;
+
     /// Query for the number of frames needed for the next call to "process".
     fn nbr_frames_needed(&self) -> usize;
 }
@@ -283,6 +286,11 @@ impl<T: Float> Resampler<T> for SincFixedIn<T> {
             )))
         }
     }
+    /// Update the resample ratio relative to the original one
+    fn set_resample_ratio_relative(&mut self, rel_ratio: f32) -> Res<()> {
+        let new_ratio = self.resample_ratio * rel_ratio;
+        self.set_resample_ratio(new_ratio)
+    }
 
     /// Query for the number of frames needed for the next call to "process".
     /// Will always return the chunk_size defined when creating the instance.
@@ -410,6 +418,12 @@ impl<T: Float> Resampler<T> for SincFixedOut<T> {
                 "New resample ratio is too far off from original",
             )))
         }
+    }
+
+    /// Update the resample ratio relative to the original one
+    fn set_resample_ratio_relative(&mut self, rel_ratio: f32) -> Res<()> {
+        let new_ratio = self.resample_ratio * rel_ratio;
+        self.set_resample_ratio(new_ratio)
     }
 
     /// Resample a chunk of audio. The required input length is provided by
