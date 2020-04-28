@@ -91,12 +91,8 @@ fn main() {
         window: WindowFunction::BlackmanHarris2,
     };
     // Fast and good for  44100 -> 48000
-    let mut resampler = SincFixedOut::<f64>::new(
-        fs_out as f32 / fs_in as f32,
-        params,
-        1024,
-        channels,
-    );
+    let mut resampler =
+        SincFixedOut::<f64>::new(fs_out as f32 / fs_in as f32, params, 1024, channels);
 
     let start = Instant::now();
     loop {

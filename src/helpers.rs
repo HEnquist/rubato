@@ -1,5 +1,5 @@
-use num::traits::Float;
 use crate::WindowFunction;
+use num::traits::Float;
 
 /// Calculate the scalar produt of an input wave and the selected sinc filter
 pub fn get_sinc_interpolated<T: Float>(
@@ -58,7 +58,7 @@ pub fn hann<T: Float>(npoints: usize) -> Vec<T> {
     let a = T::from(0.5).unwrap();
     for (x, item) in window.iter_mut().enumerate() {
         let x_float = T::from(x).unwrap();
-        *item = a - a * (pi2 * x_float / np_f).cos(); 
+        *item = a - a * (pi2 * x_float / np_f).cos();
     }
     window
 }
@@ -75,7 +75,9 @@ pub fn sinc<T: Float>(value: T) -> T {
 
 fn make_window<T: Float>(npoints: usize, windowfunc: WindowFunction) -> Vec<T> {
     let mut window = match windowfunc {
-        WindowFunction::BlackmanHarris | WindowFunction::BlackmanHarris2 => blackman_harris::<T>(npoints),
+        WindowFunction::BlackmanHarris | WindowFunction::BlackmanHarris2 => {
+            blackman_harris::<T>(npoints)
+        }
         WindowFunction::Blackman | WindowFunction::Blackman2 => blackman::<T>(npoints),
         WindowFunction::Hann | WindowFunction::Hann2 => hann::<T>(npoints),
     };
@@ -89,7 +91,12 @@ fn make_window<T: Float>(npoints: usize, windowfunc: WindowFunction) -> Vec<T> {
 }
 
 /// Helper function. Make a set of windowed sincs.  
-pub fn make_sincs<T: Float>(npoints: usize, factor: usize, f_cutoff: f32, windowfunc: WindowFunction) -> Vec<Vec<T>> {
+pub fn make_sincs<T: Float>(
+    npoints: usize,
+    factor: usize,
+    f_cutoff: f32,
+    windowfunc: WindowFunction,
+) -> Vec<Vec<T>> {
     let totpoints = (npoints * factor) as isize;
     let mut y = Vec::with_capacity(totpoints as usize);
     let window = make_window::<T>(totpoints as usize, windowfunc);
@@ -112,10 +119,10 @@ pub fn make_sincs<T: Float>(npoints: usize, factor: usize, f_cutoff: f32, window
 
 #[cfg(test)]
 mod tests {
-    use crate::helpers::blackman_harris;
-    use crate::helpers::make_sincs;
-    use crate::helpers::hann;
     use crate::helpers::blackman;
+    use crate::helpers::blackman_harris;
+    use crate::helpers::hann;
+    use crate::helpers::make_sincs;
     use crate::helpers::make_window;
     use crate::WindowFunction;
 
@@ -123,13 +130,13 @@ mod tests {
     fn sincs() {
         let sincs = make_sincs::<f64>(16, 4, 1.0, WindowFunction::Blackman);
         println!("{:?}", sincs);
-        assert!((sincs[3][8]-1.0).abs() < 0.000001);
+        assert!((sincs[3][8] - 1.0).abs() < 0.000001);
     }
 
     #[test]
     fn test_blackman_harris() {
         let wnd = blackman_harris::<f64>(16);
-        assert!((wnd[8]-1.0).abs() < 0.000001);
+        assert!((wnd[8] - 1.0).abs() < 0.000001);
         assert!(wnd[0] < 0.001);
         assert!(wnd[15] < 0.1);
     }
@@ -137,7 +144,7 @@ mod tests {
     #[test]
     fn test_blackman() {
         let wnd = blackman::<f64>(16);
-        assert!((wnd[8]-1.0).abs() < 0.000001);
+        assert!((wnd[8] - 1.0).abs() < 0.000001);
         assert!(wnd[0] < 0.000001);
         assert!(wnd[15] < 0.1);
     }
@@ -146,19 +153,18 @@ mod tests {
     fn test_blackman2() {
         let wnd = make_window::<f64>(16, WindowFunction::Blackman);
         let wnd2 = make_window::<f64>(16, WindowFunction::Blackman2);
-        assert!((wnd[1]*wnd[1]-wnd2[1]).abs() < 0.000001);
-        assert!((wnd[4]*wnd[4]-wnd2[4]).abs() < 0.000001);
-        assert!((wnd[7]*wnd[7]-wnd2[7]).abs() < 0.000001);
-        assert!(wnd2[1]>0.000001);
-        assert!(wnd2[4]>0.000001);
-        assert!(wnd2[7]>0.000001);
-
+        assert!((wnd[1] * wnd[1] - wnd2[1]).abs() < 0.000001);
+        assert!((wnd[4] * wnd[4] - wnd2[4]).abs() < 0.000001);
+        assert!((wnd[7] * wnd[7] - wnd2[7]).abs() < 0.000001);
+        assert!(wnd2[1] > 0.000001);
+        assert!(wnd2[4] > 0.000001);
+        assert!(wnd2[7] > 0.000001);
     }
 
     #[test]
     fn test_hann() {
         let wnd = hann::<f64>(16);
-        assert!((wnd[8]-1.0).abs() < 0.000001);
+        assert!((wnd[8] - 1.0).abs() < 0.000001);
         assert!(wnd[0] < 0.000001);
         assert!(wnd[15] < 0.1);
     }

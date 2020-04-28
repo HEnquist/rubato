@@ -1,6 +1,5 @@
 use num::traits::Float;
 
-
 /// Perform cubic polynomial interpolation to get value at x.
 /// Input points are assumed to be at x = -1, 0, 1, 2
 pub fn interp_cubic<T: Float>(x: T, yvals: &[T]) -> T {
@@ -17,8 +16,6 @@ pub fn interp_cubic<T: Float>(x: T, yvals: &[T]) -> T {
 pub fn interp_lin<T: Float>(x: T, yvals: &[T]) -> T {
     (T::one() - x) * yvals[0] + x * yvals[1]
 }
-
-
 
 /// Get the two nearest time points for time t in format (index, subindex)
 pub fn get_nearest_times_2<T: Float>(t: T, factor: isize, points: &mut [(isize, isize)]) {

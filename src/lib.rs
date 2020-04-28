@@ -45,11 +45,11 @@
 mod helpers;
 mod interpolation;
 
+use crate::helpers::*;
+use crate::interpolation::*;
 use num::traits::Float;
 use std::error;
 use std::fmt;
-use crate::helpers::*;
-use crate::interpolation::*;
 
 type Res<T> = Result<T, Box<dyn error::Error>>;
 
@@ -405,9 +405,17 @@ impl<T: Float> SincFixedOut<T> {
         } else {
             parameters.f_cutoff * resample_ratio
         };
-        let sincs = make_sincs(parameters.sinc_len, parameters.oversampling_factor, sinc_cutoff, parameters.window);
+        let sincs = make_sincs(
+            parameters.sinc_len,
+            parameters.oversampling_factor,
+            sinc_cutoff,
+            parameters.window,
+        );
         let needed_input_size = (chunk_size as f32 / resample_ratio).ceil() as usize + 1;
-        let buffer = vec![vec![T::zero(); 3 * needed_input_size / 2 + 2 * parameters.sinc_len]; nbr_channels];
+        let buffer = vec![
+            vec![T::zero(); 3 * needed_input_size / 2 + 2 * parameters.sinc_len];
+            nbr_channels
+        ];
         SincFixedOut {
             nbr_channels,
             chunk_size,
@@ -562,9 +570,6 @@ impl<T: Float> Resampler<T> for SincFixedOut<T> {
     }
 }
 
-
-
-
 #[cfg(test)]
 mod tests {
     use crate::InterpolationParameters;
@@ -572,8 +577,6 @@ mod tests {
     use crate::Resampler;
     use crate::WindowFunction;
     use crate::{SincFixedIn, SincFixedOut};
-
-
 
     #[test]
     fn make_resampler_fi() {
@@ -600,8 +603,7 @@ mod tests {
             oversampling_factor: 16,
             window: WindowFunction::BlackmanHarris2,
         };
-        let mut resampler =
-            SincFixedOut::<f64>::new(1.2, params, 1024, 2);
+        let mut resampler = SincFixedOut::<f64>::new(1.2, params, 1024, 2);
         let frames = resampler.nbr_frames_needed();
         println!("{}", frames);
         assert!(frames > 800 && frames < 900);
