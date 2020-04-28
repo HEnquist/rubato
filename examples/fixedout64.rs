@@ -1,5 +1,5 @@
 extern crate rubato;
-use rubato::{Interpolation, Resampler, SincFixedOut};
+use rubato::{InterpolationParameters, InterpolationType, Resampler, SincFixedOut, WindowFunction};
 use std::convert::TryInto;
 use std::env;
 use std::fs::File;
@@ -83,13 +83,17 @@ fn main() {
     // Fast and good for doubling 44100 -> 88200 etc
     //let mut resampler = SincFixedOut::<f64>::new(fs_out as f32 / fs_in as f32, 64, 0.95, 4, Interpolation::Nearest, 1024, channels);
 
+    let params = InterpolationParameters {
+        sinc_len: 64,
+        f_cutoff: 0.95,
+        interpolation: InterpolationType::Nearest,
+        oversampling_factor: 320,
+        window: WindowFunction::BlackmanHarris2,
+    };
     // Fast and good for  44100 -> 48000
     let mut resampler = SincFixedOut::<f64>::new(
         fs_out as f32 / fs_in as f32,
-        64,
-        0.95,
-        320,
-        Interpolation::Nearest,
+        params,
         1024,
         channels,
     );

@@ -1,5 +1,5 @@
 extern crate rubato;
-use rubato::{Interpolation, Resampler, SincFixedIn};
+use rubato::{InterpolationParameters, InterpolationType, Resampler, SincFixedIn, WindowFunction};
 use std::convert::TryInto;
 use std::env;
 use std::fs::File;
@@ -71,15 +71,16 @@ fn main() {
     let sinc_len = 256;
     let f_cutoff = 0.5f32.powf(16.0 / sinc_len as f32);
 
-    let mut resampler = SincFixedIn::<f32>::new(
-        fs_out as f32 / fs_in as f32,
+    let params = InterpolationParameters {
         sinc_len,
         f_cutoff,
-        128,
-        Interpolation::Cubic,
-        1024,
-        2,
-    );
+        interpolation: InterpolationType::Cubic,
+        oversampling_factor: 128,
+        window: WindowFunction::BlackmanHarris2,
+    };
+    let mut resampler =
+        SincFixedIn::<f32>::new(fs_out as f32 / fs_in as f32, params, 1024, channels);
+
     //let waves = vec![vec![0.0f64; 1024]; 2];
     //let out = resampler.resample_chunk_cubic(waves);
 

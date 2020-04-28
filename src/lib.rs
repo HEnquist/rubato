@@ -19,13 +19,17 @@
 //! Resample a single chunk of a dummy audio file from 44100 to 48000 Hz.
 //! See also the "fixedin64" example that can be used to process a file from disk.
 //! ```
-//! use rubato::{Resampler, SincFixedIn, Interpolation};
+//! use rubato::{Resampler, SincFixedIn, InterpolationType, InterpolationParameters, WindowFunction};
+//! let params = InterpolationParameters {
+//!     sinc_len: 256,
+//!     f_cutoff: 0.95,
+//!     interpolation: InterpolationType::Nearest,
+//!     oversampling_factor: 160,
+//!     window: WindowFunction::BlackmanHarris2,
+//! };
 //! let mut resampler = SincFixedIn::<f64>::new(
 //!     48000 as f32 / 44100 as f32,
-//!     256,
-//!     0.95,
-//!     160,
-//!     Interpolation::Nearest,
+//!     params,
 //!     1024,
 //!     2,
 //! );
@@ -38,9 +42,14 @@
 //!
 //! The `rubato` crate only depends on the `num` crate and should work with any rustc version that crate supports.
 
+mod helpers;
+mod interpolation;
+
 use num::traits::Float;
 use std::error;
 use std::fmt;
+use crate::helpers::*;
+use crate::interpolation::*;
 
 type Res<T> = Result<T, Box<dyn error::Error>>;
 
@@ -70,6 +79,43 @@ impl ResamplerError {
     }
 }
 
+/// Different window functions that can be used to window the sinc function.
+pub enum WindowFunction {
+    /// Blackman. Intermediate rolloff and intermediate attenuation.
+    Blackman,
+    /// Squared Blackman. Slower rolloff but better attenuation than Blackman.
+    Blackman2,
+    /// Blackman-Harris. Slow rolloff but good attenuation.
+    BlackmanHarris,
+    /// Squared Blackman-Harris. Slower rolloff but better attenuation than Blackman-Harris.
+    BlackmanHarris2,
+    /// Hann, fast rolloff but not very high attenuation
+    Hann,
+    /// Squared Hann, slower rolloff and higher attenuation than simple Hann
+    Hann2,
+}
+
+/// A struct holding the parameters for interpolation.
+pub struct InterpolationParameters {
+    /// Length of the windowed sinc interpolation filter.
+    /// Higher values can allow a higher cut-off frequency leading to less high frequency roll-off
+    /// at the expense of higher cpu usage. 256 is a good starting point.
+    pub sinc_len: usize,
+    /// Relative cutoff frequency of the sinc interpolation filter
+    /// (relative to the lowest one of fs_in/2 or fs_out/2). Start at 0.95, and increase if needed.
+    pub f_cutoff: f32,
+    /// The number of intermediate points go use for interpolation.
+    /// Higher values use more memory for storing the sinc filters.
+    /// Only the points actually needed are calculated dusing processing
+    /// so a larger number does not directly lead to higher cpu usage.
+    /// But keeping it down helps in keeping the sincs in the cpu cache. Start at 128.
+    pub oversampling_factor: usize,
+    /// Interpolation type, see `InterpolationType`
+    pub interpolation: InterpolationType,
+    /// Window function to use.
+    pub window: WindowFunction,
+}
+
 /// Interpolation methods that can be selected. For asynchronous interpolation where the
 /// ratio between inut and output sample rates can be any number, it's not possible to
 /// pre-calculate all the needed interpolation filters.
@@ -79,7 +125,7 @@ impl ResamplerError {
 /// Then sinc filters are used to provide a fixed number of interpolated points between input samples,
 /// and then the new value is calculated by interpolation between those points.
 
-pub enum Interpolation {
+pub enum InterpolationType {
     /// For cubic interpolation, the four nearest intermediate points are calculated
     /// using sinc interpolation.
     /// Then a cubic polynomial is fitted to these points, and is then used to calculate the new sample value.
@@ -96,41 +142,41 @@ pub enum Interpolation {
     /// The Nearest mode doesn't do any interpolation, but simply picks the nearest intermediate point.
     /// This is useful when the nearest point is actually the correct one, for example when upsampling by a factor 2,
     /// like 48kHz->96kHz.
-    /// Then setting the upsample_factor to 2, and using Nearest mode,
+    /// Then setting the oversampling_factor to 2, and using Nearest mode,
     /// no unneccesary computations are performed and the result is the same as for synchronous resampling.
     /// This also works for other ratios that can be expressed by a fraction. For 44.1kHz -> 48 kHz,
-    /// setting upsample_factor to 160 gives the desired result (since 48kHz = 160/147 * 44.1kHz).
+    /// setting oversampling_factor to 160 gives the desired result (since 48kHz = 160/147 * 44.1kHz).
     Nearest,
 }
 
 /// A resampler that accepts a fixed number of audio chunks for input
 /// and returns a variable number of frames.
 ///
-/// The resampling is done by creating a number of intermediate points (defined by upsample_factor)
+/// The resampling is done by creating a number of intermediate points (defined by oversampling_factor)
 /// by sinc interpolation. The new samples are then calculated by interpolating between these points.
 pub struct SincFixedIn<T: Float> {
     nbr_channels: usize,
     chunk_size: usize,
-    upsample_factor: usize,
+    oversampling_factor: usize,
     last_index: f64,
     resample_ratio: f32,
     resample_ratio_original: f32,
     sinc_len: usize,
     sincs: Vec<Vec<T>>,
     buffer: Vec<Vec<T>>,
-    interpolation: Interpolation,
+    interpolation: InterpolationType,
 }
 
 /// A resampler that return a fixed number of audio chunks.
 /// The number of input frames required is given by the frames_needed function.
 ///
-/// The resampling is done by creating a number of intermediate points (defined by upsample_factor)
+/// The resampling is done by creating a number of intermediate points (defined by oversampling_factor)
 /// by sinc interpolation. The new samples are then calculated by interpolating between these points.
 pub struct SincFixedOut<T: Float> {
     nbr_channels: usize,
     chunk_size: usize,
     needed_input_size: usize,
-    upsample_factor: usize,
+    oversampling_factor: usize,
     last_index: f64,
     current_buffer_fill: usize,
     resample_ratio: f32,
@@ -138,7 +184,7 @@ pub struct SincFixedOut<T: Float> {
     sinc_len: usize,
     sincs: Vec<Vec<T>>,
     buffer: Vec<Vec<T>>,
-    interpolation: Interpolation,
+    interpolation: InterpolationType,
 }
 
 /// A resampler that us used to resample a chunk of audio to a new sample rate.
@@ -199,14 +245,14 @@ impl<T: Float> Resampler<T> for SincFixedIn<T> {
         let mut n = 0;
 
         match self.interpolation {
-            Interpolation::Cubic => {
+            InterpolationType::Cubic => {
                 let mut points = vec![T::zero(); 4];
                 let mut nearest = vec![(0isize, 0isize); 4];
                 while idx < end_idx as f64 {
                     idx += t_ratio;
-                    get_nearest_times_4(idx, self.upsample_factor as isize, &mut nearest);
-                    let frac = idx * self.upsample_factor as f64
-                        - (idx * self.upsample_factor as f64).floor();
+                    get_nearest_times_4(idx, self.oversampling_factor as isize, &mut nearest);
+                    let frac = idx * self.oversampling_factor as f64
+                        - (idx * self.oversampling_factor as f64).floor();
                     let frac_offset = T::from(frac).unwrap();
                     for (chan, buf) in self.buffer.iter().enumerate() {
                         for (n, p) in nearest.iter().zip(points.iter_mut()) {
@@ -222,14 +268,14 @@ impl<T: Float> Resampler<T> for SincFixedIn<T> {
                     n += 1;
                 }
             }
-            Interpolation::Linear => {
+            InterpolationType::Linear => {
                 let mut points = vec![T::zero(); 2];
                 let mut nearest = vec![(0isize, 0isize); 2];
                 while idx < end_idx as f64 {
                     idx += t_ratio;
-                    get_nearest_times_2(idx, self.upsample_factor as isize, &mut nearest);
-                    let frac = idx * self.upsample_factor as f64
-                        - (idx * self.upsample_factor as f64).floor();
+                    get_nearest_times_2(idx, self.oversampling_factor as isize, &mut nearest);
+                    let frac = idx * self.oversampling_factor as f64
+                        - (idx * self.oversampling_factor as f64).floor();
                     let frac_offset = T::from(frac).unwrap();
                     for (chan, buf) in self.buffer.iter().enumerate() {
                         for (n, p) in nearest.iter().zip(points.iter_mut()) {
@@ -245,12 +291,12 @@ impl<T: Float> Resampler<T> for SincFixedIn<T> {
                     n += 1;
                 }
             }
-            Interpolation::Nearest => {
+            InterpolationType::Nearest => {
                 let mut point;
                 let mut nearest;
                 while idx < end_idx as f64 {
                     idx += t_ratio;
-                    nearest = get_nearest_time(idx, self.upsample_factor as isize);
+                    nearest = get_nearest_time(idx, self.oversampling_factor as isize);
                     for (chan, buf) in self.buffer.iter().enumerate() {
                         point = get_sinc_interpolated(
                             &buf,
@@ -303,46 +349,39 @@ impl<T: Float> SincFixedIn<T> {
     /// Create a new SincFixedIn
     ///
     /// Parameters are:
-    /// - `resample_ratio`: The number of intermediate points go use for interpolation.
-    ///   Higher values use more memory for storing the sinc filters.
-    ///   Only the points actually needed are calculated dusing processing
-    ///   so a larger number does not directly lead to higher cpu usage.
-    ///   But keeping it down helps in keeping the sincs in the cpu cache. Start at 128.
-    /// - `sinc_len`: Length of the windowed sinc interpolation filter.
-    ///   Higher values can allow a higher cut-off frequency leading to less high frequency roll-off
-    ///   at the expense of higher cpu usage. 256 is a good starting point.
-    /// - `f_cutoff`: Relative cutoff frequency of the sinc interpolation filter
-    ///   (relative to the lowest one of fs_in/2 or fs_out/2). Start at 0.95, and increase if needed.
-    /// - `interpolation`: Interpolation type, see `Interpolation`
+    /// - `resample_ratio`: Ratio between output and input sample rates.
+    /// - `parameters`: Parameters for interpolation, see `InterpolationParameters`
     /// - `chunk_size`: size of input data in frames
     /// - `nbr_channels`: number of channels in input/output
     pub fn new(
         resample_ratio: f32,
-        sinc_len: usize,
-        f_cutoff: f32,
-        upsample_factor: usize,
-        interpolation: Interpolation,
+        parameters: InterpolationParameters,
         chunk_size: usize,
         nbr_channels: usize,
     ) -> Self {
         let sinc_cutoff = if resample_ratio >= 0.0 {
-            f_cutoff
+            parameters.f_cutoff
         } else {
-            f_cutoff * resample_ratio
+            parameters.f_cutoff * resample_ratio
         };
-        let sincs = make_sincs(sinc_len, upsample_factor, sinc_cutoff);
-        let buffer = vec![vec![T::zero(); chunk_size + 2 * sinc_len]; nbr_channels];
+        let sincs = make_sincs(
+            parameters.sinc_len,
+            parameters.oversampling_factor,
+            sinc_cutoff,
+            parameters.window,
+        );
+        let buffer = vec![vec![T::zero(); chunk_size + 2 * parameters.sinc_len]; nbr_channels];
         SincFixedIn {
             nbr_channels,
             chunk_size,
-            upsample_factor,
-            last_index: -(sinc_len as f64),
+            oversampling_factor: parameters.oversampling_factor,
+            last_index: -(parameters.sinc_len as f64),
             resample_ratio,
             resample_ratio_original: resample_ratio,
-            sinc_len,
+            sinc_len: parameters.sinc_len,
             sincs,
             buffer,
-            interpolation,
+            interpolation: parameters.interpolation,
         }
     }
 }
@@ -351,49 +390,37 @@ impl<T: Float> SincFixedOut<T> {
     /// Create a new SincFixedOut
     ///
     /// Parameters are:
-    /// - `resample_ratio`: The number of intermediate points go use for interpolation.
-    ///   Higher values use more memory for storing the sinc filters.
-    ///   Only the points actually needed are calculated dusing processing
-    ///   so a larger number does not directly lead to higher cpu usage.
-    ///   But keeping it down helps in keeping the sincs in the cpu cache. Start at 128.
-    /// - `sinc_len`: Length of the windowed sinc interpolation filter.
-    ///   Higher values can allow a higher cut-off frequency leading to less high frequency roll-off
-    ///   at the expense of higher cpu usage. 256 is a good starting point.
-    /// - `f_cutoff`: Relative cutoff frequency of the sinc interpolation filter
-    ///   (relative to the lowest one of fs_in/2 or fs_out/2). Start at 0.95, and increase if needed.
-    /// - `interpolation`: Interpolation type, see `Interpolation`
+    /// - `resample_ratio`: Ratio between output and input sample rates.
+    /// - `parameters`: Parameters for interpolation, see `InterpolationParameters`
     /// - `chunk_size`: size of output data in frames
     /// - `nbr_channels`: number of channels in input/output
     pub fn new(
         resample_ratio: f32,
-        sinc_len: usize,
-        f_cutoff: f32,
-        upsample_factor: usize,
-        interpolation: Interpolation,
+        parameters: InterpolationParameters,
         chunk_size: usize,
         nbr_channels: usize,
     ) -> Self {
         let sinc_cutoff = if resample_ratio >= 0.0 {
-            f_cutoff
+            parameters.f_cutoff
         } else {
-            f_cutoff * resample_ratio
+            parameters.f_cutoff * resample_ratio
         };
-        let sincs = make_sincs(sinc_len, upsample_factor, sinc_cutoff);
+        let sincs = make_sincs(parameters.sinc_len, parameters.oversampling_factor, sinc_cutoff, parameters.window);
         let needed_input_size = (chunk_size as f32 / resample_ratio).ceil() as usize + 1;
-        let buffer = vec![vec![T::zero(); 3 * needed_input_size / 2 + 2 * sinc_len]; nbr_channels];
+        let buffer = vec![vec![T::zero(); 3 * needed_input_size / 2 + 2 * parameters.sinc_len]; nbr_channels];
         SincFixedOut {
             nbr_channels,
             chunk_size,
             needed_input_size,
-            upsample_factor,
-            last_index: -(sinc_len as f64),
+            oversampling_factor: parameters.oversampling_factor,
+            last_index: -(parameters.sinc_len as f64),
             current_buffer_fill: needed_input_size,
             resample_ratio,
             resample_ratio_original: resample_ratio,
-            sinc_len,
+            sinc_len: parameters.sinc_len,
             sincs,
             buffer,
-            interpolation,
+            interpolation: parameters.interpolation,
         }
     }
 }
@@ -463,14 +490,14 @@ impl<T: Float> Resampler<T> for SincFixedOut<T> {
         let mut wave_out = vec![vec![T::zero(); self.chunk_size]; self.nbr_channels];
 
         match self.interpolation {
-            Interpolation::Cubic => {
+            InterpolationType::Cubic => {
                 let mut points = vec![T::zero(); 4];
                 let mut nearest = vec![(0isize, 0isize); 4];
                 for n in 0..self.chunk_size {
                     idx += t_ratio;
-                    get_nearest_times_4(idx, self.upsample_factor as isize, &mut nearest);
-                    let frac = idx * self.upsample_factor as f64
-                        - (idx * self.upsample_factor as f64).floor();
+                    get_nearest_times_4(idx, self.oversampling_factor as isize, &mut nearest);
+                    let frac = idx * self.oversampling_factor as f64
+                        - (idx * self.oversampling_factor as f64).floor();
                     let frac_offset = T::from(frac).unwrap();
                     for (chan, buf) in self.buffer.iter().enumerate() {
                         for (n, p) in nearest.iter().zip(points.iter_mut()) {
@@ -485,14 +512,14 @@ impl<T: Float> Resampler<T> for SincFixedOut<T> {
                     }
                 }
             }
-            Interpolation::Linear => {
+            InterpolationType::Linear => {
                 let mut points = vec![T::zero(); 2];
                 let mut nearest = vec![(0isize, 0isize); 2];
                 for n in 0..self.chunk_size {
                     idx += t_ratio;
-                    get_nearest_times_2(idx, self.upsample_factor as isize, &mut nearest);
-                    let frac = idx * self.upsample_factor as f64
-                        - (idx * self.upsample_factor as f64).floor();
+                    get_nearest_times_2(idx, self.oversampling_factor as isize, &mut nearest);
+                    let frac = idx * self.oversampling_factor as f64
+                        - (idx * self.oversampling_factor as f64).floor();
                     let frac_offset = T::from(frac).unwrap();
                     for (chan, buf) in self.buffer.iter().enumerate() {
                         for (n, p) in nearest.iter().zip(points.iter_mut()) {
@@ -507,12 +534,12 @@ impl<T: Float> Resampler<T> for SincFixedOut<T> {
                     }
                 }
             }
-            Interpolation::Nearest => {
+            InterpolationType::Nearest => {
                 let mut point;
                 let mut nearest;
                 for n in 0..self.chunk_size {
                     idx += t_ratio;
-                    nearest = get_nearest_time(idx, self.upsample_factor as isize);
+                    nearest = get_nearest_time(idx, self.oversampling_factor as isize);
                     for (chan, buf) in self.buffer.iter().enumerate() {
                         point = get_sinc_interpolated(
                             &buf,
@@ -535,237 +562,29 @@ impl<T: Float> Resampler<T> for SincFixedOut<T> {
     }
 }
 
-/// Helper function. Standard Blackman-Harris window
-fn blackman_harris<T: Float>(npoints: usize) -> Vec<T> {
-    let mut window = vec![T::zero(); npoints];
-    let pi2 = T::from(2.0 * std::f64::consts::PI).unwrap();
-    let pi4 = T::from(4.0 * std::f64::consts::PI).unwrap();
-    let pi6 = T::from(6.0 * std::f64::consts::PI).unwrap();
-    let np_f = T::from(npoints).unwrap();
-    let a = T::from(0.35875).unwrap();
-    let b = T::from(0.48829).unwrap();
-    let c = T::from(0.14128).unwrap();
-    let d = T::from(0.01168).unwrap();
-    for (x, item) in window.iter_mut().enumerate() {
-        let x_float = T::from(x).unwrap();
-        *item = a - b * (pi2 * x_float / np_f).cos() + c * (pi4 * x_float / np_f).cos()
-            - d * (pi6 * x_float / np_f).cos();
-    }
-    window
-}
 
-/// Helper function: sinc(x) = sin(pi*x)/(pi*x)
-fn sinc<T: Float>(value: T) -> T {
-    let pi = T::from(std::f64::consts::PI).unwrap();
-    if value == T::zero() {
-        T::from(1.0).unwrap()
-    } else {
-        (T::from(value).unwrap() * pi).sin() / (T::from(value).unwrap() * pi)
-    }
-}
 
-/// Helper function. Make a set of windowed sincs.  
-fn make_sincs<T: Float>(npoints: usize, factor: usize, f_cutoff: f32) -> Vec<Vec<T>> {
-    let totpoints = (npoints * factor) as isize;
-    let mut y = Vec::with_capacity(totpoints as usize);
-    let window = blackman_harris::<T>(totpoints as usize);
-    for x in 0..totpoints {
-        let val = window[x as usize]
-            * window[x as usize]
-            * sinc(
-                T::from(x - totpoints / 2).unwrap() * T::from(f_cutoff).unwrap()
-                    / T::from(factor).unwrap(),
-            );
-        y.push(val);
-    }
-    let mut sincs = vec![vec![T::zero(); npoints]; factor];
-    for p in 0..npoints {
-        for n in 0..factor {
-            sincs[factor - n - 1][p] = y[factor * p + n];
-        }
-    }
-    sincs
-}
-
-/// Perform cubic polynomial interpolation to get value at x.
-/// Input points are assumed to be at x = -1, 0, 1, 2
-fn interp_cubic<T: Float>(x: T, yvals: &[T]) -> T {
-    let a0 = yvals[1];
-    let a1 = -T::from(1.0 / 3.0).unwrap() * yvals[0] - T::from(0.5).unwrap() * yvals[1] + yvals[2]
-        - T::from(1.0 / 6.0).unwrap() * yvals[3];
-    let a2 = T::from(1.0 / 2.0).unwrap() * (yvals[0] + yvals[2]) - yvals[1];
-    let a3 = T::from(1.0 / 2.0).unwrap() * (yvals[1] - yvals[2])
-        + T::from(1.0 / 6.0).unwrap() * (yvals[3] - yvals[0]);
-    a0 + a1 * x + a2 * x.powi(2) + a3 * x.powi(3)
-}
-
-/// Linear interpolation between two points at x=0 and x=1
-fn interp_lin<T: Float>(x: T, yvals: &[T]) -> T {
-    (T::one() - x) * yvals[0] + x * yvals[1]
-}
-
-/// Calculate the scalar produt of an input wave and the selected sinc filter
-fn get_sinc_interpolated<T: Float>(
-    wave: &[T],
-    sincs: &[Vec<T>],
-    index: usize,
-    subindex: usize,
-) -> T {
-    wave.iter()
-        .skip(index)
-        .take(sincs[subindex].len())
-        .zip(sincs[subindex].iter())
-        .fold(T::zero(), |acc, (x, y)| acc.add(*x * *y))
-}
-
-/// Get the two nearest time points for time t in format (index, subindex)
-fn get_nearest_times_2<T: Float>(t: T, factor: isize, points: &mut [(isize, isize)]) {
-    let mut index = t.floor().to_isize().unwrap();
-    let mut subindex = ((t - t.floor()) * T::from(factor).unwrap())
-        .floor()
-        .to_isize()
-        .unwrap();
-    points[0] = (index, subindex);
-    subindex += 1;
-    if subindex >= factor {
-        subindex -= factor;
-        index += 1;
-    }
-    points[1] = (index, subindex);
-}
-
-/// Get the four nearest time points for time t in format (index, subindex).
-fn get_nearest_times_4<T: Float>(t: T, factor: isize, points: &mut [(isize, isize)]) {
-    let start = t.floor().to_isize().unwrap();
-    let frac = ((t - t.floor()) * T::from(factor).unwrap())
-        .floor()
-        .to_isize()
-        .unwrap();
-    let mut index;
-    let mut subindex;
-    for (idx, sub) in (-1..3).enumerate() {
-        index = start;
-        subindex = frac + sub;
-        if subindex < 0 {
-            subindex += factor;
-            index -= 1;
-        } else if subindex >= factor {
-            subindex -= factor;
-            index += 1;
-        }
-        points[idx] = (index, subindex);
-    }
-}
-
-/// Get the nearest time point for time t in format (index, subindex).
-fn get_nearest_time<T: Float>(t: T, factor: isize) -> (isize, isize) {
-    let mut index = t.floor().to_isize().unwrap();
-    let mut subindex = ((t - t.floor()) * T::from(factor).unwrap())
-        .round()
-        .to_isize()
-        .unwrap();
-    if subindex >= factor {
-        subindex -= factor;
-        index += 1;
-    }
-    (index, subindex)
-}
 
 #[cfg(test)]
 mod tests {
-    use crate::blackman_harris;
-    use crate::get_nearest_time;
-    use crate::get_nearest_times_2;
-    use crate::get_nearest_times_4;
-    use crate::interp_cubic;
-    use crate::interp_lin;
-    use crate::make_sincs;
-    use crate::Interpolation;
+    use crate::InterpolationParameters;
+    use crate::InterpolationType;
     use crate::Resampler;
+    use crate::WindowFunction;
     use crate::{SincFixedIn, SincFixedOut};
 
-    #[test]
-    fn sincs() {
-        let sincs = make_sincs::<f64>(16, 4, 1.0);
-        println!("{:?}", sincs);
-        assert_eq!(sincs[3][8], 1.0);
-    }
 
-    #[test]
-    fn blackman() {
-        let wnd = blackman_harris::<f64>(16);
-        assert_eq!(wnd[8], 1.0);
-        assert!(wnd[0] < 0.001);
-        assert!(wnd[15] < 0.01);
-    }
-
-    #[test]
-    fn int_cubic() {
-        let yvals = vec![0.0f64, 2.0f64, 4.0f64, 6.0f64];
-        let interp = interp_cubic(0.5f64, &yvals);
-        assert_eq!(interp, 3.0f64);
-    }
-
-    #[test]
-    fn int_lin() {
-        let yvals = vec![1.0f64, 5.0f64];
-        let interp = interp_lin(0.25f64, &yvals);
-        assert_eq!(interp, 2.0f64);
-    }
-
-    #[test]
-    fn get_nearest_2() {
-        let t = 5.9f64;
-        let mut times = vec![(0isize, 0isize); 2];
-        get_nearest_times_2(t, 8, &mut times);
-        assert_eq!(times[0], (5, 7));
-        assert_eq!(times[1], (6, 0));
-    }
-
-    #[test]
-    fn get_nearest_4() {
-        let t = 5.9f64;
-        let mut times = vec![(0isize, 0isize); 4];
-        get_nearest_times_4(t, 8, &mut times);
-        assert_eq!(times[0], (5, 6));
-        assert_eq!(times[1], (5, 7));
-        assert_eq!(times[2], (6, 0));
-        assert_eq!(times[3], (6, 1));
-    }
-
-    #[test]
-    fn get_nearest_4_neg() {
-        let t = -5.999f64;
-        let mut times = vec![(0isize, 0isize); 4];
-        get_nearest_times_4(t, 8, &mut times);
-        assert_eq!(times[0], (-7, 7));
-        assert_eq!(times[1], (-6, 0));
-        assert_eq!(times[2], (-6, 1));
-        assert_eq!(times[3], (-6, 2));
-    }
-
-    #[test]
-    fn get_nearest_4_zero() {
-        let t = -0.00001f64;
-        let mut times = vec![(0isize, 0isize); 4];
-        get_nearest_times_4(t, 8, &mut times);
-        assert_eq!(times[0], (-1, 6));
-        assert_eq!(times[1], (-1, 7));
-        assert_eq!(times[2], (0, 0));
-        assert_eq!(times[3], (0, 1));
-    }
-
-    #[test]
-    fn get_nearest_single() {
-        let t = 5.5f64;
-        let time = get_nearest_time(t, 8);
-        assert_eq!(time, (5, 4));
-    }
 
     #[test]
     fn make_resampler_fi() {
-        let mut resampler =
-            SincFixedIn::<f64>::new(1.2, 64, 0.95, 16, Interpolation::Cubic, 1024, 2);
+        let params = InterpolationParameters {
+            sinc_len: 64,
+            f_cutoff: 0.95,
+            interpolation: InterpolationType::Cubic,
+            oversampling_factor: 16,
+            window: WindowFunction::BlackmanHarris2,
+        };
+        let mut resampler = SincFixedIn::<f64>::new(1.2, params, 1024, 2);
         let waves = vec![vec![0.0f64; 1024]; 2];
         let out = resampler.process(&waves).unwrap();
         assert_eq!(out.len(), 2);
@@ -774,8 +593,15 @@ mod tests {
 
     #[test]
     fn make_resampler_fo() {
+        let params = InterpolationParameters {
+            sinc_len: 64,
+            f_cutoff: 0.95,
+            interpolation: InterpolationType::Cubic,
+            oversampling_factor: 16,
+            window: WindowFunction::BlackmanHarris2,
+        };
         let mut resampler =
-            SincFixedOut::<f64>::new(1.2, 64, 0.95, 16, Interpolation::Cubic, 1024, 2);
+            SincFixedOut::<f64>::new(1.2, params, 1024, 2);
         let frames = resampler.nbr_frames_needed();
         println!("{}", frames);
         assert!(frames > 800 && frames < 900);
