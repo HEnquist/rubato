@@ -80,6 +80,7 @@ impl ResamplerError {
 }
 
 /// Different window functions that can be used to window the sinc function.
+#[derive(Debug)]
 pub enum WindowFunction {
     /// Blackman. Intermediate rolloff and intermediate attenuation.
     Blackman,
@@ -96,6 +97,7 @@ pub enum WindowFunction {
 }
 
 /// A struct holding the parameters for interpolation.
+#[derive(Debug)]
 pub struct InterpolationParameters {
     /// Length of the windowed sinc interpolation filter.
     /// Higher values can allow a higher cut-off frequency leading to less high frequency roll-off
@@ -125,6 +127,7 @@ pub struct InterpolationParameters {
 /// Then sinc filters are used to provide a fixed number of interpolated points between input samples,
 /// and then the new value is calculated by interpolation between those points.
 
+#[derive(Debug)]
 pub enum InterpolationType {
     /// For cubic interpolation, the four nearest intermediate points are calculated
     /// using sinc interpolation.
