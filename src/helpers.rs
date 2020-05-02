@@ -132,9 +132,8 @@ mod tests {
 
     #[test]
     fn sincs() {
-        let sincs = make_sincs::<f64>(32, 8, 1.0, WindowFunction::Blackman);
-        println!("{:?}", sincs);
-        assert!((sincs[7][16] - 1.0).abs() < 0.001);
+        let sincs = make_sincs::<f64>(32, 8, 0.9, WindowFunction::Blackman);
+        assert!((sincs[7][16] - 1.0).abs() < 0.2);
         let sum: f64 = sincs.iter().map(|v| v.iter().sum::<f64>()).sum();
         assert!((sum - 8.0).abs() < 0.00001);
     }
