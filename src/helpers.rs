@@ -100,18 +100,22 @@ pub fn make_sincs<T: Float>(
     let totpoints = (npoints * factor) as isize;
     let mut y = Vec::with_capacity(totpoints as usize);
     let window = make_window::<T>(totpoints as usize, windowfunc);
+    let mut sum = T::zero();
     for x in 0..totpoints {
         let val = window[x as usize]
             * sinc(
                 T::from(x - totpoints / 2).unwrap() * T::from(f_cutoff).unwrap()
                     / T::from(factor).unwrap(),
             );
+        sum = sum + val;
         y.push(val);
     }
+    sum = sum / T::from(factor).unwrap();
+    println!("sum {:?}", sum.to_f64());
     let mut sincs = vec![vec![T::zero(); npoints]; factor];
     for p in 0..npoints {
         for n in 0..factor {
-            sincs[factor - n - 1][p] = y[factor * p + n];
+            sincs[factor - n - 1][p] = y[factor * p + n] / sum;
         }
     }
     sincs
@@ -128,9 +132,11 @@ mod tests {
 
     #[test]
     fn sincs() {
-        let sincs = make_sincs::<f64>(16, 4, 1.0, WindowFunction::Blackman);
+        let sincs = make_sincs::<f64>(32, 8, 1.0, WindowFunction::Blackman);
         println!("{:?}", sincs);
-        assert!((sincs[3][8] - 1.0).abs() < 0.000001);
+        assert!((sincs[7][16] - 1.0).abs() < 0.001);
+        let sum: f64 = sincs.iter().map(|v| v.iter().sum::<f64>()).sum();
+        assert!((sum - 8.0).abs() < 0.00001);
     }
 
     #[test]
