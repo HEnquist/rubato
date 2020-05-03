@@ -403,7 +403,7 @@ impl<T: Float> SincFixedOut<T> {
         chunk_size: usize,
         nbr_channels: usize,
     ) -> Self {
-        let sinc_cutoff = if resample_ratio >= 0.0 {
+        let sinc_cutoff = if resample_ratio >= 1.0 {
             parameters.f_cutoff
         } else {
             parameters.f_cutoff * resample_ratio
