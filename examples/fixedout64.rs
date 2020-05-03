@@ -14,12 +14,12 @@ use std::time::Instant;
 ///! ```
 ///! cargo run --release --example fixedin64 sine_f64_2ch.raw test.raw 44100 192000 2
 ///! ```
-///! There are two helper python scripts for testing. `makesineraw.py` simply writes a stereo file 
+///! There are two helper python scripts for testing. `makesineraw.py` simply writes a stereo file
 ///! with a 1 second long 1kHz tone (at 44.1kHz). This script takes no aruments. Modify as needed to create other test files.
 ///! To analyze the result, use the `analyze_result.py` script. This takes three arguments: number of channels, samplerate, and number of bits per sample (32 or 64).
 ///! Example, to analyze the file created above:
 ///! ```
-///! python examples/analyze_result.py test.raw 2 192000 64 
+///! python examples/analyze_result.py test.raw 2 192000 64
 ///! ```
 
 fn read_frames<R: Read + Seek>(inbuffer: &mut R, nbr: usize, channels: usize) -> Vec<Vec<f64>> {
