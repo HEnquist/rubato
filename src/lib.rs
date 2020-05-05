@@ -51,6 +51,9 @@ use num::traits::Float;
 use std::error;
 use std::fmt;
 
+#[macro_use]
+extern crate log;
+
 type Res<T> = Result<T, Box<dyn error::Error>>;
 
 /// Custom error returned by resamplers
@@ -337,7 +340,7 @@ impl<T: Float> Resampler<T> for SincFixedIn<T> {
     }
     /// Update the resample ratio relative to the original one
     fn set_resample_ratio_relative(&mut self, rel_ratio: f32) -> Res<()> {
-        let new_ratio = self.resample_ratio * rel_ratio;
+        let new_ratio = self.resample_ratio_original * rel_ratio;
         self.set_resample_ratio(new_ratio)
     }
 
@@ -460,7 +463,7 @@ impl<T: Float> Resampler<T> for SincFixedOut<T> {
 
     /// Update the resample ratio relative to the original one
     fn set_resample_ratio_relative(&mut self, rel_ratio: f32) -> Res<()> {
-        let new_ratio = self.resample_ratio * rel_ratio;
+        let new_ratio = self.resample_ratio_original * rel_ratio;
         self.set_resample_ratio(new_ratio)
     }
 

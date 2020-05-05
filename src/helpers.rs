@@ -111,7 +111,12 @@ pub fn make_sincs<T: Float>(
         y.push(val);
     }
     sum = sum / T::from(factor).unwrap();
-    println!("sum {:?}", sum.to_f64());
+    debug!(
+        "Generate sincs, length: {}, oversampling: {}, normalized by: {:?}",
+        npoints,
+        factor,
+        sum.to_f64()
+    );
     let mut sincs = vec![vec![T::zero(); npoints]; factor];
     for p in 0..npoints {
         for n in 0..factor {
