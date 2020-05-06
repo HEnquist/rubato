@@ -17,6 +17,7 @@ pub fn get_sinc_interpolated<T: Float>(
 
 /// Helper function. Standard Blackman-Harris window
 pub fn blackman_harris<T: Float>(npoints: usize) -> Vec<T> {
+    trace!("Making a BlackmanHarris windows with {} points", npoints);
     let mut window = vec![T::zero(); npoints];
     let pi2 = T::from(2.0 * std::f64::consts::PI).unwrap();
     let pi4 = T::from(4.0 * std::f64::consts::PI).unwrap();
@@ -36,6 +37,7 @@ pub fn blackman_harris<T: Float>(npoints: usize) -> Vec<T> {
 
 /// Helper function. Standard Blackman window
 pub fn blackman<T: Float>(npoints: usize) -> Vec<T> {
+    trace!("Making a Blackman windows with {} points", npoints);
     let mut window = vec![T::zero(); npoints];
     let pi2 = T::from(2.0 * std::f64::consts::PI).unwrap();
     let pi4 = T::from(4.0 * std::f64::consts::PI).unwrap();
@@ -52,6 +54,7 @@ pub fn blackman<T: Float>(npoints: usize) -> Vec<T> {
 
 /// Helper function. Standard Hann window
 pub fn hann<T: Float>(npoints: usize) -> Vec<T> {
+    trace!("Making a Hann windows with {} points", npoints);
     let mut window = vec![T::zero(); npoints];
     let pi2 = T::from(2.0 * std::f64::consts::PI).unwrap();
     let np_f = T::from(npoints).unwrap();

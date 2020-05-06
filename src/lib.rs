@@ -322,11 +322,17 @@ impl<T: Float> Resampler<T> for SincFixedIn<T> {
         for w in wave_out.iter_mut() {
             w.truncate(n);
         }
+        trace!(
+            "Resampling, {} frames in, {} frames out",
+            wave_in[0].len(),
+            wave_in[0].len()
+        );
         Ok(wave_out)
     }
 
     /// Update the resample ratio. New value must be within +-10% of the original one
     fn set_resample_ratio(&mut self, new_ratio: f32) -> Res<()> {
+        trace!("Change resample ratio to {}", new_ratio);
         if (new_ratio / self.resample_ratio_original > 0.9)
             && (new_ratio / self.resample_ratio_original < 1.1)
         {
@@ -365,6 +371,10 @@ impl<T: Float> SincFixedIn<T> {
         chunk_size: usize,
         nbr_channels: usize,
     ) -> Self {
+        debug!(
+            "Create new SincFixedIn, ratio: {}, chunk_size: {}, channels: {}, parameters: {:?}",
+            resample_ratio, chunk_size, nbr_channels, parameters
+        );
         let sinc_cutoff = if resample_ratio >= 0.0 {
             parameters.f_cutoff
         } else {
@@ -406,6 +416,10 @@ impl<T: Float> SincFixedOut<T> {
         chunk_size: usize,
         nbr_channels: usize,
     ) -> Self {
+        debug!(
+            "Create new SincFixedOut, ratio: {}, chunk_size: {}, channels: {}, parameters: {:?}",
+            resample_ratio, chunk_size, nbr_channels, parameters
+        );
         let sinc_cutoff = if resample_ratio >= 1.0 {
             parameters.f_cutoff
         } else {
@@ -447,6 +461,7 @@ impl<T: Float> Resampler<T> for SincFixedOut<T> {
 
     /// Update the resample ratio. New value must be within +-10% of the original one
     fn set_resample_ratio(&mut self, new_ratio: f32) -> Res<()> {
+        trace!("Change resample ratio to {}", new_ratio);
         if (new_ratio / self.resample_ratio_original > 0.9)
             && (new_ratio / self.resample_ratio_original < 1.1)
         {
@@ -572,6 +587,12 @@ impl<T: Float> Resampler<T> for SincFixedOut<T> {
         self.needed_input_size = (self.needed_input_size as isize
             + self.last_index.round() as isize
             + self.sinc_len as isize) as usize;
+        trace!(
+            "Resampling, {} frames in, {} frames out. Next needed length: {} frames",
+            wave_in[0].len(),
+            wave_in[0].len(),
+            self.needed_input_size
+        );
         Ok(wave_out)
     }
 }
