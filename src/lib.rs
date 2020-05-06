@@ -325,7 +325,7 @@ impl<T: Float> Resampler<T> for SincFixedIn<T> {
         trace!(
             "Resampling, {} frames in, {} frames out",
             wave_in[0].len(),
-            wave_in[0].len()
+            wave_out[0].len()
         );
         Ok(wave_out)
     }
@@ -590,7 +590,7 @@ impl<T: Float> Resampler<T> for SincFixedOut<T> {
         trace!(
             "Resampling, {} frames in, {} frames out. Next needed length: {} frames",
             wave_in[0].len(),
-            wave_in[0].len(),
+            wave_out[0].len(),
             self.needed_input_size
         );
         Ok(wave_out)
