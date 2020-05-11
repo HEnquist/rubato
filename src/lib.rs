@@ -584,7 +584,7 @@ impl<T: Float> Resampler<T> for SincFixedOut<T> {
         }
 
         // store last index for next iteration
-        println!("idx {}, fill{}", idx, self.current_buffer_fill);
+        //trace!("idx {}, fill{}", idx, self.current_buffer_fill);
         self.last_index = idx - self.current_buffer_fill as f64;
         //let next_last_index = self.last_index as f64 + self.chunk_size as f64 / self.resample_ratio as f64 + self.sinc_len as f64;
         //let needed_with_margin = next_last_index + (self.sinc_len) as f64;
@@ -596,7 +596,7 @@ impl<T: Float> Resampler<T> for SincFixedOut<T> {
         //self.needed_input_size = (self.needed_input_size as isize
         //    + self.last_index.round() as isize
         //    + self.sinc_len as isize) as usize + 2;
-        println!(
+        trace!(
             "Resampling, {} frames in, {} frames out. Next needed length: {} frames, last index {}",
             wave_in[0].len(),
             wave_out[0].len(),
