@@ -391,7 +391,7 @@ impl<T: Float> SincFixedIn<T> {
             nbr_channels,
             chunk_size,
             oversampling_factor: parameters.oversampling_factor,
-            last_index: -(parameters.sinc_len as f64),
+            last_index: -((parameters.sinc_len / 2) as f64),
             resample_ratio,
             resample_ratio_original: resample_ratio,
             sinc_len: parameters.sinc_len,
@@ -431,7 +431,8 @@ impl<T: Float> SincFixedOut<T> {
             sinc_cutoff,
             parameters.window,
         );
-        let needed_input_size = (chunk_size as f32 / resample_ratio).ceil() as usize + 2;
+        let needed_input_size =
+            (chunk_size as f32 / resample_ratio).ceil() as usize + 2 + parameters.sinc_len / 2;
         let buffer = vec![
             vec![T::zero(); 3 * needed_input_size / 2 + 2 * parameters.sinc_len];
             nbr_channels
@@ -441,7 +442,7 @@ impl<T: Float> SincFixedOut<T> {
             chunk_size,
             needed_input_size,
             oversampling_factor: parameters.oversampling_factor,
-            last_index: -(parameters.sinc_len as f64),
+            last_index: -((parameters.sinc_len / 2) as f64),
             current_buffer_fill: needed_input_size,
             resample_ratio,
             resample_ratio_original: resample_ratio,
@@ -583,15 +584,24 @@ impl<T: Float> Resampler<T> for SincFixedOut<T> {
         }
 
         // store last index for next iteration
+        println!("idx {}, fill{}", idx, self.current_buffer_fill);
         self.last_index = idx - self.current_buffer_fill as f64;
-        self.needed_input_size = (self.needed_input_size as isize
-            + self.last_index.round() as isize
-            + self.sinc_len as isize) as usize + 2;
-        trace!(
-            "Resampling, {} frames in, {} frames out. Next needed length: {} frames",
+        //let next_last_index = self.last_index as f64 + self.chunk_size as f64 / self.resample_ratio as f64 + self.sinc_len as f64;
+        //let needed_with_margin = next_last_index + (self.sinc_len) as f64;
+        self.needed_input_size = (self.last_index as f64
+            + self.chunk_size as f64 / self.resample_ratio as f64
+            + self.sinc_len as f64)
+            .ceil() as usize;
+        //self.needed_input_size = ((self.chunk_size as f32 + self.last_index as f32 + (self.sinc_len) as f32)/ self.resample_ratio).ceil() as usize + 2;
+        //self.needed_input_size = (self.needed_input_size as isize
+        //    + self.last_index.round() as isize
+        //    + self.sinc_len as isize) as usize + 2;
+        println!(
+            "Resampling, {} frames in, {} frames out. Next needed length: {} frames, last index {}",
             wave_in[0].len(),
             wave_out[0].len(),
-            self.needed_input_size
+            self.needed_input_size,
+            self.last_index
         );
         Ok(wave_out)
     }
