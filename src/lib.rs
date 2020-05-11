@@ -375,7 +375,7 @@ impl<T: Float> SincFixedIn<T> {
             "Create new SincFixedIn, ratio: {}, chunk_size: {}, channels: {}, parameters: {:?}",
             resample_ratio, chunk_size, nbr_channels, parameters
         );
-        let sinc_cutoff = if resample_ratio >= 0.0 {
+        let sinc_cutoff = if resample_ratio >= 1.0 {
             parameters.f_cutoff
         } else {
             parameters.f_cutoff * resample_ratio
@@ -431,7 +431,7 @@ impl<T: Float> SincFixedOut<T> {
             sinc_cutoff,
             parameters.window,
         );
-        let needed_input_size = (chunk_size as f32 / resample_ratio).ceil() as usize + 1;
+        let needed_input_size = (chunk_size as f32 / resample_ratio).ceil() as usize + 2;
         let buffer = vec![
             vec![T::zero(); 3 * needed_input_size / 2 + 2 * parameters.sinc_len];
             nbr_channels
@@ -467,7 +467,7 @@ impl<T: Float> Resampler<T> for SincFixedOut<T> {
         {
             self.resample_ratio = new_ratio;
             self.needed_input_size =
-                (self.chunk_size as f32 / self.resample_ratio).ceil() as usize + 1;
+                (self.chunk_size as f32 / self.resample_ratio).ceil() as usize + 2;
             Ok(())
         } else {
             Err(Box::new(ResamplerError::new(
@@ -586,7 +586,7 @@ impl<T: Float> Resampler<T> for SincFixedOut<T> {
         self.last_index = idx - self.current_buffer_fill as f64;
         self.needed_input_size = (self.needed_input_size as isize
             + self.last_index.round() as isize
-            + self.sinc_len as isize) as usize;
+            + self.sinc_len as isize) as usize + 2;
         trace!(
             "Resampling, {} frames in, {} frames out. Next needed length: {} frames",
             wave_in[0].len(),
