@@ -85,18 +85,18 @@ fn main() {
 
     // parameters
 
-    let f_ratio = fs_out as f32 / fs_in as f32;
+    let f_ratio = fs_out as f64 / fs_in as f64;
 
     // Fast for async
-    let sinc_len = 64;
-    let f_cutoff = 0.9156021241005041; //1.0 /(1.0 + std::f32::consts::PI/sinc_len as f32);
-    let params = InterpolationParameters {
-        sinc_len,
-        f_cutoff,
-        interpolation: InterpolationType::Linear,
-        oversampling_factor: 1024,
-        window: WindowFunction::Hann2,
-    };
+    //let sinc_len = 64;
+    //let f_cutoff = 0.9156021241005041; //1.0 /(1.0 + std::f32::consts::PI/sinc_len as f32);
+    //let params = InterpolationParameters {
+    //    sinc_len,
+    //    f_cutoff,
+    //    interpolation: InterpolationType::Linear,
+    //    oversampling_factor: 1024,
+    //    window: WindowFunction::Hann2,
+    //};
 
     // Balanced for sync for 44100 -> 96000 etc
     //let sinc_len = 128;
@@ -132,15 +132,15 @@ fn main() {
     //};
 
     // Best for async
-    //let sinc_len = 256;
-    //let f_cutoff = 0.9473371669037001;
-    //let params = InterpolationParameters {
-    //    sinc_len,
-    //    f_cutoff,
-    //    interpolation: InterpolationType::Cubic,
-    //    oversampling_factor: 256,
-    //    window: WindowFunction::BlackmanHarris2,
-    //};
+    let sinc_len = 256;
+    let f_cutoff = 0.9473371669037001;
+    let params = InterpolationParameters {
+        sinc_len,
+        f_cutoff,
+        interpolation: InterpolationType::Cubic,
+        oversampling_factor: 256,
+        window: WindowFunction::BlackmanHarris2,
+    };
 
     let mut resampler = SincFixedIn::<f64>::new(f_ratio, params, 1024, channels);
 

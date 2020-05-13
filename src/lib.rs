@@ -28,7 +28,7 @@
 //!     window: WindowFunction::BlackmanHarris2,
 //! };
 //! let mut resampler = SincFixedIn::<f64>::new(
-//!     48000 as f32 / 44100 as f32,
+//!     48000 as f64 / 44100 as f64,
 //!     params,
 //!     1024,
 //!     2,
@@ -165,8 +165,8 @@ pub struct SincFixedIn<T: Float> {
     chunk_size: usize,
     oversampling_factor: usize,
     last_index: f64,
-    resample_ratio: f32,
-    resample_ratio_original: f32,
+    resample_ratio: f64,
+    resample_ratio_original: f64,
     sinc_len: usize,
     sincs: Vec<Vec<T>>,
     buffer: Vec<Vec<T>>,
@@ -185,8 +185,8 @@ pub struct SincFixedOut<T: Float> {
     oversampling_factor: usize,
     last_index: f64,
     current_buffer_fill: usize,
-    resample_ratio: f32,
-    resample_ratio_original: f32,
+    resample_ratio: f64,
+    resample_ratio_original: f64,
     sinc_len: usize,
     sincs: Vec<Vec<T>>,
     buffer: Vec<Vec<T>>,
@@ -201,10 +201,10 @@ pub trait Resampler<T: Float> {
     fn process(&mut self, wave_in: &[Vec<T>]) -> Res<Vec<Vec<T>>>;
 
     /// Update the resample ratio. New value must be within +-10% of the original one.
-    fn set_resample_ratio(&mut self, new_ratio: f32) -> Res<()>;
+    fn set_resample_ratio(&mut self, new_ratio: f64) -> Res<()>;
 
     /// Update the resample ratio relative to the original one. Must be in the range 0.9 - 1.1.
-    fn set_resample_ratio_relative(&mut self, rel_ratio: f32) -> Res<()>;
+    fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> Res<()>;
 
     /// Query for the number of frames needed for the next call to "process".
     fn nbr_frames_needed(&self) -> usize;
@@ -245,7 +245,7 @@ impl<T: Float> Resampler<T> for SincFixedIn<T> {
 
         let mut wave_out =
             vec![
-                vec![T::zero(); (self.chunk_size as f32 * self.resample_ratio + 10.0) as usize];
+                vec![T::zero(); (self.chunk_size as f64 * self.resample_ratio + 10.0) as usize];
                 self.nbr_channels
             ];
         let mut n = 0;
@@ -331,7 +331,7 @@ impl<T: Float> Resampler<T> for SincFixedIn<T> {
     }
 
     /// Update the resample ratio. New value must be within +-10% of the original one
-    fn set_resample_ratio(&mut self, new_ratio: f32) -> Res<()> {
+    fn set_resample_ratio(&mut self, new_ratio: f64) -> Res<()> {
         trace!("Change resample ratio to {}", new_ratio);
         if (new_ratio / self.resample_ratio_original > 0.9)
             && (new_ratio / self.resample_ratio_original < 1.1)
@@ -345,7 +345,7 @@ impl<T: Float> Resampler<T> for SincFixedIn<T> {
         }
     }
     /// Update the resample ratio relative to the original one
-    fn set_resample_ratio_relative(&mut self, rel_ratio: f32) -> Res<()> {
+    fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> Res<()> {
         let new_ratio = self.resample_ratio_original * rel_ratio;
         self.set_resample_ratio(new_ratio)
     }
@@ -366,7 +366,7 @@ impl<T: Float> SincFixedIn<T> {
     /// - `chunk_size`: size of input data in frames
     /// - `nbr_channels`: number of channels in input/output
     pub fn new(
-        resample_ratio: f32,
+        resample_ratio: f64,
         parameters: InterpolationParameters,
         chunk_size: usize,
         nbr_channels: usize,
@@ -378,7 +378,7 @@ impl<T: Float> SincFixedIn<T> {
         let sinc_cutoff = if resample_ratio >= 1.0 {
             parameters.f_cutoff
         } else {
-            parameters.f_cutoff * resample_ratio
+            parameters.f_cutoff * resample_ratio as f32
         };
         let sincs = make_sincs(
             parameters.sinc_len,
@@ -411,7 +411,7 @@ impl<T: Float> SincFixedOut<T> {
     /// - `chunk_size`: size of output data in frames
     /// - `nbr_channels`: number of channels in input/output
     pub fn new(
-        resample_ratio: f32,
+        resample_ratio: f64,
         parameters: InterpolationParameters,
         chunk_size: usize,
         nbr_channels: usize,
@@ -423,7 +423,7 @@ impl<T: Float> SincFixedOut<T> {
         let sinc_cutoff = if resample_ratio >= 1.0 {
             parameters.f_cutoff
         } else {
-            parameters.f_cutoff * resample_ratio
+            parameters.f_cutoff * resample_ratio as f32
         };
         let sincs = make_sincs(
             parameters.sinc_len,
@@ -432,7 +432,7 @@ impl<T: Float> SincFixedOut<T> {
             parameters.window,
         );
         let needed_input_size =
-            (chunk_size as f32 / resample_ratio).ceil() as usize + 2 + parameters.sinc_len / 2;
+            (chunk_size as f64 / resample_ratio).ceil() as usize + 2 + parameters.sinc_len / 2;
         let buffer = vec![
             vec![T::zero(); 3 * needed_input_size / 2 + 2 * parameters.sinc_len];
             nbr_channels
@@ -461,14 +461,17 @@ impl<T: Float> Resampler<T> for SincFixedOut<T> {
     }
 
     /// Update the resample ratio. New value must be within +-10% of the original one
-    fn set_resample_ratio(&mut self, new_ratio: f32) -> Res<()> {
+    fn set_resample_ratio(&mut self, new_ratio: f64) -> Res<()> {
         trace!("Change resample ratio to {}", new_ratio);
         if (new_ratio / self.resample_ratio_original > 0.9)
             && (new_ratio / self.resample_ratio_original < 1.1)
         {
             self.resample_ratio = new_ratio;
-            self.needed_input_size =
-                (self.chunk_size as f32 / self.resample_ratio).ceil() as usize + 2;
+            self.needed_input_size = (self.last_index as f32
+                + self.chunk_size as f32 / self.resample_ratio as f32
+                + self.sinc_len as f32)
+                .ceil() as usize
+                + 2;
             Ok(())
         } else {
             Err(Box::new(ResamplerError::new(
@@ -478,7 +481,7 @@ impl<T: Float> Resampler<T> for SincFixedOut<T> {
     }
 
     /// Update the resample ratio relative to the original one
-    fn set_resample_ratio_relative(&mut self, rel_ratio: f32) -> Res<()> {
+    fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> Res<()> {
         let new_ratio = self.resample_ratio_original * rel_ratio;
         self.set_resample_ratio(new_ratio)
     }
@@ -588,15 +591,16 @@ impl<T: Float> Resampler<T> for SincFixedOut<T> {
         self.last_index = idx - self.current_buffer_fill as f64;
         //let next_last_index = self.last_index as f64 + self.chunk_size as f64 / self.resample_ratio as f64 + self.sinc_len as f64;
         //let needed_with_margin = next_last_index + (self.sinc_len) as f64;
-        self.needed_input_size = (self.last_index as f64
-            + self.chunk_size as f64 / self.resample_ratio as f64
-            + self.sinc_len as f64)
-            .ceil() as usize;
+        self.needed_input_size = (self.last_index as f32
+            + self.chunk_size as f32 / self.resample_ratio as f32
+            + self.sinc_len as f32)
+            .ceil() as usize
+            + 2;
         //self.needed_input_size = ((self.chunk_size as f32 + self.last_index as f32 + (self.sinc_len) as f32)/ self.resample_ratio).ceil() as usize + 2;
         //self.needed_input_size = (self.needed_input_size as isize
         //    + self.last_index.round() as isize
         //    + self.sinc_len as isize) as usize + 2;
-        trace!(
+        println!(
             "Resampling, {} frames in, {} frames out. Next needed length: {} frames, last index {}",
             wave_in[0].len(),
             wave_out[0].len(),
