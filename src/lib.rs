@@ -600,7 +600,7 @@ impl<T: Float> Resampler<T> for SincFixedOut<T> {
         //self.needed_input_size = (self.needed_input_size as isize
         //    + self.last_index.round() as isize
         //    + self.sinc_len as isize) as usize + 2;
-        println!(
+        trace!(
             "Resampling, {} frames in, {} frames out. Next needed length: {} frames, last index {}",
             wave_in[0].len(),
             wave_out[0].len(),

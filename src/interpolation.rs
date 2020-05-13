@@ -63,13 +63,7 @@ pub fn get_nearest_time<T: Float>(t: T, factor: isize) -> (isize, isize) {
         .round()
         .to_isize()
         .unwrap();
-    let temp = ((t - t.floor()) * T::from(factor).unwrap()).round()
-        - (t - t.floor()) * T::from(factor).unwrap();
-    if temp.abs() > T::from(0.4).unwrap() {
-        println!("-----------------off {}, {}", index, subindex);
-    }
     if subindex >= factor {
-        println!("{}, {}", index, subindex);
         subindex -= factor;
         index += 1;
     }
