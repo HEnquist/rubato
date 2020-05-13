@@ -40,7 +40,7 @@ def plot_spect(indata, window=True):
         #plt.gca().set(xlim=(10, srate/2.0))
         #plt.subplot(2,1,2)
         plt.figure(2)
-        plt.plot(t, wf)
+        plt.plot(wf)
     plt.show()
 
 file_in = sys.argv[1]
@@ -57,7 +57,7 @@ elif bits == 32:
 # Let's look at the first channel only..
 values = values.reshape((-1,channels))
 values = values[:,0]
-plot_spect([(values, srate)])
+plot_spect([(values, srate)], window=True)
 
 
 
