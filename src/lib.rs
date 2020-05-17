@@ -47,7 +47,7 @@ mod interpolation;
 
 use crate::helpers::*;
 use crate::interpolation::*;
-use num::traits::Float;
+use num_traits::Float;
 use std::error;
 use std::fmt;
 

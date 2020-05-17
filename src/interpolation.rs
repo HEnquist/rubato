@@ -1,4 +1,4 @@
-use num::traits::Float;
+use num_traits::Float;
 
 /// Perform cubic polynomial interpolation to get value at x.
 /// Input points are assumed to be at x = -1, 0, 1, 2
