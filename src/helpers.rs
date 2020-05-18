@@ -1,20 +1,6 @@
 use crate::WindowFunction;
 use num_traits::Float;
 
-/// Calculate the scalar produt of an input wave and the selected sinc filter
-pub fn get_sinc_interpolated<T: Float>(
-    wave: &[T],
-    sincs: &[Vec<T>],
-    index: usize,
-    subindex: usize,
-) -> T {
-    wave.iter()
-        .skip(index)
-        .take(sincs[subindex].len())
-        .zip(sincs[subindex].iter())
-        .fold(T::zero(), |acc, (x, y)| acc.add(*x * *y))
-}
-
 /// Helper function. Standard Blackman-Harris window
 pub fn blackman_harris<T: Float>(npoints: usize) -> Vec<T> {
     trace!("Making a BlackmanHarris windows with {} points", npoints);

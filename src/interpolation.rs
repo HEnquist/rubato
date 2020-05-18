@@ -1,29 +1,91 @@
-use num_traits::Float;
+/// Calculate the scalar produt of an input wave and the selected sinc filter
+pub fn get_sinc_interpolated_f32(
+    wave: &[f32],
+    sincs: &[Vec<f32>],
+    index: usize,
+    subindex: usize,
+) -> f32 {
+    let wave_cut = &wave[index..(index + sincs[subindex].len())];
+    wave_cut
+        .chunks(8)
+        .zip(sincs[subindex].chunks(8))
+        .fold([0.0f32; 8], |acc, (x, y)| {
+            [
+                acc[0] + x[0] * y[0],
+                acc[1] + x[1] * y[1],
+                acc[2] + x[2] * y[2],
+                acc[3] + x[3] * y[3],
+                acc[4] + x[4] * y[4],
+                acc[5] + x[5] * y[5],
+                acc[6] + x[6] * y[6],
+                acc[7] + x[7] * y[7],
+            ]
+        })
+        .iter()
+        .sum()
+}
+
+/// Calculate the scalar produt of an input wave and the selected sinc filter
+pub fn get_sinc_interpolated_f64(
+    wave: &[f64],
+    sincs: &[Vec<f64>],
+    index: usize,
+    subindex: usize,
+) -> f64 {
+    let wave_cut = &wave[index..(index + sincs[subindex].len())];
+    wave_cut
+        .chunks(8)
+        .zip(sincs[subindex].chunks(8))
+        .fold([0.0f64; 8], |acc, (x, y)| {
+            [
+                acc[0] + x[0] * y[0],
+                acc[1] + x[1] * y[1],
+                acc[2] + x[2] * y[2],
+                acc[3] + x[3] * y[3],
+                acc[4] + x[4] * y[4],
+                acc[5] + x[5] * y[5],
+                acc[6] + x[6] * y[6],
+                acc[7] + x[7] * y[7],
+            ]
+        })
+        .iter()
+        .sum()
+}
 
 /// Perform cubic polynomial interpolation to get value at x.
 /// Input points are assumed to be at x = -1, 0, 1, 2
-pub fn interp_cubic<T: Float>(x: T, yvals: &[T]) -> T {
+pub fn interp_cubic_f32(x: f32, yvals: &[f32]) -> f32 {
     let a0 = yvals[1];
-    let a1 = -T::from(1.0 / 3.0).unwrap() * yvals[0] - T::from(0.5).unwrap() * yvals[1] + yvals[2]
-        - T::from(1.0 / 6.0).unwrap() * yvals[3];
-    let a2 = T::from(1.0 / 2.0).unwrap() * (yvals[0] + yvals[2]) - yvals[1];
-    let a3 = T::from(1.0 / 2.0).unwrap() * (yvals[1] - yvals[2])
-        + T::from(1.0 / 6.0).unwrap() * (yvals[3] - yvals[0]);
+    let a1 = -(1.0 / 3.0) * yvals[0] - 0.5 * yvals[1] + yvals[2] - (1.0 / 6.0) * yvals[3];
+    let a2 = 0.5 * (yvals[0] + yvals[2]) - yvals[1];
+    let a3 = 0.5 * (yvals[1] - yvals[2]) + (1.0 / 6.0) * (yvals[3] - yvals[0]);
+    a0 + a1 * x + a2 * x.powi(2) + a3 * x.powi(3)
+}
+
+/// Perform cubic polynomial interpolation to get value at x.
+/// Input points are assumed to be at x = -1, 0, 1, 2
+pub fn interp_cubic_f64(x: f64, yvals: &[f64]) -> f64 {
+    let a0 = yvals[1];
+    let a1 = -(1.0 / 3.0) * yvals[0] - 0.5 * yvals[1] + yvals[2] - (1.0 / 6.0) * yvals[3];
+    let a2 = 0.5 * (yvals[0] + yvals[2]) - yvals[1];
+    let a3 = 0.5 * (yvals[1] - yvals[2]) + (1.0 / 6.0) * (yvals[3] - yvals[0]);
     a0 + a1 * x + a2 * x.powi(2) + a3 * x.powi(3)
 }
 
 /// Linear interpolation between two points at x=0 and x=1
-pub fn interp_lin<T: Float>(x: T, yvals: &[T]) -> T {
-    (T::one() - x) * yvals[0] + x * yvals[1]
+pub fn interp_lin_f32(x: f32, yvals: &[f32]) -> f32 {
+    (1.0 - x) * yvals[0] + x * yvals[1]
+}
+
+/// Linear interpolation between two points at x=0 and x=1
+pub fn interp_lin_f64(x: f64, yvals: &[f64]) -> f64 {
+    (1.0 - x) * yvals[0] + x * yvals[1]
 }
 
 /// Get the two nearest time points for time t in format (index, subindex)
-pub fn get_nearest_times_2<T: Float>(t: T, factor: isize, points: &mut [(isize, isize)]) {
-    let mut index = t.floor().to_isize().unwrap();
-    let mut subindex = ((t - t.floor()) * T::from(factor).unwrap())
-        .floor()
-        .to_isize()
-        .unwrap();
+pub fn get_nearest_times_2(t: f64, factor: isize, points: &mut [(isize, isize)]) {
+    let mut index = t.floor() as isize;
+    let mut subindex = ((t - t.floor()) * (factor as f64)).floor() as isize;
     points[0] = (index, subindex);
     subindex += 1;
     if subindex >= factor {
@@ -34,12 +96,9 @@ pub fn get_nearest_times_2<T: Float>(t: T, factor: isize, points: &mut [(isize, 
 }
 
 /// Get the four nearest time points for time t in format (index, subindex).
-pub fn get_nearest_times_4<T: Float>(t: T, factor: isize, points: &mut [(isize, isize)]) {
-    let start = t.floor().to_isize().unwrap();
-    let frac = ((t - t.floor()) * T::from(factor).unwrap())
-        .floor()
-        .to_isize()
-        .unwrap();
+pub fn get_nearest_times_4(t: f64, factor: isize, points: &mut [(isize, isize)]) {
+    let start = t.floor() as isize;
+    let frac = ((t - t.floor()) * (factor as f64)).floor() as isize;
     let mut index;
     let mut subindex;
     for (idx, sub) in (-1..3).enumerate() {
@@ -57,12 +116,9 @@ pub fn get_nearest_times_4<T: Float>(t: T, factor: isize, points: &mut [(isize, 
 }
 
 /// Get the nearest time point for time t in format (index, subindex).
-pub fn get_nearest_time<T: Float>(t: T, factor: isize) -> (isize, isize) {
-    let mut index = t.floor().to_isize().unwrap();
-    let mut subindex = ((t - t.floor()) * T::from(factor).unwrap())
-        .round()
-        .to_isize()
-        .unwrap();
+pub fn get_nearest_time(t: f64, factor: isize) -> (isize, isize) {
+    let mut index = t.floor() as isize;
+    let mut subindex = ((t - t.floor()) * (factor as f64)).round() as isize;
     if subindex >= factor {
         subindex -= factor;
         index += 1;
@@ -75,19 +131,35 @@ mod tests {
     use crate::interpolation::get_nearest_time;
     use crate::interpolation::get_nearest_times_2;
     use crate::interpolation::get_nearest_times_4;
-    use crate::interpolation::interp_cubic;
-    use crate::interpolation::interp_lin;
+    use crate::interpolation::interp_cubic_f32;
+    use crate::interpolation::interp_cubic_f64;
+    use crate::interpolation::interp_lin_f32;
+    use crate::interpolation::interp_lin_f64;
     #[test]
     fn int_cubic() {
         let yvals = vec![0.0f64, 2.0f64, 4.0f64, 6.0f64];
-        let interp = interp_cubic(0.5f64, &yvals);
+        let interp = interp_cubic_f64(0.5f64, &yvals);
         assert_eq!(interp, 3.0f64);
+    }
+
+    #[test]
+    fn int_lin_32() {
+        let yvals = vec![1.0f32, 5.0f32];
+        let interp = interp_lin_f32(0.25f32, &yvals);
+        assert_eq!(interp, 2.0f32);
+    }
+
+    #[test]
+    fn int_cubic_32() {
+        let yvals = vec![0.0f32, 2.0f32, 4.0f32, 6.0f32];
+        let interp = interp_cubic_f32(0.5f32, &yvals);
+        assert_eq!(interp, 3.0f32);
     }
 
     #[test]
     fn int_lin() {
         let yvals = vec![1.0f64, 5.0f64];
-        let interp = interp_lin(0.25f64, &yvals);
+        let interp = interp_lin_f64(0.25f64, &yvals);
         assert_eq!(interp, 2.0f64);
     }
 
