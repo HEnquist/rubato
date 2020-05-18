@@ -1,5 +1,5 @@
 use crate::WindowFunction;
-use num::traits::Float;
+use num_traits::Float;
 
 /// Calculate the scalar produt of an input wave and the selected sinc filter
 pub fn get_sinc_interpolated<T: Float>(
