@@ -40,7 +40,7 @@
 //!
 //! ## Compatibility
 //!
-//! The `rubato` crate only depends on the `num` crate and should work with any rustc version that crate supports.
+//! The `rubato` crate only depends on the `num-traits` crate and should work with any rustc version that crate supports.
 
 mod helpers;
 mod interpolation;
