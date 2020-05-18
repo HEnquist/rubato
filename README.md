@@ -21,13 +21,17 @@ cargo doc --open
 Resample a single chunk of a dummy audio file from 44100 to 48000 Hz.
 See also the "fixedin64" example that can be used to process a file from disk.
 ```rust
-use rubato::{Resampler, SincFixedIn, Interpolation};
+use rubato::{Resampler, SincFixedIn, InterpolationType, InterpolationParameters, WindowFunction};
+let params = InterpolationParameters {
+    sinc_len: 256,
+    f_cutoff: 0.95,
+    interpolation: InterpolationType::Nearest,
+    oversampling_factor: 160,
+    window: WindowFunction::BlackmanHarris2,
+};
 let mut resampler = SincFixedIn::<f64>::new(
-    48000 as f32 / 44100 as f32,
-    256,
-    0.95,
-    160,
-    Interpolation::Nearest,
+    48000 as f64 / 44100 as f64,
+    params,
     1024,
     2,
 );
