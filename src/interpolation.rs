@@ -1,56 +1,89 @@
-/// Calculate the scalar produt of an input wave and the selected sinc filter
-pub fn get_sinc_interpolated_f32(
-    wave: &[f32],
-    sincs: &[Vec<f32>],
-    index: usize,
-    subindex: usize,
-) -> f32 {
-    let wave_cut = &wave[index..(index + sincs[subindex].len())];
-    wave_cut
-        .chunks(8)
-        .zip(sincs[subindex].chunks(8))
-        .fold([0.0f32; 8], |acc, (x, y)| {
-            [
-                acc[0] + x[0] * y[0],
-                acc[1] + x[1] * y[1],
-                acc[2] + x[2] * y[2],
-                acc[3] + x[3] * y[3],
-                acc[4] + x[4] * y[4],
-                acc[5] + x[5] * y[5],
-                acc[6] + x[6] * y[6],
-                acc[7] + x[7] * y[7],
-            ]
-        })
-        .iter()
-        .sum()
+///// Calculate the scalar produt of an input wave and the selected sinc filter
+//pub fn get_sinc_interpolated_f32(
+//    wave: &[f32],
+//    sincs: &[Vec<f32>],
+//    index: usize,
+//    subindex: usize,
+//) -> f32 {
+//    let wave_cut = &wave[index..(index + sincs[subindex].len())];
+//    wave_cut
+//        .chunks(8)
+//        .zip(sincs[subindex].chunks(8))
+//        .fold([0.0f32; 8], |acc, (x, y)| {
+//            [
+//                acc[0] + x[0] * y[0],
+//                acc[1] + x[1] * y[1],
+//                acc[2] + x[2] * y[2],
+//                acc[3] + x[3] * y[3],
+//                acc[4] + x[4] * y[4],
+//                acc[5] + x[5] * y[5],
+//                acc[6] + x[6] * y[6],
+//                acc[7] + x[7] * y[7],
+//            ]
+//        })
+//        .iter()
+//        .sum()
+//}
+macro_rules! make_sinc_interp {
+    ($t:ty, $name:ident) => {
+        /// Calculate the scalar produt of an input wave and the selected sinc filter
+        pub fn $name (
+            wave: &[$t],
+            sincs: &[Vec<$t>],
+            index: usize,
+            subindex: usize,
+        ) -> $t {
+            let wave_cut = &wave[index..(index + sincs[subindex].len())];
+            wave_cut
+                .chunks(8)
+                .zip(sincs[subindex].chunks(8))
+                .fold([0.0; 8], |acc, (x, y)| {
+                    [
+                        acc[0] + x[0] * y[0],
+                        acc[1] + x[1] * y[1],
+                        acc[2] + x[2] * y[2],
+                        acc[3] + x[3] * y[3],
+                        acc[4] + x[4] * y[4],
+                        acc[5] + x[5] * y[5],
+                        acc[6] + x[6] * y[6],
+                        acc[7] + x[7] * y[7],
+                    ]
+                })
+                .iter()
+                .sum()
+        }
+    }
 }
 
+make_sinc_interp!(f32, get_sinc_interpolated_f32);
+make_sinc_interp!(f64, get_sinc_interpolated_f64);
+
 /// Calculate the scalar produt of an input wave and the selected sinc filter
-pub fn get_sinc_interpolated_f64(
-    wave: &[f64],
-    sincs: &[Vec<f64>],
-    index: usize,
-    subindex: usize,
-) -> f64 {
-    let wave_cut = &wave[index..(index + sincs[subindex].len())];
-    wave_cut
-        .chunks(8)
-        .zip(sincs[subindex].chunks(8))
-        .fold([0.0f64; 8], |acc, (x, y)| {
-            [
-                acc[0] + x[0] * y[0],
-                acc[1] + x[1] * y[1],
-                acc[2] + x[2] * y[2],
-                acc[3] + x[3] * y[3],
-                acc[4] + x[4] * y[4],
-                acc[5] + x[5] * y[5],
-                acc[6] + x[6] * y[6],
-                acc[7] + x[7] * y[7],
-            ]
-        })
-        .iter()
-        .sum()
-}
+//pub fn get_sinc_interpolated_f64(
+//    wave: &[f64],
+//    sincs: &[Vec<f64>],
+//    index: usize,
+//    subindex: usize,
+//) -> f64 {
+//    let wave_cut = &wave[index..(index + sincs[subindex].len())];
+//    wave_cut
+//        .chunks(8)
+//        .zip(sincs[subindex].chunks(8))
+//        .fold([0.0f64; 8], |acc, (x, y)| {
+//            [
+//                acc[0] + x[0] * y[0],
+//                acc[1] + x[1] * y[1],
+//                acc[2] + x[2] * y[2],
+//                acc[3] + x[3] * y[3],
+//                acc[4] + x[4] * y[4],
+//                acc[5] + x[5] * y[5],
+//                acc[6] + x[6] * y[6],
+//                acc[7] + x[7] * y[7],
+//            ]
+//        })
+//        .iter()
+//        .sum()
+//}
 
 /// Perform cubic polynomial interpolation to get value at x.
 /// Input points are assumed to be at x = -1, 0, 1, 2
