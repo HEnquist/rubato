@@ -147,9 +147,9 @@ fn main() {
     let num_chunks = f_in_ram.len() / (8 * channels * 1024);
     let start = Instant::now();
     for _chunk in 0..num_chunks {
-        let waves = read_frames(&mut f_in, 1024, 2);
+        let waves = read_frames(&mut f_in, 1024, channels);
         let waves_out = resampler.process(&waves).unwrap();
-        write_frames(waves_out, &mut f_out, 2);
+        write_frames(waves_out, &mut f_out, channels);
     }
 
     let duration = start.elapsed();
