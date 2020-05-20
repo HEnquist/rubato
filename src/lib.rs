@@ -141,7 +141,24 @@ pub enum InterpolationType {
     Nearest,
 }
 
-/// A resampler that accepts a fixed number of audio chunks for input
+/// A resampler that us used to resample a chunk of audio to a new sample rate.
+/// The rate can be adjusted as required.
+pub trait Resampler<T> {
+    /// Resample a chunk of audio. Input and output data is stored in a vector,
+    /// where each element contains a vector with all samples for a single channel.
+    fn process(&mut self, wave_in: &[Vec<T>]) -> Res<Vec<Vec<T>>>;
+
+    /// Update the resample ratio. New value must be within +-10% of the original one.
+    fn set_resample_ratio(&mut self, new_ratio: f64) -> Res<()>;
+
+    /// Update the resample ratio relative to the original one. Must be in the range 0.9 - 1.1.
+    fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> Res<()>;
+
+    /// Query for the number of frames needed for the next call to "process".
+    fn nbr_frames_needed(&self) -> usize;
+}
+
+/// A resampler that accepts a fixed number of audio frames for input
 /// and returns a variable number of frames.
 ///
 /// The resampling is done by creating a number of intermediate points (defined by oversampling_factor)
@@ -159,7 +176,7 @@ pub struct SincFixedIn<T> {
     interpolation: InterpolationType,
 }
 
-/// A resampler that return a fixed number of audio chunks.
+/// A resampler that return a fixed number of audio frames.
 /// The number of input frames required is given by the frames_needed function.
 ///
 /// The resampling is done by creating a number of intermediate points (defined by oversampling_factor)
@@ -177,23 +194,6 @@ pub struct SincFixedOut<T> {
     sincs: Vec<Vec<T>>,
     buffer: Vec<Vec<T>>,
     interpolation: InterpolationType,
-}
-
-/// A resampler that us used to resample a chunk of audio to a new sample rate.
-/// The rate can be adjusted as required.
-pub trait Resampler<T> {
-    /// Resample a chunk of audio. Input and output data is stored in a vector,
-    /// where each element contains a vector with all samples for a single channel.
-    fn process(&mut self, wave_in: &[Vec<T>]) -> Res<Vec<Vec<T>>>;
-
-    /// Update the resample ratio. New value must be within +-10% of the original one.
-    fn set_resample_ratio(&mut self, new_ratio: f64) -> Res<()>;
-
-    /// Update the resample ratio relative to the original one. Must be in the range 0.9 - 1.1.
-    fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> Res<()>;
-
-    /// Query for the number of frames needed for the next call to "process".
-    fn nbr_frames_needed(&self) -> usize;
 }
 
 macro_rules! impl_resampler {
@@ -243,6 +243,53 @@ impl_resampler!(f32, SincFixedIn<f32>);
 impl_resampler!(f64, SincFixedIn<f64>);
 impl_resampler!(f32, SincFixedOut<f32>);
 impl_resampler!(f64, SincFixedOut<f64>);
+
+impl<T: Float> SincFixedIn<T> {
+    /// Create a new SincFixedIn
+    ///
+    /// Parameters are:
+    /// - `resample_ratio`: Ratio between output and input sample rates.
+    /// - `parameters`: Parameters for interpolation, see `InterpolationParameters`
+    /// - `chunk_size`: size of input data in frames
+    /// - `nbr_channels`: number of channels in input/output
+    pub fn new(
+        resample_ratio: f64,
+        parameters: InterpolationParameters,
+        chunk_size: usize,
+        nbr_channels: usize,
+    ) -> Self {
+        debug!(
+            "Create new SincFixedIn, ratio: {}, chunk_size: {}, channels: {}, parameters: {:?}",
+            resample_ratio, chunk_size, nbr_channels, parameters
+        );
+        let sinc_cutoff = if resample_ratio >= 1.0 {
+            parameters.f_cutoff
+        } else {
+            parameters.f_cutoff * resample_ratio as f32
+        };
+        let sinc_len = 8 * (((parameters.sinc_len as f32) / 8.0).ceil() as usize);
+        debug!("sinc_len rounded up to {}", sinc_len);
+        let sincs = make_sincs(
+            sinc_len,
+            parameters.oversampling_factor,
+            sinc_cutoff,
+            parameters.window,
+        );
+        let buffer = vec![vec![T::zero(); chunk_size + 2 * sinc_len]; nbr_channels];
+        SincFixedIn {
+            nbr_channels,
+            chunk_size,
+            oversampling_factor: parameters.oversampling_factor,
+            last_index: -((sinc_len / 2) as f64),
+            resample_ratio,
+            resample_ratio_original: resample_ratio,
+            sinc_len,
+            sincs,
+            buffer,
+            interpolation: parameters.interpolation,
+        }
+    }
+}
 
 macro_rules! resampler_sincfixedin {
     ($t:ty) => {
@@ -404,53 +451,6 @@ macro_rules! resampler_sincfixedin {
 }
 resampler_sincfixedin!(f32);
 resampler_sincfixedin!(f64);
-
-impl<T: Float> SincFixedIn<T> {
-    /// Create a new SincFixedIn
-    ///
-    /// Parameters are:
-    /// - `resample_ratio`: Ratio between output and input sample rates.
-    /// - `parameters`: Parameters for interpolation, see `InterpolationParameters`
-    /// - `chunk_size`: size of input data in frames
-    /// - `nbr_channels`: number of channels in input/output
-    pub fn new(
-        resample_ratio: f64,
-        parameters: InterpolationParameters,
-        chunk_size: usize,
-        nbr_channels: usize,
-    ) -> Self {
-        debug!(
-            "Create new SincFixedIn, ratio: {}, chunk_size: {}, channels: {}, parameters: {:?}",
-            resample_ratio, chunk_size, nbr_channels, parameters
-        );
-        let sinc_cutoff = if resample_ratio >= 1.0 {
-            parameters.f_cutoff
-        } else {
-            parameters.f_cutoff * resample_ratio as f32
-        };
-        let sinc_len = 8 * (((parameters.sinc_len as f32) / 8.0).ceil() as usize);
-        debug!("sinc_len rounded up to {}", sinc_len);
-        let sincs = make_sincs(
-            sinc_len,
-            parameters.oversampling_factor,
-            sinc_cutoff,
-            parameters.window,
-        );
-        let buffer = vec![vec![T::zero(); chunk_size + 2 * sinc_len]; nbr_channels];
-        SincFixedIn {
-            nbr_channels,
-            chunk_size,
-            oversampling_factor: parameters.oversampling_factor,
-            last_index: -((sinc_len / 2) as f64),
-            resample_ratio,
-            resample_ratio_original: resample_ratio,
-            sinc_len,
-            sincs,
-            buffer,
-            interpolation: parameters.interpolation,
-        }
-    }
-}
 
 impl<T: Float> SincFixedOut<T> {
     /// Create a new SincFixedOut
