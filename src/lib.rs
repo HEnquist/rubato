@@ -45,7 +45,9 @@
 mod interpolation;
 mod sinc;
 mod windows;
+mod synchro;
 pub use crate::windows::WindowFunction;
+pub use crate::synchro::FFTFixedInOut;
 
 use crate::interpolation::*;
 use crate::sinc::make_sincs;
