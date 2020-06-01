@@ -19,6 +19,77 @@ use crate::ResamplerError;
 use crate::Resampler;
 
 
+pub struct RealToComplex<T> {
+    sin: Vec<T>,
+    cos: Vec<T>,
+    length: usize,
+    fft: std::sync::Arc<dyn rustfft::FFT<T>>,
+    buffer: Vec<Complex<T>>,
+}
+
+pub struct ComplexToReal<T> {
+    sin: Vec<T>,
+    cos: Vec<T>,
+    length: usize,
+    fft: std::sync::Arc<dyn rustfft::FFT<T>>,
+    buffer: Vec<Complex<T>>,
+}
+
+macro_rules! impl_r2c {
+    ($ft:ty) => {
+        impl RealToComplex<$ft> {
+            pub fn new(length: usize)-> Self {
+                let buffer = vec![Complex::zero(); length/2+1];
+                let mut sin = Vec::with_capacity(length/2);
+                let mut cos = Vec::with_capacity(length/2);
+                let pi = std::f64::consts::PI as $ft;
+                for k in 0..length/2 {
+                    sin.push((k as $ft * pi/(length/2) as $ft).sin());
+                    cos.push((k as $ft * pi/(length/2) as $ft).cos());
+                }
+                let mut fft_planner = FFTplanner::<$ft>::new(false);
+                let fft = fft_planner.plan_fft(length/2);
+                RealToComplex {
+                    sin,
+                    cos,
+                    length,
+                    fft,
+                    buffer,
+                }
+            }
+        }
+    }
+}
+impl_r2c!(f64);
+impl_r2c!(f32);
+
+macro_rules! impl_c2r {
+    ($ft:ty) => {
+        impl ComplexToReal<$ft> {
+            pub fn new(length: usize)-> Self {
+                let buffer = vec![Complex::zero(); length/2+1];
+                let mut sin = Vec::with_capacity(length/2);
+                let mut cos = Vec::with_capacity(length/2);
+                let pi = std::f64::consts::PI as $ft;
+                for k in 0..length/2 {
+                    sin.push((k as $ft * pi/(length/2) as $ft).sin());
+                    cos.push((k as $ft * pi/(length/2) as $ft).cos());
+                }
+                let mut fft_planner = FFTplanner::<$ft>::new(true);
+                let fft = fft_planner.plan_fft(length/2);
+                RealToComplex {
+                    sin,
+                    cos,
+                    length,
+                    fft,
+                    buffer,
+                }
+            }
+        }
+    }
+}
+impl_c2r!(f64);
+impl_c2r!(f32);
 
 
 /// A resampler that accepts a fixed number of audio frames for input

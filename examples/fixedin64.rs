@@ -121,26 +121,26 @@ fn main() {
     //};
     //
     //// Best for sync for 44100 -> 96000 etc
-    //let sinc_len = 256;
-    //let f_cutoff = 0.9473371669037001;
-    //let params = InterpolationParameters {
-    //    sinc_len,
-    //    f_cutoff,
-    //    interpolation: InterpolationType::Nearest,
-    //    oversampling_factor: 320,
-    //    window: WindowFunction::BlackmanHarris2,
-    //};
-
-    // Best for async
     let sinc_len = 256;
     let f_cutoff = 0.9473371669037001;
     let params = InterpolationParameters {
         sinc_len,
         f_cutoff,
-        interpolation: InterpolationType::Cubic,
-        oversampling_factor: 256,
+        interpolation: InterpolationType::Nearest,
+        oversampling_factor: 320,
         window: WindowFunction::BlackmanHarris2,
     };
+
+    // Best for async
+    //let sinc_len = 256;
+    //let f_cutoff = 0.9473371669037001;
+    //let params = InterpolationParameters {
+    //    sinc_len,
+    //    f_cutoff,
+    //    interpolation: InterpolationType::Cubic,
+    //    oversampling_factor: 256,
+    //    window: WindowFunction::BlackmanHarris2,
+    //};
 
     let mut resampler = SincFixedIn::<f64>::new(f_ratio, params, 1024, channels);
 
