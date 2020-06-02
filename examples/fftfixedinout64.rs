@@ -75,10 +75,13 @@ fn main() {
     //open files
     let mut f_in_disk = File::open(file_in).expect("Can't open file");
     let mut f_in_ram: Vec<u8> = vec![];
-    let mut f_out_ram: Vec<u8> = vec![];
+    
 
     println!("Copy input file to buffer");
     std::io::copy(&mut f_in_disk, &mut f_in_ram).unwrap();
+
+    let file_size = f_in_ram.len();
+    let mut f_out_ram: Vec<u8> = Vec::with_capacity((file_size as f32 * fs_out as f32 / fs_in as f32)as usize);
 
     let mut f_in = Cursor::new(&f_in_ram);
     let mut f_out = Cursor::new(&mut f_out_ram);

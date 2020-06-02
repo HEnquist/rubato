@@ -24,7 +24,8 @@ pub struct RealToComplex<T> {
     cos: Vec<T>,
     length: usize,
     fft: std::sync::Arc<dyn rustfft::FFT<T>>,
-    buffer: Vec<Complex<T>>,
+    buffer_in: Vec<Complex<T>>,
+    buffer_out: Vec<Complex<T>>,
 }
 
 pub struct ComplexToReal<T> {
@@ -32,14 +33,16 @@ pub struct ComplexToReal<T> {
     cos: Vec<T>,
     length: usize,
     fft: std::sync::Arc<dyn rustfft::FFT<T>>,
-    buffer: Vec<Complex<T>>,
+    buffer_in: Vec<Complex<T>>,
+    buffer_out: Vec<Complex<T>>,
 }
 
 macro_rules! impl_r2c {
     ($ft:ty) => {
         impl RealToComplex<$ft> {
             pub fn new(length: usize)-> Self {
-                let buffer = vec![Complex::zero(); length/2+1];
+                let buffer_in = vec![Complex::zero(); length/2];
+                let buffer_out = vec![Complex::zero(); length/2+1];
                 let mut sin = Vec::with_capacity(length/2);
                 let mut cos = Vec::with_capacity(length/2);
                 let pi = std::f64::consts::PI as $ft;
@@ -47,6 +50,8 @@ macro_rules! impl_r2c {
                     sin.push((k as $ft * pi/(length/2) as $ft).sin());
                     cos.push((k as $ft * pi/(length/2) as $ft).cos());
                 }
+                //println!("sin {:?}", sin);
+                //println!("sin {:?}", cos);
                 let mut fft_planner = FFTplanner::<$ft>::new(false);
                 let fft = fft_planner.plan_fft(length/2);
                 RealToComplex {
@@ -54,8 +59,49 @@ macro_rules! impl_r2c {
                     cos,
                     length,
                     fft,
-                    buffer,
+                    buffer_in,
+                    buffer_out,
                 }
+            }
+
+            pub fn process(&mut self, input: &[$ft], output: &mut [Complex<$ft>]) -> Res<()> {
+                if input.len() != self.length {
+                    return Err(Box::new(ResamplerError::new(
+                        format!("Wrong length of input, expected {}, got {}", self.length, input.len()).as_str()
+                    )));
+                }
+                if output.len() != (self.length/2 + 1)  {
+                    return Err(Box::new(ResamplerError::new(
+                        format!("Wrong length of output, expected {}, got {}", self.length/2+1, input.len()).as_str()
+                    )));
+                }
+                let fftlen = self.length/2;
+                //println!("copy input");
+                for (val, buf) in input.chunks(2).take(fftlen).zip(self.buffer_in.iter_mut()) {
+                    *buf = Complex::new(val[0], val[1]);
+                }
+                //println!("buffer_in {:?}", self.buffer_in);
+//
+                //println!("fft");
+                // FFT and store result in buffer_out
+                self.fft.process(&mut self.buffer_in, &mut self.buffer_out[0..fftlen]);
+
+                self.buffer_out[fftlen] = self.buffer_out[0];
+                //println!("buffer_out {:?}", self.buffer_out);
+                //Xr = np.zeros(N)
+                //Xi = np.zeros(N)
+                //println!("shuffle");
+                for k in 0..fftlen {
+                    let xr = 0.5*((self.buffer_out[k].re + self.buffer_out[fftlen-k].re) + self.cos[k]*(self.buffer_out[k].im + self.buffer_out[fftlen-k].im) - self.sin[k]*(self.buffer_out[k].re - self.buffer_out[fftlen-k].re));
+                    let xi = 0.5*((self.buffer_out[k].im - self.buffer_out[fftlen-k].im) - self.sin[k]*(self.buffer_out[k].im + self.buffer_out[fftlen-k].im) - self.cos[k]*(self.buffer_out[k].re - self.buffer_out[fftlen-k].re));
+                    output[k] = Complex::new(xr, xi);
+                }
+                //println!("make output");
+                output[fftlen] = Complex::new(self.buffer_out[0].re - self.buffer_out[0].im, 0.0);
+                //quick_fft = Xr + 1j*Xi
+//
+                //println!("done");
+                Ok(())
             }
         }
     }
@@ -67,7 +113,8 @@ macro_rules! impl_c2r {
     ($ft:ty) => {
         impl ComplexToReal<$ft> {
             pub fn new(length: usize)-> Self {
-                let buffer = vec![Complex::zero(); length/2+1];
+                let buffer_in = vec![Complex::zero(); length/2];
+                let buffer_out = vec![Complex::zero(); length/2];
                 let mut sin = Vec::with_capacity(length/2);
                 let mut cos = Vec::with_capacity(length/2);
                 let pi = std::f64::consts::PI as $ft;
@@ -77,13 +124,43 @@ macro_rules! impl_c2r {
                 }
                 let mut fft_planner = FFTplanner::<$ft>::new(true);
                 let fft = fft_planner.plan_fft(length/2);
-                RealToComplex {
+                ComplexToReal {
                     sin,
                     cos,
                     length,
                     fft,
-                    buffer,
+                    buffer_in,
+                    buffer_out,
                 }
+            }
+
+            pub fn process(&mut self, input: &[Complex<$ft>], output: &mut [$ft]) -> Res<()> {
+                if input.len() != (self.length/2+1) {
+                    return Err(Box::new(ResamplerError::new(
+                        format!("Wrong length of input, expected {}, got {}", self.length/2+1, input.len()).as_str()
+                    )));
+                }
+                if output.len() != self.length  {
+                    return Err(Box::new(ResamplerError::new(
+                        format!("Wrong length of output, expected {}, got {}", self.length, input.len()).as_str()
+                    )));
+                }
+                let fftlen = self.length/2;
+
+                for k in 0..fftlen {
+                    let xr = 0.5*((input[k].re + input[fftlen-k].re) - self.cos[k]*(input[k].im + input[fftlen-k].im) - self.sin[k]*(input[k].re - input[fftlen-k].re));
+                    let xi = 0.5*((input[k].im - input[fftlen-k].im) + self.cos[k]*(input[k].re - input[fftlen-k].re) - self.sin[k]*(input[k].im + input[fftlen-k].im));
+                    self.buffer_in[k] = Complex::new(xr, xi);
+                }
+
+                // FFT and store result in buffer_out
+                self.fft.process(&mut self.buffer_in, &mut self.buffer_out);
+
+                for (val, out) in self.buffer_out.iter().zip(output.chunks_mut(2)) {
+                    out[0] = val.re;
+                    out[1] = val.im;
+                }
+                Ok(())
             }
         }
     }
@@ -125,13 +202,15 @@ pub struct FFTFixedInOut<T> {
     filter_f: Vec<Complex<T>>,
     //buffer: Vec<Vec<T>>,
     overlaps: Vec<Vec<T>>,
-    fft: std::sync::Arc<dyn rustfft::FFT<T>>,
-    ifft: std::sync::Arc<dyn rustfft::FFT<T>>,
-    input_buf: Vec<Complex<T>>,
+    //fft: std::sync::Arc<dyn rustfft::FFT<T>>,
+    //ifft: std::sync::Arc<dyn rustfft::FFT<T>>,
+    fft: RealToComplex<T>,
+    ifft: ComplexToReal<T>,
+    input_buf: Vec<T>,
     input_f: Vec<Complex<T>>,
     output_f: Vec<Complex<T>>,
     //temp_buf: Vec<Complex<T>>,
-    output_buf: Vec<Complex<T>>,
+    output_buf: Vec<T>,
 }
 
 macro_rules! impl_resampler {
@@ -141,16 +220,18 @@ macro_rules! impl_resampler {
             fn resample_unit(&mut self, wave_in: &[$ft], wave_out: &mut [$ft], overlap_idx: usize) {
                 // Copy to inut buffer and convert to complex
                 for (n, item) in wave_in.iter().enumerate().take(self.fft_size_in) {
-                    self.input_buf[n] = Complex::<$ft>::from(*item);
-                    self.input_buf[n+self.fft_size_in] = Complex::zero();
+                    self.input_buf[n] = *item;
+                    //self.input_buf[n+self.fft_size_in] = 0.0;
                     //self.input_buf[n+self.npoints] = Complex::zero();
                 }
             
                 // FFT and store result in history, update index
-                self.fft.process(&mut self.input_buf, &mut self.input_f);
-            
+                self.fft.process(&self.input_buf, &mut self.input_f).unwrap();
+                //println!("{:?}", self.input_buf);
+                //println!("{:?}", self.input_f);
+
                 // multiply with filter FT
-                for n in 0..2 * self.fft_size_in {
+                for n in 0..(self.fft_size_in +1) {
                     self.input_f[n] = self.input_f[n] * self.filter_f[n];
                 }
 
@@ -160,25 +241,26 @@ macro_rules! impl_resampler {
                 else {
                     self.fft_size_out
                 };
-                let offset_in = 2*self.fft_size_in - new_len;
+                //let offset_in = 2*self.fft_size_in - new_len;
                 let offset_out = 2*self.fft_size_out - new_len;
                 // copy to modified spectrum
                 //println!("offset_in {}, offset_out {}, new_len{}", offset_in, offset_out, new_len);
                 for n in 0..new_len {
                     self.output_f[n] = self.input_f[n];
-                    self.output_f[n+offset_out] = self.input_f[n+offset_in];
+                    //self.output_f[n+offset_out] = self.input_f[n+offset_in];
                 }
-                for n in new_len..offset_out {
-                    self.output_f[n] = Complex::zero();
-                }
+                //for n in new_len..offset_out {
+                //    self.output_f[n] = Complex::zero();
+                //}
+                self.output_f[self.fft_size_out] = self.input_f[self.fft_size_in];
 
             
                 // IFFT result, store result anv overlap
-                self.ifft.process(&mut self.output_f, &mut self.output_buf);
+                self.ifft.process(&self.output_f, &mut self.output_buf).unwrap();
                 //let mut filtered: Vec<PrcFmt> = vec![0.0; self.npoints];
                 for (n, item) in wave_out.iter_mut().enumerate().take(self.fft_size_out) {
-                    *item = self.output_buf[n].re + self.overlaps[overlap_idx][n];
-                    self.overlaps[overlap_idx][n] = self.output_buf[n + self.fft_size_out].re;
+                    *item = self.output_buf[n] + self.overlaps[overlap_idx][n];
+                    self.overlaps[overlap_idx][n] = self.output_buf[n + self.fft_size_out];
                 }
             }
 
@@ -225,9 +307,10 @@ macro_rules! impl_fixedinout {
                 let fft_size_out = fft_chunks * fs_out / gcd;
                 let fft_size_in = fft_chunks * fs_in / gcd;
 
+                println!("making sincs");
                 let sinc = make_sincs::<$ft>(fft_size_in, 1, 0.95, WindowFunction::BlackmanHarris2);
-                let mut filter_t: Vec<Complex<$ft>> = vec![Complex::zero(); 2*fft_size_in];
-                let mut filter_f: Vec<Complex<$ft>> = vec![Complex::zero(); 2*fft_size_in];
+                let mut filter_t: Vec<$ft> = vec![0.0; 2*fft_size_in];
+                let mut filter_f: Vec<Complex<$ft>> = vec![Complex::zero(); fft_size_in+1];
                 let half_len = fft_size_in/2;
                 //for n in 0..(fft_size_in-half_len) {
                 //    filter_t[n] = Complex::from(sinc[0][n+half_len]/(2.0 * fft_size_in as $ft));
@@ -236,22 +319,25 @@ macro_rules! impl_fixedinout {
                 //    filter_t[n+2*fft_size_in-half_len-1] = Complex::from(sinc[0][n]/(2.0 * fft_size_in as $ft));
                 //}
                 for n in 0..fft_size_in {
-                    filter_t[n] = Complex::from(sinc[0][n]/(2.0 * fft_size_in as $ft));
+                    filter_t[n] = sinc[0][n]/(2.0 * fft_size_in as $ft);
                 }
 
                 //let sinc_len = 8 * (((parameters.sinc_len as f32) / 8.0).ceil() as usize);
-                let input_f: Vec<Complex<$ft>> = vec![Complex::zero(); 2 * fft_size_in];
-                let input_buf: Vec<Complex<$ft>> = vec![Complex::zero(); 2 * fft_size_in];
+                let input_f: Vec<Complex<$ft>> = vec![Complex::zero(); fft_size_in+1];
+                let input_buf: Vec<$ft> = vec![0.0; 2*fft_size_in];
                 let overlaps: Vec<Vec<$ft>> = vec![vec![0.0; fft_size_out]; nbr_channels];
-                let output_f: Vec<Complex<$ft>> = vec![Complex::zero(); 2 * fft_size_out];
-                let output_buf: Vec<Complex<$ft>> = vec![Complex::zero(); 2 * fft_size_out];
-                let mut fft_planner = FFTplanner::<$ft>::new(false);
-                let mut ifft_planner = FFTplanner::<$ft>::new(true);
-                let fft = fft_planner.plan_fft(2*fft_size_in);
-                let ifft = ifft_planner.plan_fft(2*fft_size_out);
+                let output_f: Vec<Complex<$ft>> = vec![Complex::zero(); fft_size_out+1];
+                let output_buf: Vec<$ft> = vec![0.0; 2*fft_size_out];
+                //let mut fft_planner = FFTplanner::<$ft>::new(false);
+                //let mut ifft_planner = FFTplanner::<$ft>::new(true);
+                //let fft = fft_planner.plan_fft(2*fft_size_in);
+                //let ifft = ifft_planner.plan_fft(2*fft_size_out);
+                println!("make fft/ifft");
+                let mut fft = RealToComplex::<$ft>::new(2*fft_size_in);
+                let ifft = ComplexToReal::<$ft>::new(2*fft_size_out);
                 
-                let input_f = vec![Complex::zero(); 2 * fft_size_in];
-                
+                //let input_f = vec![Complex::zero(); fft_size_in+1];
+                println!("transform filter");
                 fft.process(&mut filter_t, &mut filter_f);
 
                 println!("Resampler from {} to {} frames", fft_size_in, fft_size_out);
@@ -713,13 +799,13 @@ mod tests {
     #[test]
     fn make_resampler_fo() {
         let mut resampler = FFTFixedInOut::<f64>::new(44100, 48000, 1024, 1);
-        let mut wave_in = vec![0.0; resampler.fft_size_in];
-
-        wave_in[0] = 1.0;
-        let mut wave_out = vec![0.0; resampler.fft_size_out];
-        let mut overlap = vec![0.0; resampler.fft_size_out];
-        resampler.resample_unit(&wave_in, &mut wave_out, &mut overlap);
-        assert_eq!(wave_out[0],1.0);
+        //let mut wave_in = vec![0.0; resampler.fft_size_in];
+//
+        //wave_in[0] = 1.0;
+        //let mut wave_out = vec![0.0; resampler.fft_size_out];
+        //let mut overlap = vec![0.0; resampler.fft_size_out];
+        //resampler.resample_unit(&wave_in, &mut wave_out, 0);
+        //assert_eq!(wave_out[0], 1.0);
     }
 
 
