@@ -43,11 +43,12 @@
 //! The `rubato` crate only depends on the `num-traits` crate and should work with any rustc version that crate supports.
 
 mod interpolation;
+mod realfft;
 mod sinc;
-mod windows;
 mod synchro;
-pub use crate::windows::WindowFunction;
+mod windows;
 pub use crate::synchro::FFTFixedInOut;
+pub use crate::windows::WindowFunction;
 
 use crate::interpolation::*;
 use crate::sinc::make_sincs;
