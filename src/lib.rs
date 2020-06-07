@@ -47,7 +47,7 @@ mod realfft;
 mod sinc;
 mod synchro;
 mod windows;
-pub use crate::synchro::FFTFixedInOut;
+pub use crate::synchro::{FFTFixedInOut, FFTFixedOut};
 pub use crate::windows::WindowFunction;
 
 use crate::interpolation::*;
