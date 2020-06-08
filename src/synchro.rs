@@ -52,7 +52,6 @@ pub struct FFTFixedIn<T> {
 /// before it's inverse transformed to get the resampled waveforms
 pub struct FFTFixedOut<T> {
     nbr_channels: usize,
-    chunk_size_in: usize,
     chunk_size_out: usize,
     fft_size_in: usize,
     fft_size_out: usize,
@@ -64,11 +63,9 @@ pub struct FFTFixedOut<T> {
     input_f: Vec<Complex<T>>,
     output_f: Vec<Complex<T>>,
     output_buf: Vec<T>,
-    //input_buffers: Vec<Vec<T>>,
     output_buffers: Vec<Vec<T>>,
     saved_frames: usize,
     frames_needed: usize,
-
 }
 
 /// A resampler that accepts a fixed number of audio frames for input
@@ -258,7 +255,12 @@ macro_rules! resampler_fftfixedinout {
                 }
                 if wave_in[0].len() != self.chunk_size_in {
                     return Err(Box::new(ResamplerError::new(
-                        "Wrong number of frames in input",
+                        format!(
+                            "Wrong number of frames in input, expected {}, got {}",
+                            self.chunk_size_in,
+                            wave_in[0].len()
+                        )
+                        .as_str(),
                     )));
                 }
                 let mut wave_out = vec![vec![0.0 as $t; self.chunk_size_out]; self.nbr_channels];
@@ -273,7 +275,6 @@ macro_rules! resampler_fftfixedinout {
 resampler_fftfixedinout!(f32);
 resampler_fftfixedinout!(f64);
 
-
 macro_rules! impl_fixedout {
     ($ft:ty) => {
         impl FFTFixedOut<$ft> {
@@ -283,7 +284,7 @@ macro_rules! impl_fixedout {
             /// - `fs_in`: Input sample rate.
             /// - `fs_out`: Output sample rate.
             /// - `chunk_size_out`: length of output data in frames.
-            /// - `sub_chunks`: desired number of subchunks for processing, actual number may be different. 
+            /// - `sub_chunks`: desired number of subchunks for processing, actual number may be different.
             /// - `nbr_channels`: number of channels in input/output.
             pub fn new(
                 fs_in: usize,
@@ -292,10 +293,7 @@ macro_rules! impl_fixedout {
                 sub_chunks: usize,
                 nbr_channels: usize,
             ) -> Self {
-                println!(
-                    "Create new FFTFixedOut, fs_in: {}, fs_out: {} chunk_size_in: {}, channels: {}",
-                    fs_in, fs_out, chunk_size_out, nbr_channels
-                );
+
 
                 let gcd = integer::gcd(fs_in, fs_out);
                 let min_chunk_out = fs_out/gcd;
@@ -303,6 +301,11 @@ macro_rules! impl_fixedout {
                 let fft_chunks = (wanted_subsize as f32 / min_chunk_out as f32).ceil() as usize;
                 let fft_size_out = fft_chunks * fs_out / gcd;
                 let fft_size_in = fft_chunks * fs_in / gcd;
+
+                println!(
+                    "Create new FFTFixedOut, fs_in: {}, fs_out: {} chunk_size_in: {}, channels: {}, fft_size_in: {}, fft_size_out: {}",
+                    fs_in, fs_out, chunk_size_out, nbr_channels, fft_size_in, fft_size_out
+                );
 
                 // calculate antialiasing cutoff
                 let cutoff = if fs_in>fs_out {
@@ -337,14 +340,12 @@ macro_rules! impl_fixedout {
                 println!("Resampler from {} to {} frames", fft_size_in, fft_size_out);
 
                 let saved_frames = 0;
-                let frames_needed = fft_size_out;
-                let chunks_needed = (frames_needed as f32 / fft_size_out as f32).ceil() as usize;
+                let chunks_needed = (chunk_size_out as f32 / fft_size_out as f32).ceil() as usize;
                 let frames_needed = chunks_needed*fft_size_in;
 
                 FFTFixedOut {
                     nbr_channels,
-                    chunk_size_in: fft_size_in,
-                    chunk_size_out: fft_size_out,
+                    chunk_size_out,
                     fft_size_in,
                     fft_size_out,
                     filter_f,
@@ -401,34 +402,58 @@ macro_rules! resampler_fftfixedout {
                         "Wrong number of channels in input",
                     )));
                 }
-                if wave_in[0].len() != self.chunk_size_in {
+                if wave_in[0].len() != self.frames_needed {
                     return Err(Box::new(ResamplerError::new(
-                        "Wrong number of frames in input",
+                        format!(
+                            "Wrong number of frames in input, expected {}, got {}",
+                            self.frames_needed,
+                            wave_in[0].len()
+                        )
+                        .as_str(),
                     )));
                 }
 
                 let mut wave_out = self.output_buffers.clone();
+                //println!("{:?}", wave_out);
+                let mut processed_samples = self.saved_frames * self.nbr_channels;
                 for n in 0..self.nbr_channels {
-                    for (in_chunk, out_chunk) in wave_in[n].chunks(self.fft_size_in).zip(wave_out[n][self.saved_frames..].chunks_mut(self.fft_size_out)) {
+                    for (in_chunk, out_chunk) in wave_in[n]
+                        .chunks(self.fft_size_in)
+                        .zip(wave_out[n][self.saved_frames..].chunks_mut(self.fft_size_out))
+                    {
                         self.resample_unit(in_chunk, out_chunk, n);
+                        //println!("n {}",n);
+                        processed_samples += self.fft_size_out;
                     }
                 }
+                let processed_frames = processed_samples / self.nbr_channels;
 
                 // save extra frames for next round
-                if wave_out.len() > self.chunk_size_out {
-                    self.saved_frames = wave_out.len() - self.chunk_size_out;
+                self.saved_frames = processed_frames - self.chunk_size_out;
+                if processed_frames > self.chunk_size_out {
                     for n in 0..self.nbr_channels {
-                        for (extra, saved) in wave_out[n].iter().skip(self.chunk_size_out).take(self.saved_frames).zip(self.output_buffers[n].iter_mut().take(self.saved_frames)) {
+                        for (extra, saved) in wave_out[n]
+                            .iter()
+                            .skip(self.chunk_size_out)
+                            .take(self.saved_frames)
+                            .zip(self.output_buffers[n].iter_mut().take(self.saved_frames))
+                        {
                             *saved = *extra;
+                            //println!("copy {}", saved);
                         }
-                        wave_out[n].truncate(self.chunk_size_out);
+                        //wave_out[n].truncate(self.chunk_size_out);
                     }
-
+                }
+                for n in 0..self.nbr_channels {
+                    wave_out[n].truncate(self.chunk_size_out);
                 }
                 //calculate number of needed frames from next round
-                let frames_needed = self.chunk_size_out - self.saved_frames;
-                let chunks_needed = (frames_needed as f32 / self.fft_size_out as f32).ceil() as usize;
-                self.frames_needed = chunks_needed*self.fft_size_in;
+                let frames_needed_out = self.chunk_size_out - self.saved_frames;
+                let chunks_needed =
+                    (frames_needed_out as f32 / self.fft_size_out as f32).ceil() as usize;
+                self.frames_needed = chunks_needed * self.fft_size_in;
+                //println!("frames_needed_out {}, chunks_needed {}, self.frames_needed {}", frames_needed_out, chunks_needed, self.frames_needed);
+                //println!("{:?}", wave_out);
                 Ok(wave_out)
             }
         }
@@ -597,7 +622,6 @@ resampler_fftfixedout!(f64);
 //}
 //resampler_sincfixedin!(f32);
 //resampler_sincfixedin!(f64);
-
 
 //macro_rules! resampler_sincfixedout {
 //    ($t:ty) => {
