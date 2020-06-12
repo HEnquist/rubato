@@ -15,7 +15,7 @@ use crate::Resampler;
 
 use crate::realfft::{ComplexToReal, RealToComplex};
 
-/// A resampler for resampling a single chunk of data.
+/// A helper for resampling a single chunk of data.
 struct FftResampler<T> {
     fft_size_in: usize,
     fft_size_out: usize,
@@ -28,7 +28,7 @@ struct FftResampler<T> {
     output_buf: Vec<T>,
 }
 
-/// A resampler that needs a fixed number of audio frames for input
+/// A synchronous resampler that needs a fixed number of audio frames for input
 /// and returns a variable number of frames.
 ///
 /// The resampling is done by FFT:ing the input data. The spectrum is then extended or
@@ -45,7 +45,7 @@ pub struct FftFixedIn<T> {
     resampler: FftResampler<T>,
 }
 
-/// A resampler that needs a varying number of audio frames for input
+/// A synchronous resampler that needs a varying number of audio frames for input
 /// and returns a fixed number of frames.
 ///
 /// The resampling is done by FFT:ing the input data. The spectrum is then extended or
@@ -63,7 +63,7 @@ pub struct FftFixedOut<T> {
     resampler: FftResampler<T>,
 }
 
-/// A resampler that accepts a fixed number of audio frames for input
+/// A synchronous resampler that accepts a fixed number of audio frames for input
 /// and returns a fixed number of frames.
 ///
 /// The resampling is done by FFT:ing the input data. The spectrum is then extended or
