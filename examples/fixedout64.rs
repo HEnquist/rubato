@@ -7,12 +7,17 @@ use std::io::prelude::{Read, Seek, Write};
 use std::io::Cursor;
 use std::time::Instant;
 
+extern crate env_logger;
+extern crate log;
+use env_logger::Builder;
+use log::LevelFilter;
+
 ///! A resampler app that reads a raw file of little-endian 64 bit floats, and writes the output in the same format.
 ///! This version takes a varying number of input samples per chunk, and outputs a fixed number of samples.
 ///! The command line arguments are input filename, output filename, input samplerate, output samplerate, number of channels
 ///! To resample the file `sine_f64_2ch.raw` from 44.1kHz to 192kHz, and assuming the file has two channels, the command is:
 ///! ```
-///! cargo run --release --example fixedin64 sine_f64_2ch.raw test.raw 44100 192000 2
+///! cargo run --release --example fixedout64 sine_f64_2ch.raw test.raw 44100 192000 2
 ///! ```
 ///! There are two helper python scripts for testing. `makesineraw.py` simply writes a stereo file
 ///! with a 1 second long 1kHz tone (at 44.1kHz). This script takes no aruments. Modify as needed to create other test files.
@@ -54,6 +59,10 @@ fn write_frames<W: Write + Seek>(waves: Vec<Vec<f64>>, outbuffer: &mut W, channe
 }
 
 fn main() {
+    // init logger
+    let mut builder = Builder::from_default_env();
+    builder.filter(None, LevelFilter::Debug).init();
+
     let file_in = env::args().nth(1).expect("Please specify an input file.");
     let file_out = env::args().nth(2).expect("Please specify an output file.");
     println!("Opening files: {}, {}", file_in, file_out);

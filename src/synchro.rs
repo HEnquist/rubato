@@ -1,16 +1,11 @@
 use crate::windows::WindowFunction;
 
 use crate::sinc::make_sincs;
-//use num_traits::Float;
 use num::integer;
 use std::error;
-//use std::fmt;
 
-//use rustfft::algorithm::Radix4;
-//use rustfft::FFTplanner;
 use rustfft::num_complex::Complex;
 use rustfft::num_traits::Zero;
-//use rustfft::FFT;
 
 type Res<T> = Result<T, Box<dyn error::Error>>;
 
@@ -20,7 +15,8 @@ use crate::Resampler;
 
 use crate::realfft::{ComplexToReal, RealToComplex};
 
-pub struct FFTResampler<T> {
+/// A resampler for resampling a single chunk of data.
+struct FftResampler<T> {
     fft_size_in: usize,
     fft_size_out: usize,
     filter_f: Vec<Complex<T>>,
@@ -32,13 +28,13 @@ pub struct FFTResampler<T> {
     output_buf: Vec<T>,
 }
 
-/// A resampler that accepts a fixed number of audio frames for input
+/// A resampler that needs a fixed number of audio frames for input
 /// and returns a variable number of frames.
 ///
 /// The resampling is done by FFT:ing the input data. The spectrum is then extended or
 /// truncated as well as multiplied with an antialiasing filter
-/// before it's inverse transformed to get the resampled waveforms
-pub struct FFTFixedIn<T> {
+/// before it's inverse transformed to get the resampled waveforms.
+pub struct FftFixedIn<T> {
     nbr_channels: usize,
     chunk_size_in: usize,
     fft_size_in: usize,
@@ -46,16 +42,16 @@ pub struct FFTFixedIn<T> {
     overlaps: Vec<Vec<T>>,
     input_buffers: Vec<Vec<T>>,
     saved_frames: usize,
-    resampler: FFTResampler<T>,
+    resampler: FftResampler<T>,
 }
 
-/// A resampler that accepts a varying number of audio frames for input
+/// A resampler that needs a varying number of audio frames for input
 /// and returns a fixed number of frames.
 ///
 /// The resampling is done by FFT:ing the input data. The spectrum is then extended or
 /// truncated as well as multiplied with an antialiasing filter
-/// before it's inverse transformed to get the resampled waveforms
-pub struct FFTFixedOut<T> {
+/// before it's inverse transformed to get the resampled waveforms.
+pub struct FftFixedOut<T> {
     nbr_channels: usize,
     chunk_size_out: usize,
     fft_size_in: usize,
@@ -64,7 +60,7 @@ pub struct FFTFixedOut<T> {
     output_buffers: Vec<Vec<T>>,
     saved_frames: usize,
     frames_needed: usize,
-    resampler: FFTResampler<T>,
+    resampler: FftResampler<T>,
 }
 
 /// A resampler that accepts a fixed number of audio frames for input
@@ -72,25 +68,21 @@ pub struct FFTFixedOut<T> {
 ///
 /// The resampling is done by FFT:ing the input data. The spectrum is then extended or
 /// truncated as well as multiplied with an antialiasing filter
-/// before it's inverse transformed to get the resampled waveforms
-pub struct FFTFixedInOut<T> {
+/// before it's inverse transformed to get the resampled waveforms.
+pub struct FftFixedInOut<T> {
     nbr_channels: usize,
     chunk_size_in: usize,
     chunk_size_out: usize,
     fft_size_in: usize,
     overlaps: Vec<Vec<T>>,
-    resampler: FFTResampler<T>,
+    resampler: FftResampler<T>,
 }
 
 macro_rules! impl_resampler {
     ($ft:ty, $rt:ty) => {
         impl $rt {
+            //
             pub fn new(fft_size_in: usize, fft_size_out: usize) -> Self {
-                println!(
-                    "Create new FFTResampler, fft_size_in: {}, fft_size_out: {}",
-                    fft_size_in, fft_size_out
-                );
-
                 // calculate antialiasing cutoff
                 let cutoff = if fft_size_in > fft_size_out {
                     0.4f32.powf(16.0 / fft_size_in as f32) * fft_size_out as f32
@@ -98,8 +90,10 @@ macro_rules! impl_resampler {
                 } else {
                     0.4f32.powf(16.0 / fft_size_in as f32)
                 };
-
-                println!("making sincs, cutoff {}", cutoff);
+                debug!(
+                    "Create new FftResampler, fft_size_in: {}, fft_size_out: {}, cutoff: {}",
+                    fft_size_in, fft_size_out, cutoff
+                );
                 let sinc =
                     make_sincs::<$ft>(fft_size_in, 1, cutoff, WindowFunction::BlackmanHarris2);
                 let mut filter_t: Vec<$ft> = vec![0.0; 2 * fft_size_in];
@@ -112,16 +106,11 @@ macro_rules! impl_resampler {
                 let input_buf: Vec<$ft> = vec![0.0; 2 * fft_size_in];
                 let output_f: Vec<Complex<$ft>> = vec![Complex::zero(); fft_size_out + 1];
                 let output_buf: Vec<$ft> = vec![0.0; 2 * fft_size_out];
-                println!("make fft/ifft");
                 let mut fft = RealToComplex::<$ft>::new(2 * fft_size_in);
                 let ifft = ComplexToReal::<$ft>::new(2 * fft_size_out);
-
-                println!("transform filter");
                 fft.process(&filter_t, &mut filter_f).unwrap();
 
-                println!("Resampler from {} to {} frames", fft_size_in, fft_size_out);
-
-                FFTResampler {
+                FftResampler {
                     fft_size_in,
                     fft_size_out,
                     filter_f,
@@ -180,13 +169,13 @@ macro_rules! impl_resampler {
         }
     };
 }
-impl_resampler!(f32, FFTResampler<f32>);
-impl_resampler!(f64, FFTResampler<f64>);
+impl_resampler!(f32, FftResampler<f32>);
+impl_resampler!(f64, FftResampler<f64>);
 
 macro_rules! impl_fixedinout {
     ($ft:ty) => {
-        impl FFTFixedInOut<$ft> {
-            /// Create a new FFTFixedInOut
+        impl FftFixedInOut<$ft> {
+            /// Create a new FftFixedInOut
             ///
             /// Parameters are:
             /// - `fs_in`: Input sample rate.
@@ -199,8 +188,8 @@ macro_rules! impl_fixedinout {
                 chunk_size_in: usize,
                 nbr_channels: usize,
             ) -> Self {
-                println!(
-                    "Create new FFTFixedInOut, fs_in: {}, fs_out: {} chunk_size_in: {}, channels: {}",
+                debug!(
+                    "Create new FftFixedInOut, fs_in: {}, fs_out: {} chunk_size_in: {}, channels: {}",
                     fs_in, fs_out, chunk_size_in, nbr_channels
                 );
 
@@ -211,13 +200,11 @@ macro_rules! impl_fixedinout {
                 let fft_size_out = fft_chunks * fs_out / gcd;
                 let fft_size_in = fft_chunks * fs_in / gcd;
 
-                let resampler = FFTResampler::<$ft>::new(fft_size_in, fft_size_out);
+                let resampler = FftResampler::<$ft>::new(fft_size_in, fft_size_out);
 
                 let overlaps: Vec<Vec<$ft>> = vec![vec![0.0; fft_size_out]; nbr_channels];
 
-                println!("Resampler from {} to {} frames", fft_size_in, fft_size_out);
-
-                FFTFixedInOut {
+                FftFixedInOut {
                     nbr_channels,
                     chunk_size_in: fft_size_in,
                     chunk_size_out: fft_size_out,
@@ -232,9 +219,9 @@ macro_rules! impl_fixedinout {
 impl_fixedinout!(f64);
 impl_fixedinout!(f32);
 
-macro_rules! resampler_fftfixedinout {
+macro_rules! resampler_FftFixedinout {
     ($t:ty) => {
-        impl Resampler<$t> for FFTFixedInOut<$t> {
+        impl Resampler<$t> for FftFixedInOut<$t> {
             /// Query for the number of frames needed for the next call to "process".
             fn nbr_frames_needed(&self) -> usize {
                 self.fft_size_in
@@ -288,13 +275,13 @@ macro_rules! resampler_fftfixedinout {
         }
     };
 }
-resampler_fftfixedinout!(f32);
-resampler_fftfixedinout!(f64);
+resampler_FftFixedinout!(f32);
+resampler_FftFixedinout!(f64);
 
 macro_rules! impl_fixedout {
     ($ft:ty) => {
-        impl FFTFixedOut<$ft> {
-            /// Create a new FFTFixedOut
+        impl FftFixedOut<$ft> {
+            /// Create a new FftFixedOut
             ///
             /// Parameters are:
             /// - `fs_in`: Input sample rate.
@@ -318,24 +305,21 @@ macro_rules! impl_fixedout {
                 let fft_size_out = fft_chunks * fs_out / gcd;
                 let fft_size_in = fft_chunks * fs_in / gcd;
 
-                let resampler = FFTResampler::<$ft>::new(fft_size_in, fft_size_out);
+                let resampler = FftResampler::<$ft>::new(fft_size_in, fft_size_out);
 
-                println!(
-                    "Create new FFTFixedOut, fs_in: {}, fs_out: {} chunk_size_in: {}, channels: {}, fft_size_in: {}, fft_size_out: {}",
+                debug!(
+                    "Create new FftFixedOut, fs_in: {}, fs_out: {} chunk_size_in: {}, channels: {}, fft_size_in: {}, fft_size_out: {}",
                     fs_in, fs_out, chunk_size_out, nbr_channels, fft_size_in, fft_size_out
                 );
 
                 let overlaps: Vec<Vec<$ft>> = vec![vec![0.0; fft_size_out]; nbr_channels];
-                //let input_buffers: Vec<Vec<$ft>> = vec![vec![0.0; fft_size_in*(fft_chunks+2)]; nbr_channels];
                 let output_buffers: Vec<Vec<$ft>> = vec![vec![0.0; chunk_size_out+fft_size_out]; nbr_channels];
-
-                println!("Resampler from {} to {} frames", fft_size_in, fft_size_out);
 
                 let saved_frames = 0;
                 let chunks_needed = (chunk_size_out as f32 / fft_size_out as f32).ceil() as usize;
                 let frames_needed = chunks_needed*fft_size_in;
 
-                FFTFixedOut {
+                FftFixedOut {
                     nbr_channels,
                     chunk_size_out,
                     fft_size_in,
@@ -353,9 +337,9 @@ macro_rules! impl_fixedout {
 impl_fixedout!(f64);
 impl_fixedout!(f32);
 
-macro_rules! resampler_fftfixedout {
+macro_rules! resampler_FftFixedout {
     ($t:ty) => {
-        impl Resampler<$t> for FFTFixedOut<$t> {
+        impl Resampler<$t> for FftFixedOut<$t> {
             /// Query for the number of frames needed for the next call to "process".
             fn nbr_frames_needed(&self) -> usize {
                 self.frames_needed
@@ -376,12 +360,12 @@ macro_rules! resampler_fftfixedout {
             }
 
             /// Resample a chunk of audio. The required input length is provided by
-            /// the "nbr_frames_required" function, and the output length is fixed.
+            /// the "nbr_frames_needed" function, and the output length is fixed.
             /// # Errors
             ///
             /// The function returns an error if the length of the input data is not
             /// equal to the number of channels defined when creating the instance,
-            /// and the number of audio frames given by "nbr_frames"required".
+            /// and the number of audio frames given by "nbr_frames_needed".
             fn process(&mut self, wave_in: &[Vec<$t>]) -> Res<Vec<Vec<$t>>> {
                 if wave_in.len() != self.nbr_channels {
                     return Err(Box::new(ResamplerError::new(
@@ -400,7 +384,6 @@ macro_rules! resampler_fftfixedout {
                 }
 
                 let mut wave_out = self.output_buffers.clone();
-                //println!("{:?}", wave_out);
                 let mut processed_samples = self.saved_frames * self.nbr_channels;
                 for n in 0..self.nbr_channels {
                     for (in_chunk, out_chunk) in wave_in[n]
@@ -409,7 +392,6 @@ macro_rules! resampler_fftfixedout {
                     {
                         self.resampler
                             .resample_unit(in_chunk, out_chunk, &mut self.overlaps[n]);
-                        //println!("n {}",n);
                         processed_samples += self.fft_size_out;
                     }
                 }
@@ -426,9 +408,7 @@ macro_rules! resampler_fftfixedout {
                             .zip(self.output_buffers[n].iter_mut().take(self.saved_frames))
                         {
                             *saved = *extra;
-                            //println!("copy {}", saved);
                         }
-                        //wave_out[n].truncate(self.chunk_size_out);
                     }
                 }
                 for n in 0..self.nbr_channels {
@@ -439,26 +419,24 @@ macro_rules! resampler_fftfixedout {
                 let chunks_needed =
                     (frames_needed_out as f32 / self.fft_size_out as f32).ceil() as usize;
                 self.frames_needed = chunks_needed * self.fft_size_in;
-                //println!("frames_needed_out {}, chunks_needed {}, self.frames_needed {}", frames_needed_out, chunks_needed, self.frames_needed);
-                //println!("{:?}", wave_out);
                 Ok(wave_out)
             }
         }
     };
 }
-resampler_fftfixedout!(f32);
-resampler_fftfixedout!(f64);
+resampler_FftFixedout!(f32);
+resampler_FftFixedout!(f64);
 
 macro_rules! impl_fixedin {
     ($ft:ty) => {
-        impl FFTFixedIn<$ft> {
-            /// Create a new FFTFixedOut
+        impl FftFixedIn<$ft> {
+            /// Create a new FftFixedOut
             ///
             /// Parameters are:
             /// - `fs_in`: Input sample rate.
             /// - `fs_out`: Output sample rate.
             /// - `chunk_size_out`: length of output data in frames.
-            /// - `sub_chunks`: desired number of subchunks for processing, actual number may be different.
+            /// - `sub_chunks`: desired number of subchunks for processing, actual number used may be different.
             /// - `nbr_channels`: number of channels in input/output.
             pub fn new(
                 fs_in: usize,
@@ -476,20 +454,18 @@ macro_rules! impl_fixedin {
                 let fft_size_out = fft_chunks * fs_out / gcd;
                 let fft_size_in = fft_chunks * fs_in / gcd;
 
-                let resampler = FFTResampler::<$ft>::new(fft_size_in, fft_size_out);
-                println!(
-                    "Create new FFTFixedOut, fs_in: {}, fs_out: {} chunk_size_in: {}, channels: {}, fft_size_in: {}, fft_size_out: {}",
+                let resampler = FftResampler::<$ft>::new(fft_size_in, fft_size_out);
+                debug!(
+                    "Create new FftFixedOut, fs_in: {}, fs_out: {} chunk_size_in: {}, channels: {}, fft_size_in: {}, fft_size_out: {}",
                     fs_in, fs_out, chunk_size_in, nbr_channels, fft_size_in, fft_size_out
                 );
 
                 let overlaps: Vec<Vec<$ft>> = vec![vec![0.0; fft_size_out]; nbr_channels];
                 let input_buffers: Vec<Vec<$ft>> = vec![vec![0.0; chunk_size_in+fft_size_out]; nbr_channels];
 
-                println!("Resampler from {} to {} frames", fft_size_in, fft_size_out);
-
                 let saved_frames = 0;
 
-                FFTFixedIn {
+                FftFixedIn {
                     nbr_channels,
                     chunk_size_in,
                     fft_size_in,
@@ -506,9 +482,9 @@ macro_rules! impl_fixedin {
 impl_fixedin!(f64);
 impl_fixedin!(f32);
 
-macro_rules! resampler_fftfixedin {
+macro_rules! resampler_FftFixedin {
     ($t:ty) => {
-        impl Resampler<$t> for FFTFixedIn<$t> {
+        impl Resampler<$t> for FftFixedIn<$t> {
             /// Query for the number of frames needed for the next call to "process".
             fn nbr_frames_needed(&self) -> usize {
                 self.chunk_size_in
@@ -529,12 +505,12 @@ macro_rules! resampler_fftfixedin {
             }
 
             /// Resample a chunk of audio. The required input length is provided by
-            /// the "nbr_frames_required" function, and the output length is fixed.
+            /// the "nbr_frames_needed" function, and the output length is fixed.
             /// # Errors
             ///
             /// The function returns an error if the length of the input data is not
             /// equal to the number of channels defined when creating the instance,
-            /// and the number of audio frames given by "nbr_frames"required".
+            /// and the number of audio frames given by "nbr_frames_needed".
             fn process(&mut self, wave_in: &[Vec<$t>]) -> Res<Vec<Vec<$t>>> {
                 if wave_in.len() != self.nbr_channels {
                     return Err(Box::new(ResamplerError::new(
@@ -553,7 +529,6 @@ macro_rules! resampler_fftfixedin {
                 }
 
                 // copy new samples to input buffer
-                //self.saved_frames = processed_frames - self.chunk_size_out;
                 let mut input_temp =
                     vec![vec![0.0; self.saved_frames + self.chunk_size_in]; self.nbr_channels];
                 for n in 0..self.nbr_channels {
@@ -563,9 +538,7 @@ macro_rules! resampler_fftfixedin {
                         .zip(input_temp[n].iter_mut())
                     {
                         *buffer = *input;
-                        //println!("copy {}", saved);
                     }
-                    //wave_out[n].truncate(self.chunk_size_out);
                 }
                 for n in 0..self.nbr_channels {
                     for (input, buffer) in wave_in[n].iter().zip(
@@ -575,14 +548,10 @@ macro_rules! resampler_fftfixedin {
                             .take(self.chunk_size_in),
                     ) {
                         *buffer = *input;
-                        //println!("copy {}", saved);
                     }
-                    //wave_out[n].truncate(self.chunk_size_out);
                 }
                 self.saved_frames += self.chunk_size_in;
 
-                //println!("{:?}", wave_out);
-                //let mut processed_samples = self.saved_frames * self.nbr_channels;
                 let nbr_chunks_ready =
                     (self.saved_frames as f32 / self.fft_size_in as f32).floor() as usize;
                 let mut wave_out =
@@ -595,11 +564,8 @@ macro_rules! resampler_fftfixedin {
                     {
                         self.resampler
                             .resample_unit(in_chunk, out_chunk, &mut self.overlaps[n]);
-                        //println!("n {}",n);
-                        //processed_samples += self.fft_size_out;
                     }
                 }
-                //let processed_frames = processed_samples / self.nbr_channels;
 
                 // save extra frames for next round
                 let frames_in_used = nbr_chunks_ready * self.fft_size_in;
@@ -614,29 +580,26 @@ macro_rules! resampler_fftfixedin {
                             .zip(self.input_buffers[n].iter_mut())
                         {
                             *buffer = *input;
-                            //println!("copy {}", saved);
                         }
-                        //wave_out[n].truncate(self.chunk_size_out);
                     }
                 }
                 self.saved_frames = extra;
-                //calculate number of needed frames from next round
                 Ok(wave_out)
             }
         }
     };
 }
-resampler_fftfixedin!(f32);
-resampler_fftfixedin!(f64);
+resampler_FftFixedin!(f32);
+resampler_FftFixedin!(f64);
 
 #[cfg(test)]
 mod tests {
-    use crate::synchro::{FFTFixedIn, FFTFixedInOut, FFTFixedOut, FFTResampler};
+    use crate::synchro::{FftFixedIn, FftFixedInOut, FftFixedOut, FftResampler};
     use crate::Resampler;
 
     #[test]
     fn make_resampler() {
-        let mut resampler = FFTResampler::<f64>::new(147, 160);
+        let mut resampler = FftResampler::<f64>::new(147, 160);
         let mut wave_in = vec![0.0; 147];
 
         wave_in[0] = 1.0;
@@ -651,7 +614,7 @@ mod tests {
     #[test]
     fn make_resampler_fio() {
         // asking for 1024 give the nearest which is 1029 -> 1120
-        let mut resampler = FFTFixedInOut::<f64>::new(44100, 48000, 1024, 2);
+        let mut resampler = FftFixedInOut::<f64>::new(44100, 48000, 1024, 2);
         let frames = resampler.nbr_frames_needed();
         let waves = vec![vec![0.0f64; frames]; 2];
         let out = resampler.process(&waves).unwrap();
@@ -661,9 +624,8 @@ mod tests {
 
     #[test]
     fn make_resampler_fo() {
-        let mut resampler = FFTFixedOut::<f64>::new(44100, 192000, 1024, 2, 2);
+        let mut resampler = FftFixedOut::<f64>::new(44100, 192000, 1024, 2, 2);
         let frames = resampler.nbr_frames_needed();
-        println!("{}", frames);
         assert_eq!(frames, 294);
         let waves = vec![vec![0.0f64; frames]; 2];
         let out = resampler.process(&waves).unwrap();
@@ -673,9 +635,8 @@ mod tests {
 
     #[test]
     fn make_resampler_fi() {
-        let mut resampler = FFTFixedIn::<f64>::new(44100, 48000, 1024, 2, 2);
+        let mut resampler = FftFixedIn::<f64>::new(44100, 48000, 1024, 2, 2);
         let frames = resampler.nbr_frames_needed();
-        println!("{}", frames);
         assert_eq!(frames, 1024);
         let waves = vec![vec![0.0f64; frames]; 2];
         let out = resampler.process(&waves).unwrap();

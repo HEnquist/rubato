@@ -47,7 +47,7 @@ mod realfft;
 mod sinc;
 mod synchro;
 mod windows;
-pub use crate::synchro::{FFTFixedIn, FFTFixedInOut, FFTFixedOut};
+pub use crate::synchro::{FftFixedIn, FftFixedInOut, FftFixedOut};
 pub use crate::windows::WindowFunction;
 
 use crate::interpolation::*;
@@ -541,12 +541,12 @@ macro_rules! resampler_sincfixedout {
             }
 
             /// Resample a chunk of audio. The required input length is provided by
-            /// the "nbr_frames_required" function, and the output length is fixed.
+            /// the "nbr_frames_needed" function, and the output length is fixed.
             /// # Errors
             ///
             /// The function returns an error if the length of the input data is not
             /// equal to the number of channels defined when creating the instance,
-            /// and the number of audio frames given by "nbr_frames"required".
+            /// and the number of audio frames given by "nbr_frames_needed".
             fn process(&mut self, wave_in: &[Vec<$t>]) -> Res<Vec<Vec<$t>>> {
                 //update buffer with new data
                 if wave_in.len() != self.nbr_channels {
@@ -638,19 +638,12 @@ macro_rules! resampler_sincfixedout {
                 }
 
                 // store last index for next iteration
-                //trace!("idx {}, fill{}", idx, self.current_buffer_fill);
                 self.last_index = idx - self.current_buffer_fill as f64;
-                //let next_last_index = self.last_index as f64 + self.chunk_size as f64 / self.resample_ratio as f64 + self.sinc_len as f64;
-                //let needed_with_margin = next_last_index + (self.sinc_len) as f64;
                 self.needed_input_size = (self.last_index as f32
                     + self.chunk_size as f32 / self.resample_ratio as f32
                     + self.sinc_len as f32)
                     .ceil() as usize
                     + 2;
-                //self.needed_input_size = ((self.chunk_size as f32 + self.last_index as f32 + (self.sinc_len) as f32)/ self.resample_ratio).ceil() as usize + 2;
-                //self.needed_input_size = (self.needed_input_size as isize
-                //    + self.last_index.round() as isize
-                //    + self.sinc_len as isize) as usize + 2;
                 trace!(
                     "Resampling, {} frames in, {} frames out. Next needed length: {} frames, last index {}",
                     wave_in[0].len(),
