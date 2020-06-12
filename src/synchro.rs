@@ -227,14 +227,15 @@ macro_rules! resampler_FftFixedinout {
                 self.fft_size_in
             }
 
-            /// Update the resample ratio. New value must be within +-10% of the original one
+            /// Update the resample ratio. This is not supported by this resampler and always returns an error.
             fn set_resample_ratio(&mut self, _new_ratio: f64) -> Res<()> {
                 Err(Box::new(ResamplerError::new(
                     "Not possible to adjust a synchronous resampler)",
                 )))
             }
 
-            /// Update the resample ratio relative to the original one
+            /// Update the resample ratio relative to the original one.
+            /// This is not supported by this resampler and always returns an error.
             fn set_resample_ratio_relative(&mut self, _rel_ratio: f64) -> Res<()> {
                 Err(Box::new(ResamplerError::new(
                     "Not possible to adjust a synchronous resampler)",
@@ -345,14 +346,15 @@ macro_rules! resampler_FftFixedout {
                 self.frames_needed
             }
 
-            /// Update the resample ratio. New value must be within +-10% of the original one
+            /// Update the resample ratio. This is not supported by this resampler and always returns an error.
             fn set_resample_ratio(&mut self, _new_ratio: f64) -> Res<()> {
                 Err(Box::new(ResamplerError::new(
                     "Not possible to adjust a synchronous resampler)",
                 )))
             }
 
-            /// Update the resample ratio relative to the original one
+            /// Update the resample ratio relative to the original one.
+            /// This is not supported by this resampler and always returns an error.
             fn set_resample_ratio_relative(&mut self, _rel_ratio: f64) -> Res<()> {
                 Err(Box::new(ResamplerError::new(
                     "Not possible to adjust a synchronous resampler)",
@@ -490,14 +492,15 @@ macro_rules! resampler_FftFixedin {
                 self.chunk_size_in
             }
 
-            /// Update the resample ratio. New value must be within +-10% of the original one
+            /// Update the resample ratio. This is not supported by this resampler and always returns an error.
             fn set_resample_ratio(&mut self, _new_ratio: f64) -> Res<()> {
                 Err(Box::new(ResamplerError::new(
                     "Not possible to adjust a synchronous resampler)",
                 )))
             }
 
-            /// Update the resample ratio relative to the original one
+            /// Update the resample ratio relative to the original one.
+            /// This is not supported by this resampler and always returns an error.
             fn set_resample_ratio_relative(&mut self, _rel_ratio: f64) -> Res<()> {
                 Err(Box::new(ResamplerError::new(
                     "Not possible to adjust a synchronous resampler)",

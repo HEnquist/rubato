@@ -160,10 +160,10 @@ pub trait Resampler<T> {
     /// where each element contains a vector with all samples for a single channel.
     fn process(&mut self, wave_in: &[Vec<T>]) -> Res<Vec<Vec<T>>>;
 
-    /// Update the resample ratio. New value must be within +-10% of the original one.
+    /// Update the resample ratio.
     fn set_resample_ratio(&mut self, new_ratio: f64) -> Res<()>;
 
-    /// Update the resample ratio relative to the original one. Must be in the range 0.9 - 1.1.
+    /// Update the resample ratio relative to the original one.
     fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> Res<()>;
 
     /// Query for the number of frames needed for the next call to "process".
