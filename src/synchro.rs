@@ -20,6 +20,18 @@ use crate::Resampler;
 
 use crate::realfft::{ComplexToReal, RealToComplex};
 
+pub struct FFTResampler<T> {
+    fft_size_in: usize,
+    fft_size_out: usize,
+    filter_f: Vec<Complex<T>>,
+    fft: RealToComplex<T>,
+    ifft: ComplexToReal<T>,
+    input_buf: Vec<T>,
+    input_f: Vec<Complex<T>>,
+    output_f: Vec<Complex<T>>,
+    output_buf: Vec<T>,
+}
+
 /// A resampler that accepts a fixed number of audio frames for input
 /// and returns a variable number of frames.
 ///
@@ -31,16 +43,10 @@ pub struct FFTFixedIn<T> {
     chunk_size_in: usize,
     fft_size_in: usize,
     fft_size_out: usize,
-    filter_f: Vec<Complex<T>>,
     overlaps: Vec<Vec<T>>,
-    fft: RealToComplex<T>,
-    ifft: ComplexToReal<T>,
-    input_buf: Vec<T>,
-    input_f: Vec<Complex<T>>,
-    output_f: Vec<Complex<T>>,
-    output_buf: Vec<T>,
     input_buffers: Vec<Vec<T>>,
     saved_frames: usize,
+    resampler: FFTResampler<T>,
 }
 
 /// A resampler that accepts a varying number of audio frames for input
@@ -54,17 +60,11 @@ pub struct FFTFixedOut<T> {
     chunk_size_out: usize,
     fft_size_in: usize,
     fft_size_out: usize,
-    filter_f: Vec<Complex<T>>,
     overlaps: Vec<Vec<T>>,
-    fft: RealToComplex<T>,
-    ifft: ComplexToReal<T>,
-    input_buf: Vec<T>,
-    input_f: Vec<Complex<T>>,
-    output_f: Vec<Complex<T>>,
-    output_buf: Vec<T>,
     output_buffers: Vec<Vec<T>>,
     saved_frames: usize,
     frames_needed: usize,
+    resampler: FFTResampler<T>,
 }
 
 /// A resampler that accepts a fixed number of audio frames for input
@@ -78,22 +78,69 @@ pub struct FFTFixedInOut<T> {
     chunk_size_in: usize,
     chunk_size_out: usize,
     fft_size_in: usize,
-    fft_size_out: usize,
-    filter_f: Vec<Complex<T>>,
     overlaps: Vec<Vec<T>>,
-    fft: RealToComplex<T>,
-    ifft: ComplexToReal<T>,
-    input_buf: Vec<T>,
-    input_f: Vec<Complex<T>>,
-    output_f: Vec<Complex<T>>,
-    output_buf: Vec<T>,
+    resampler: FFTResampler<T>,
 }
 
 macro_rules! impl_resampler {
     ($ft:ty, $rt:ty) => {
         impl $rt {
+            pub fn new(fft_size_in: usize, fft_size_out: usize) -> Self {
+                println!(
+                    "Create new FFTResampler, fft_size_in: {}, fft_size_out: {}",
+                    fft_size_in, fft_size_out
+                );
+
+                // calculate antialiasing cutoff
+                let cutoff = if fft_size_in > fft_size_out {
+                    0.4f32.powf(16.0 / fft_size_in as f32) * fft_size_out as f32
+                        / fft_size_in as f32
+                } else {
+                    0.4f32.powf(16.0 / fft_size_in as f32)
+                };
+
+                println!("making sincs, cutoff {}", cutoff);
+                let sinc =
+                    make_sincs::<$ft>(fft_size_in, 1, cutoff, WindowFunction::BlackmanHarris2);
+                let mut filter_t: Vec<$ft> = vec![0.0; 2 * fft_size_in];
+                let mut filter_f: Vec<Complex<$ft>> = vec![Complex::zero(); fft_size_in + 1];
+                for n in 0..fft_size_in {
+                    filter_t[n] = sinc[0][n] / (2.0 * fft_size_in as $ft);
+                }
+
+                let input_f: Vec<Complex<$ft>> = vec![Complex::zero(); fft_size_in + 1];
+                let input_buf: Vec<$ft> = vec![0.0; 2 * fft_size_in];
+                let output_f: Vec<Complex<$ft>> = vec![Complex::zero(); fft_size_out + 1];
+                let output_buf: Vec<$ft> = vec![0.0; 2 * fft_size_out];
+                println!("make fft/ifft");
+                let mut fft = RealToComplex::<$ft>::new(2 * fft_size_in);
+                let ifft = ComplexToReal::<$ft>::new(2 * fft_size_out);
+
+                println!("transform filter");
+                fft.process(&filter_t, &mut filter_f).unwrap();
+
+                println!("Resampler from {} to {} frames", fft_size_in, fft_size_out);
+
+                FFTResampler {
+                    fft_size_in,
+                    fft_size_out,
+                    filter_f,
+                    fft,
+                    ifft,
+                    input_buf,
+                    input_f,
+                    output_f,
+                    output_buf,
+                }
+            }
+
             /// Resample a small chunk
-            fn resample_unit(&mut self, wave_in: &[$ft], wave_out: &mut [$ft], overlap_idx: usize) {
+            fn resample_unit(
+                &mut self,
+                wave_in: &[$ft],
+                wave_out: &mut [$ft],
+                overlap: &mut [$ft],
+            ) {
                 // Copy to inut buffer and convert to complex
                 for (n, item) in wave_in.iter().enumerate().take(self.fft_size_in) {
                     self.input_buf[n] = *item;
@@ -126,19 +173,15 @@ macro_rules! impl_resampler {
                     .process(&self.output_f, &mut self.output_buf)
                     .unwrap();
                 for (n, item) in wave_out.iter_mut().enumerate().take(self.fft_size_out) {
-                    *item = self.output_buf[n] + self.overlaps[overlap_idx][n];
-                    self.overlaps[overlap_idx][n] = self.output_buf[n + self.fft_size_out];
+                    *item = self.output_buf[n] + overlap[n];
+                    overlap[n] = self.output_buf[n + self.fft_size_out];
                 }
             }
         }
     };
 }
-impl_resampler!(f32, FFTFixedIn<f32>);
-impl_resampler!(f64, FFTFixedIn<f64>);
-impl_resampler!(f32, FFTFixedOut<f32>);
-impl_resampler!(f64, FFTFixedOut<f64>);
-impl_resampler!(f32, FFTFixedInOut<f32>);
-impl_resampler!(f64, FFTFixedInOut<f64>);
+impl_resampler!(f32, FFTResampler<f32>);
+impl_resampler!(f64, FFTResampler<f64>);
 
 macro_rules! impl_fixedinout {
     ($ft:ty) => {
@@ -168,34 +211,9 @@ macro_rules! impl_fixedinout {
                 let fft_size_out = fft_chunks * fs_out / gcd;
                 let fft_size_in = fft_chunks * fs_in / gcd;
 
-                // calculate antialiasing cutoff
-                let cutoff = if fs_in>fs_out {
-                    0.4f32.powf(16.0/fft_size_in as f32) * fs_out as f32 / fs_in as f32
-                }
-                else {
-                    0.4f32.powf(16.0/fft_size_in as f32)
-                    //0.9f32
-                };
+                let resampler = FFTResampler::<$ft>::new(fft_size_in, fft_size_out);
 
-                println!("making sincs, cutoff {}", cutoff);
-                let sinc = make_sincs::<$ft>(fft_size_in, 1, cutoff, WindowFunction::BlackmanHarris2);
-                let mut filter_t: Vec<$ft> = vec![0.0; 2*fft_size_in];
-                let mut filter_f: Vec<Complex<$ft>> = vec![Complex::zero(); fft_size_in+1];
-                for n in 0..fft_size_in {
-                    filter_t[n] = sinc[0][n]/(2.0 * fft_size_in as $ft);
-                }
-
-                let input_f: Vec<Complex<$ft>> = vec![Complex::zero(); fft_size_in+1];
-                let input_buf: Vec<$ft> = vec![0.0; 2*fft_size_in];
                 let overlaps: Vec<Vec<$ft>> = vec![vec![0.0; fft_size_out]; nbr_channels];
-                let output_f: Vec<Complex<$ft>> = vec![Complex::zero(); fft_size_out+1];
-                let output_buf: Vec<$ft> = vec![0.0; 2*fft_size_out];
-                println!("make fft/ifft");
-                let mut fft = RealToComplex::<$ft>::new(2*fft_size_in);
-                let ifft = ComplexToReal::<$ft>::new(2*fft_size_out);
-
-                println!("transform filter");
-                fft.process(&filter_t, &mut filter_f).unwrap();
 
                 println!("Resampler from {} to {} frames", fft_size_in, fft_size_out);
 
@@ -204,15 +222,8 @@ macro_rules! impl_fixedinout {
                     chunk_size_in: fft_size_in,
                     chunk_size_out: fft_size_out,
                     fft_size_in,
-                    fft_size_out,
-                    filter_f,
                     overlaps,
-                    fft,
-                    ifft,
-                    input_buf,
-                    input_f,
-                    output_f,
-                    output_buf,
+                    resampler,
                 }
             }
         }
@@ -266,7 +277,11 @@ macro_rules! resampler_fftfixedinout {
                 }
                 let mut wave_out = vec![vec![0.0 as $t; self.chunk_size_out]; self.nbr_channels];
                 for n in 0..self.nbr_channels {
-                    self.resample_unit(&wave_in[n], &mut wave_out[n], n)
+                    self.resampler.resample_unit(
+                        &wave_in[n],
+                        &mut wave_out[n],
+                        &mut self.overlaps[n],
+                    )
                 }
                 Ok(wave_out)
             }
@@ -303,40 +318,16 @@ macro_rules! impl_fixedout {
                 let fft_size_out = fft_chunks * fs_out / gcd;
                 let fft_size_in = fft_chunks * fs_in / gcd;
 
+                let resampler = FFTResampler::<$ft>::new(fft_size_in, fft_size_out);
+
                 println!(
                     "Create new FFTFixedOut, fs_in: {}, fs_out: {} chunk_size_in: {}, channels: {}, fft_size_in: {}, fft_size_out: {}",
                     fs_in, fs_out, chunk_size_out, nbr_channels, fft_size_in, fft_size_out
                 );
 
-                // calculate antialiasing cutoff
-                let cutoff = if fs_in>fs_out {
-                    0.4f32.powf(16.0/fft_size_in as f32) * fs_out as f32 / fs_in as f32
-                }
-                else {
-                    0.4f32.powf(16.0/fft_size_in as f32)
-                };
-
-                println!("making sincs, cutoff {}", cutoff);
-                let sinc = make_sincs::<$ft>(fft_size_in, 1, cutoff, WindowFunction::BlackmanHarris2);
-                let mut filter_t: Vec<$ft> = vec![0.0; 2*fft_size_in];
-                let mut filter_f: Vec<Complex<$ft>> = vec![Complex::zero(); fft_size_in+1];
-                for n in 0..fft_size_in {
-                    filter_t[n] = sinc[0][n]/(2.0 * fft_size_in as $ft);
-                }
-
-                let input_f: Vec<Complex<$ft>> = vec![Complex::zero(); fft_size_in+1];
-                let input_buf: Vec<$ft> = vec![0.0; 2*fft_size_in];
                 let overlaps: Vec<Vec<$ft>> = vec![vec![0.0; fft_size_out]; nbr_channels];
-                let output_f: Vec<Complex<$ft>> = vec![Complex::zero(); fft_size_out+1];
-                let output_buf: Vec<$ft> = vec![0.0; 2*fft_size_out];
                 //let input_buffers: Vec<Vec<$ft>> = vec![vec![0.0; fft_size_in*(fft_chunks+2)]; nbr_channels];
                 let output_buffers: Vec<Vec<$ft>> = vec![vec![0.0; chunk_size_out+fft_size_out]; nbr_channels];
-                println!("make fft/ifft");
-                let mut fft = RealToComplex::<$ft>::new(2*fft_size_in);
-                let ifft = ComplexToReal::<$ft>::new(2*fft_size_out);
-
-                println!("transform filter");
-                fft.process(&filter_t, &mut filter_f).unwrap();
 
                 println!("Resampler from {} to {} frames", fft_size_in, fft_size_out);
 
@@ -349,17 +340,11 @@ macro_rules! impl_fixedout {
                     chunk_size_out,
                     fft_size_in,
                     fft_size_out,
-                    filter_f,
                     overlaps,
-                    fft,
-                    ifft,
-                    input_buf,
-                    input_f,
-                    output_f,
-                    output_buf,
                     output_buffers,
                     saved_frames,
                     frames_needed,
+                    resampler,
                 }
             }
         }
@@ -422,7 +407,8 @@ macro_rules! resampler_fftfixedout {
                         .chunks(self.fft_size_in)
                         .zip(wave_out[n][self.saved_frames..].chunks_mut(self.fft_size_out))
                     {
-                        self.resample_unit(in_chunk, out_chunk, n);
+                        self.resampler
+                            .resample_unit(in_chunk, out_chunk, &mut self.overlaps[n]);
                         //println!("n {}",n);
                         processed_samples += self.fft_size_out;
                     }
@@ -490,61 +476,28 @@ macro_rules! impl_fixedin {
                 let fft_size_out = fft_chunks * fs_out / gcd;
                 let fft_size_in = fft_chunks * fs_in / gcd;
 
+                let resampler = FFTResampler::<$ft>::new(fft_size_in, fft_size_out);
                 println!(
                     "Create new FFTFixedOut, fs_in: {}, fs_out: {} chunk_size_in: {}, channels: {}, fft_size_in: {}, fft_size_out: {}",
                     fs_in, fs_out, chunk_size_in, nbr_channels, fft_size_in, fft_size_out
                 );
 
-                // calculate antialiasing cutoff
-                let cutoff = if fs_in>fs_out {
-                    0.4f32.powf(16.0/fft_size_in as f32) * fs_out as f32 / fs_in as f32
-                }
-                else {
-                    0.4f32.powf(16.0/fft_size_in as f32)
-                };
-
-                println!("making sincs, cutoff {}", cutoff);
-                let sinc = make_sincs::<$ft>(fft_size_in, 1, cutoff, WindowFunction::BlackmanHarris2);
-                let mut filter_t: Vec<$ft> = vec![0.0; 2*fft_size_in];
-                let mut filter_f: Vec<Complex<$ft>> = vec![Complex::zero(); fft_size_in+1];
-                for n in 0..fft_size_in {
-                    filter_t[n] = sinc[0][n]/(2.0 * fft_size_in as $ft);
-                }
-
-                let input_f: Vec<Complex<$ft>> = vec![Complex::zero(); fft_size_in+1];
-                let input_buf: Vec<$ft> = vec![0.0; 2*fft_size_in];
                 let overlaps: Vec<Vec<$ft>> = vec![vec![0.0; fft_size_out]; nbr_channels];
-                let output_f: Vec<Complex<$ft>> = vec![Complex::zero(); fft_size_out+1];
-                let output_buf: Vec<$ft> = vec![0.0; 2*fft_size_out];
                 let input_buffers: Vec<Vec<$ft>> = vec![vec![0.0; chunk_size_in+fft_size_out]; nbr_channels];
-                println!("make fft/ifft");
-                let mut fft = RealToComplex::<$ft>::new(2*fft_size_in);
-                let ifft = ComplexToReal::<$ft>::new(2*fft_size_out);
-
-                println!("transform filter");
-                fft.process(&filter_t, &mut filter_f).unwrap();
 
                 println!("Resampler from {} to {} frames", fft_size_in, fft_size_out);
 
                 let saved_frames = 0;
-                //let chunks_needed = (chunk_size_in as f32 / fft_size_out as f32).ceil() as usize;
-                //let frames_needed = chunks_needed*fft_size_in;
 
                 FFTFixedIn {
                     nbr_channels,
                     chunk_size_in,
                     fft_size_in,
                     fft_size_out,
-                    filter_f,
                     overlaps,
-                    fft,
-                    ifft,
-                    input_buf,
-                    input_f,
-                    output_f,
-                    output_buf,
                     input_buffers,
                     saved_frames,
+                    resampler,
                 }
             }
         }
@@ -640,7 +593,8 @@ macro_rules! resampler_fftfixedin {
                         .take(nbr_chunks_ready)
                         .zip(wave_out[n].chunks_mut(self.fft_size_out))
                     {
-                        self.resample_unit(in_chunk, out_chunk, n);
+                        self.resampler
+                            .resample_unit(in_chunk, out_chunk, &mut self.overlaps[n]);
                         //println!("n {}",n);
                         //processed_samples += self.fft_size_out;
                     }
@@ -677,20 +631,32 @@ resampler_fftfixedin!(f64);
 
 #[cfg(test)]
 mod tests {
-    use crate::synchro::{FFTFixedIn, FFTFixedInOut, FFTFixedOut};
+    use crate::synchro::{FFTFixedIn, FFTFixedInOut, FFTFixedOut, FFTResampler};
     use crate::Resampler;
 
     #[test]
-    fn make_resampler_fio() {
-        let mut resampler = FFTFixedInOut::<f64>::new(44100, 48000, 1024, 1);
-        let mut wave_in = vec![0.0; resampler.fft_size_in];
+    fn make_resampler() {
+        let mut resampler = FFTResampler::<f64>::new(147, 160);
+        let mut wave_in = vec![0.0; 147];
 
         wave_in[0] = 1.0;
         wave_in[1] = -1.0;
 
-        let mut wave_out = vec![0.0; resampler.fft_size_out];
-        resampler.resample_unit(&wave_in, &mut wave_out, 0);
+        let mut wave_out = vec![0.0; 160];
+        let mut overlap = vec![0.0; 160];
+        resampler.resample_unit(&wave_in, &mut wave_out, &mut overlap);
         assert!((wave_out.iter().sum::<f64>()).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn make_resampler_fio() {
+        // asking for 1024 give the nearest which is 1029 -> 1120
+        let mut resampler = FFTFixedInOut::<f64>::new(44100, 48000, 1024, 2);
+        let frames = resampler.nbr_frames_needed();
+        let waves = vec![vec![0.0f64; frames]; 2];
+        let out = resampler.process(&waves).unwrap();
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].len(), 1120);
     }
 
     #[test]
