@@ -3,12 +3,21 @@
 An audio sample rate conversion library for Rust.
 
 This library provides resamplers to process audio in chunks.
+
 The ratio between input and output sample rates is completely free.
 Implementations are available that accept a fixed length input
 while returning a variable length output, and vice versa.
+
+### Asynchronous resampling
 The resampling is based on band-limited interpolation using sinc
 interpolation filters. The sinc interpolation upsamples by an adjustable factor,
 and then the new sample points are calculated by interpolating between these points.
+The resampling ratio can be updated at any time.
+
+### Synchronous resampling
+Synchronous resampling is implemented via FFT. The data is FFT:ed, the spectrum modified,
+and then inverse FFT:ed to get the resampled data.
+This type of resampler is considerably faster but doesn't support changing the resampling ratio.
 
 ### Documentation
 
@@ -42,6 +51,6 @@ let waves_out = resampler.process(&waves_in).unwrap();
 
 ### Compatibility
 
-The `rubato` crate only depends on the `num-traits` crate and should work with any rustc version that crate supports.
+The `rubato` crate requires rustc version 1.40 or newer.
 
 License: MIT
