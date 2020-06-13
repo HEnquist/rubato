@@ -616,8 +616,8 @@ mod tests {
         let mut overlap = vec![0.0; 1000];
         resampler.resample_unit(&wave_in, &mut wave_out, &mut overlap);
         let vecsum = wave_out.iter().sum::<f64>();
-        let maxval = wave_out.iter().cloned().fold(0./0., f64::max);
-        assert!((vecsum - 4.0*1000.0/147.0).abs() < 1.0e-6);
+        let maxval = wave_out.iter().cloned().fold(0. / 0., f64::max);
+        assert!((vecsum - 4.0 * 1000.0 / 147.0).abs() < 1.0e-6);
         assert!((maxval - 1.0).abs() < 0.1);
     }
 
