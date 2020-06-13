@@ -99,7 +99,7 @@ macro_rules! impl_resampler {
                 let mut filter_t: Vec<$ft> = vec![0.0; 2 * fft_size_in];
                 let mut filter_f: Vec<Complex<$ft>> = vec![Complex::zero(); fft_size_in + 1];
                 for n in 0..fft_size_in {
-                    filter_t[n] = sinc[0][n] / (2.0 * fft_size_in as $ft);
+                    filter_t[n] = sinc[0][n] / (fft_size_in as $ft);
                 }
 
                 let input_f: Vec<Complex<$ft>> = vec![Complex::zero(); fft_size_in + 1];
@@ -601,17 +601,24 @@ mod tests {
     use crate::Resampler;
 
     #[test]
-    fn make_resampler() {
-        let mut resampler = FftResampler::<f64>::new(147, 160);
+    fn resample_unit() {
+        let mut resampler = FftResampler::<f64>::new(147, 1000);
         let mut wave_in = vec![0.0; 147];
 
-        wave_in[0] = 1.0;
-        wave_in[1] = -1.0;
+        wave_in[0] = 0.3;
+        wave_in[1] = 0.7;
+        wave_in[2] = 1.0;
+        wave_in[3] = 1.0;
+        wave_in[4] = 0.7;
+        wave_in[5] = 0.3;
 
-        let mut wave_out = vec![0.0; 160];
-        let mut overlap = vec![0.0; 160];
+        let mut wave_out = vec![0.0; 1000];
+        let mut overlap = vec![0.0; 1000];
         resampler.resample_unit(&wave_in, &mut wave_out, &mut overlap);
-        assert!((wave_out.iter().sum::<f64>()).abs() < 1.0e-6);
+        let vecsum = wave_out.iter().sum::<f64>();
+        let maxval = wave_out.iter().cloned().fold(0./0., f64::max);
+        assert!((vecsum - 4.0*1000.0/147.0).abs() < 1.0e-6);
+        assert!((maxval - 1.0).abs() < 0.1);
     }
 
     #[test]
