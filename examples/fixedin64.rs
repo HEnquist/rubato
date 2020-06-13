@@ -7,6 +7,11 @@ use std::io::prelude::{Read, Seek, Write};
 use std::io::Cursor;
 use std::time::Instant;
 
+extern crate env_logger;
+extern crate log;
+use env_logger::Builder;
+use log::LevelFilter;
+
 ///! A resampler app that reads a raw file of little-endian 64 bit floats, and writes the output in the same format.
 ///! The command line arguments are input filename, output filename, input samplerate, output samplerate, number of channels
 ///! To resample the file `sine_f64_2ch.raw` from 44.1kHz to 192kHz, and assuming the file has two channels, the command is:
@@ -53,6 +58,10 @@ fn write_frames<W: Write + Seek>(waves: Vec<Vec<f64>>, outbuffer: &mut W, channe
 }
 
 fn main() {
+    // init logger
+    let mut builder = Builder::from_default_env();
+    builder.filter(None, LevelFilter::Debug).init();
+
     let file_in = env::args().nth(1).expect("Please specify an input file.");
     let file_out = env::args().nth(2).expect("Please specify an output file.");
     println!("Opening files: {}, {}", file_in, file_out);
@@ -75,10 +84,14 @@ fn main() {
     //open files
     let mut f_in_disk = File::open(file_in).expect("Can't open file");
     let mut f_in_ram: Vec<u8> = vec![];
-    let mut f_out_ram: Vec<u8> = vec![];
+    //let mut f_out_ram: Vec<u8> = vec![];
 
     println!("Copy input file to buffer");
     std::io::copy(&mut f_in_disk, &mut f_in_ram).unwrap();
+
+    let file_size = f_in_ram.len();
+    let mut f_out_ram: Vec<u8> =
+        Vec::with_capacity((file_size as f32 * fs_out as f32 / fs_in as f32) as usize);
 
     let mut f_in = Cursor::new(&f_in_ram);
     let mut f_out = Cursor::new(&mut f_out_ram);
@@ -121,35 +134,35 @@ fn main() {
     //};
     //
     //// Best for sync for 44100 -> 96000 etc
-    //let sinc_len = 256;
-    //let f_cutoff = 0.9473371669037001;
-    //let params = InterpolationParameters {
-    //    sinc_len,
-    //    f_cutoff,
-    //    interpolation: InterpolationType::Nearest,
-    //    oversampling_factor: 320,
-    //    window: WindowFunction::BlackmanHarris2,
-    //};
-
-    // Best for async
     let sinc_len = 256;
     let f_cutoff = 0.9473371669037001;
     let params = InterpolationParameters {
         sinc_len,
         f_cutoff,
-        interpolation: InterpolationType::Cubic,
-        oversampling_factor: 256,
+        interpolation: InterpolationType::Nearest,
+        oversampling_factor: 320,
         window: WindowFunction::BlackmanHarris2,
     };
+
+    // Best for async
+    //let sinc_len = 256;
+    //let f_cutoff = 0.9473371669037001;
+    //let params = InterpolationParameters {
+    //    sinc_len,
+    //    f_cutoff,
+    //    interpolation: InterpolationType::Cubic,
+    //    oversampling_factor: 256,
+    //    window: WindowFunction::BlackmanHarris2,
+    //};
 
     let mut resampler = SincFixedIn::<f64>::new(f_ratio, params, 1024, channels);
 
     let num_chunks = f_in_ram.len() / (8 * channels * 1024);
     let start = Instant::now();
     for _chunk in 0..num_chunks {
-        let waves = read_frames(&mut f_in, 1024, 2);
+        let waves = read_frames(&mut f_in, 1024, channels);
         let waves_out = resampler.process(&waves).unwrap();
-        write_frames(waves_out, &mut f_out, 2);
+        write_frames(waves_out, &mut f_out, channels);
     }
 
     let duration = start.elapsed();
