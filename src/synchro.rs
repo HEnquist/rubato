@@ -1,19 +1,15 @@
-use crate::windows::WindowFunction;
-
 use crate::sinc::make_sincs;
+use crate::windows::WindowFunction;
 use num::integer;
+use num::traits::Zero;
+use num::Complex;
 use std::error;
-
-use rustfft::num_complex::Complex;
-use rustfft::num_traits::Zero;
 
 type Res<T> = Result<T, Box<dyn error::Error>>;
 
-use crate::ResamplerError;
-
 use crate::Resampler;
-
-use crate::realfft::{ComplexToReal, RealToComplex};
+use crate::ResamplerError;
+use realfft::{ComplexToReal, RealToComplex};
 
 /// A helper for resampling a single chunk of data.
 struct FftResampler<T> {
@@ -106,8 +102,8 @@ macro_rules! impl_resampler {
                 let input_buf: Vec<$ft> = vec![0.0; 2 * fft_size_in];
                 let output_f: Vec<Complex<$ft>> = vec![Complex::zero(); fft_size_out + 1];
                 let output_buf: Vec<$ft> = vec![0.0; 2 * fft_size_out];
-                let mut fft = RealToComplex::<$ft>::new(2 * fft_size_in);
-                let ifft = ComplexToReal::<$ft>::new(2 * fft_size_out);
+                let mut fft = RealToComplex::<$ft>::new(2 * fft_size_in).unwrap();
+                let ifft = ComplexToReal::<$ft>::new(2 * fft_size_out).unwrap();
                 fft.process(&filter_t, &mut filter_f).unwrap();
 
                 FftResampler {

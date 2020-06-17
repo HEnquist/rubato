@@ -1,6 +1,6 @@
 [package]
 name = "rubato"
-version = "0.4.1"
+version = "0.4.2"
 authors = ["HEnquist <henrik.enquist@gmail.com>"]
 description = "Asynchronous resampling library intended for audio data"
 license = "MIT"
@@ -13,10 +13,9 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-num-traits = "0.2"
 num = "0.2"
 log = "0.4.8"
-rustfft = "3.0.0"
+realfft = "0.1.0"
 
 [dev-dependencies] 
 env_logger = "0.7.1"

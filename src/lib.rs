@@ -52,7 +52,6 @@
 //! The `rubato` crate requires rustc version 1.40 or newer.
 
 mod interpolation;
-mod realfft;
 mod sinc;
 mod synchro;
 mod windows;
@@ -61,7 +60,7 @@ pub use crate::windows::WindowFunction;
 
 use crate::interpolation::*;
 use crate::sinc::make_sincs;
-use num_traits::Float;
+use num::traits::Float;
 use std::error;
 use std::fmt;
 
