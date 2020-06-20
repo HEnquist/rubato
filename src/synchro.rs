@@ -129,6 +129,7 @@ macro_rules! impl_resampler {
                 // Copy to inut buffer and convert to complex
                 for (n, item) in wave_in.iter().enumerate().take(self.fft_size_in) {
                     self.input_buf[n] = *item;
+                    self.input_buf[n+self.fft_size_in] = 0.0;
                 }
 
                 // FFT and store result in history, update index
