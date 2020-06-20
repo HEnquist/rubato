@@ -104,7 +104,7 @@ macro_rules! impl_resampler {
                 let output_buf: Vec<$ft> = vec![0.0; 2 * fft_size_out];
                 let mut fft = RealToComplex::<$ft>::new(2 * fft_size_in).unwrap();
                 let ifft = ComplexToReal::<$ft>::new(2 * fft_size_out).unwrap();
-                fft.process(&filter_t, &mut filter_f).unwrap();
+                fft.process(&mut filter_t, &mut filter_f).unwrap();
 
                 FftResampler {
                     fft_size_in,
@@ -133,7 +133,7 @@ macro_rules! impl_resampler {
 
                 // FFT and store result in history, update index
                 self.fft
-                    .process(&self.input_buf, &mut self.input_f)
+                    .process(&mut self.input_buf, &mut self.input_f)
                     .unwrap();
 
                 // multiply with filter FT
