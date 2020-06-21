@@ -142,10 +142,13 @@ macro_rules! impl_resampler {
                     .unwrap();
 
                 // multiply with filter FT
-                for n in 0..(self.fft_size_in + 1) {
-                    self.input_f[n] *= self.filter_f[n];
-                }
-
+                //for n in 0..(self.fft_size_in + 1) {
+                //    self.input_f[n] *= self.filter_f[n];
+                //}
+                //for (spec, filt) in self.input_f.iter_mut().take(self.fft_size_in).zip(self.filter_f.iter()) {
+                //    *spec *= filt;
+                //}
+                self.input_f.iter_mut().take(self.fft_size_in).zip(self.filter_f.iter()).for_each(|(spec, filt)| *spec *= filt);
                 let new_len = if self.fft_size_in < self.fft_size_out {
                     self.fft_size_in
                 } else {
