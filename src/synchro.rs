@@ -127,10 +127,14 @@ macro_rules! impl_resampler {
                 overlap: &mut [$ft],
             ) {
                 // Copy to inut buffer and convert to complex
-                for (n, item) in wave_in.iter().enumerate().take(self.fft_size_in) {
-                    self.input_buf[n] = *item;
-                    self.input_buf[n+self.fft_size_in] = 0.0;
+                self.input_buf[0..self.fft_size_in].copy_from_slice(wave_in);
+                for item in self.input_buf.iter_mut().skip(self.fft_size_in).take(self.fft_size_in) {
+                    *item = 0.0;
                 }
+                //for (n, item) in wave_in.iter().enumerate().take(self.fft_size_in) {
+                //    self.input_buf[n] = *item;
+                //    self.input_buf[n+self.fft_size_in] = 0.0;
+                //}
 
                 // FFT and store result in history, update index
                 self.fft
@@ -149,9 +153,10 @@ macro_rules! impl_resampler {
                 };
 
                 // copy to modified spectrum
-                for n in 0..new_len {
-                    self.output_f[n] = self.input_f[n];
-                }
+                //for n in 0..new_len {
+                //    self.output_f[n] = self.input_f[n];
+                //}
+                self.output_f[0..new_len].copy_from_slice(&self.input_f[0..new_len]);
                 self.output_f[self.fft_size_out] = self.input_f[self.fft_size_in];
 
                 // IFFT result, store result and overlap
