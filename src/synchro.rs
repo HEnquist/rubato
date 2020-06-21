@@ -126,7 +126,7 @@ macro_rules! impl_resampler {
                 wave_out: &mut [$ft],
                 overlap: &mut [$ft],
             ) {
-                // Copy to inut buffer and convert to complex
+                // Copy to input buffer and clear padding area
                 self.input_buf[0..self.fft_size_in].copy_from_slice(wave_in);
                 for item in self
                     .input_buf
@@ -147,12 +147,6 @@ macro_rules! impl_resampler {
                     .unwrap();
 
                 // multiply with filter FT
-                //for n in 0..(self.fft_size_in + 1) {
-                //    self.input_f[n] *= self.filter_f[n];
-                //}
-                //for (spec, filt) in self.input_f.iter_mut().take(self.fft_size_in).zip(self.filter_f.iter()) {
-                //    *spec *= filt;
-                //}
                 self.input_f
                     .iter_mut()
                     .take(self.fft_size_in)
@@ -165,9 +159,6 @@ macro_rules! impl_resampler {
                 };
 
                 // copy to modified spectrum
-                //for n in 0..new_len {
-                //    self.output_f[n] = self.input_f[n];
-                //}
                 self.output_f[0..new_len].copy_from_slice(&self.input_f[0..new_len]);
                 self.output_f[self.fft_size_out] = self.input_f[self.fft_size_in];
 
@@ -177,7 +168,6 @@ macro_rules! impl_resampler {
                     .unwrap();
                 for (n, item) in wave_out.iter_mut().enumerate().take(self.fft_size_out) {
                     *item = self.output_buf[n] + overlap[n];
-                    //overlap[n] = self.output_buf[n + self.fft_size_out];
                 }
                 overlap.copy_from_slice(&self.output_buf[self.fft_size_out..]);
             }
@@ -418,14 +408,6 @@ macro_rules! resampler_FftFixedout {
                 self.saved_frames = processed_frames - self.chunk_size_out;
                 if processed_frames > self.chunk_size_out {
                     for n in 0..self.nbr_channels {
-                        //for (extra, saved) in wave_out[n]
-                        //    .iter()
-                        //    .skip(self.chunk_size_out)
-                        //    .take(self.saved_frames)
-                        //    .zip(self.output_buffers[n].iter_mut().take(self.saved_frames))
-                        //{
-                        //    *saved = *extra;
-                        //}
                         self.output_buffers[n][0..self.saved_frames].copy_from_slice(
                             &wave_out[n]
                                 [self.chunk_size_out..(self.chunk_size_out + self.saved_frames)],

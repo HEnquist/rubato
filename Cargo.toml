@@ -19,3 +19,8 @@ realfft = { git = "https://github.com/HEnquist/realfft.git", rev = "speedup" }
 
 [dev-dependencies] 
 env_logger = "0.7.1"
+criterion = "0.3"
+
+[[bench]]
+name = "resamplers"
+harness = false
