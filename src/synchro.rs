@@ -128,7 +128,12 @@ macro_rules! impl_resampler {
             ) {
                 // Copy to inut buffer and convert to complex
                 self.input_buf[0..self.fft_size_in].copy_from_slice(wave_in);
-                for item in self.input_buf.iter_mut().skip(self.fft_size_in).take(self.fft_size_in) {
+                for item in self
+                    .input_buf
+                    .iter_mut()
+                    .skip(self.fft_size_in)
+                    .take(self.fft_size_in)
+                {
                     *item = 0.0;
                 }
                 //for (n, item) in wave_in.iter().enumerate().take(self.fft_size_in) {
@@ -148,7 +153,11 @@ macro_rules! impl_resampler {
                 //for (spec, filt) in self.input_f.iter_mut().take(self.fft_size_in).zip(self.filter_f.iter()) {
                 //    *spec *= filt;
                 //}
-                self.input_f.iter_mut().take(self.fft_size_in).zip(self.filter_f.iter()).for_each(|(spec, filt)| *spec *= filt);
+                self.input_f
+                    .iter_mut()
+                    .take(self.fft_size_in)
+                    .zip(self.filter_f.iter())
+                    .for_each(|(spec, filt)| *spec *= filt);
                 let new_len = if self.fft_size_in < self.fft_size_out {
                     self.fft_size_in
                 } else {
@@ -168,8 +177,9 @@ macro_rules! impl_resampler {
                     .unwrap();
                 for (n, item) in wave_out.iter_mut().enumerate().take(self.fft_size_out) {
                     *item = self.output_buf[n] + overlap[n];
-                    overlap[n] = self.output_buf[n + self.fft_size_out];
+                    //overlap[n] = self.output_buf[n + self.fft_size_out];
                 }
+                overlap.copy_from_slice(&self.output_buf[self.fft_size_out..]);
             }
         }
     };
@@ -408,14 +418,18 @@ macro_rules! resampler_FftFixedout {
                 self.saved_frames = processed_frames - self.chunk_size_out;
                 if processed_frames > self.chunk_size_out {
                     for n in 0..self.nbr_channels {
-                        for (extra, saved) in wave_out[n]
-                            .iter()
-                            .skip(self.chunk_size_out)
-                            .take(self.saved_frames)
-                            .zip(self.output_buffers[n].iter_mut().take(self.saved_frames))
-                        {
-                            *saved = *extra;
-                        }
+                        //for (extra, saved) in wave_out[n]
+                        //    .iter()
+                        //    .skip(self.chunk_size_out)
+                        //    .take(self.saved_frames)
+                        //    .zip(self.output_buffers[n].iter_mut().take(self.saved_frames))
+                        //{
+                        //    *saved = *extra;
+                        //}
+                        self.output_buffers[n][0..self.saved_frames].copy_from_slice(
+                            &wave_out[n]
+                                [self.chunk_size_out..(self.chunk_size_out + self.saved_frames)],
+                        );
                     }
                 }
                 for n in 0..self.nbr_channels {
