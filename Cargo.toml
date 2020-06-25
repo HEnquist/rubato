@@ -15,7 +15,7 @@ edition = "2018"
 [dependencies]
 num = "0.2"
 log = "0.4.8"
-realfft = { git = "https://github.com/HEnquist/realfft.git", rev = "speedup" }
+realfft = "0.2.0"
 
 [dev-dependencies] 
 env_logger = "0.7.1"
