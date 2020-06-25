@@ -104,7 +104,7 @@ macro_rules! impl_resampler {
                 let output_buf: Vec<$ft> = vec![0.0; 2 * fft_size_out];
                 let mut fft = RealToComplex::<$ft>::new(2 * fft_size_in).unwrap();
                 let ifft = ComplexToReal::<$ft>::new(2 * fft_size_out).unwrap();
-                fft.process(&filter_t, &mut filter_f).unwrap();
+                fft.process(&mut filter_t, &mut filter_f).unwrap();
 
                 FftResampler {
                     fft_size_in,
@@ -126,21 +126,32 @@ macro_rules! impl_resampler {
                 wave_out: &mut [$ft],
                 overlap: &mut [$ft],
             ) {
-                // Copy to inut buffer and convert to complex
-                for (n, item) in wave_in.iter().enumerate().take(self.fft_size_in) {
-                    self.input_buf[n] = *item;
+                // Copy to input buffer and clear padding area
+                self.input_buf[0..self.fft_size_in].copy_from_slice(wave_in);
+                for item in self
+                    .input_buf
+                    .iter_mut()
+                    .skip(self.fft_size_in)
+                    .take(self.fft_size_in)
+                {
+                    *item = 0.0;
                 }
+                //for (n, item) in wave_in.iter().enumerate().take(self.fft_size_in) {
+                //    self.input_buf[n] = *item;
+                //    self.input_buf[n+self.fft_size_in] = 0.0;
+                //}
 
                 // FFT and store result in history, update index
                 self.fft
-                    .process(&self.input_buf, &mut self.input_f)
+                    .process(&mut self.input_buf, &mut self.input_f)
                     .unwrap();
 
                 // multiply with filter FT
-                for n in 0..(self.fft_size_in + 1) {
-                    self.input_f[n] *= self.filter_f[n];
-                }
-
+                self.input_f
+                    .iter_mut()
+                    .take(self.fft_size_in)
+                    .zip(self.filter_f.iter())
+                    .for_each(|(spec, filt)| *spec *= filt);
                 let new_len = if self.fft_size_in < self.fft_size_out {
                     self.fft_size_in
                 } else {
@@ -148,9 +159,7 @@ macro_rules! impl_resampler {
                 };
 
                 // copy to modified spectrum
-                for n in 0..new_len {
-                    self.output_f[n] = self.input_f[n];
-                }
+                self.output_f[0..new_len].copy_from_slice(&self.input_f[0..new_len]);
                 self.output_f[self.fft_size_out] = self.input_f[self.fft_size_in];
 
                 // IFFT result, store result and overlap
@@ -159,8 +168,8 @@ macro_rules! impl_resampler {
                     .unwrap();
                 for (n, item) in wave_out.iter_mut().enumerate().take(self.fft_size_out) {
                     *item = self.output_buf[n] + overlap[n];
-                    overlap[n] = self.output_buf[n + self.fft_size_out];
                 }
+                overlap.copy_from_slice(&self.output_buf[self.fft_size_out..]);
             }
         }
     };
@@ -399,14 +408,10 @@ macro_rules! resampler_FftFixedout {
                 self.saved_frames = processed_frames - self.chunk_size_out;
                 if processed_frames > self.chunk_size_out {
                     for n in 0..self.nbr_channels {
-                        for (extra, saved) in wave_out[n]
-                            .iter()
-                            .skip(self.chunk_size_out)
-                            .take(self.saved_frames)
-                            .zip(self.output_buffers[n].iter_mut().take(self.saved_frames))
-                        {
-                            *saved = *extra;
-                        }
+                        self.output_buffers[n][0..self.saved_frames].copy_from_slice(
+                            &wave_out[n]
+                                [self.chunk_size_out..(self.chunk_size_out + self.saved_frames)],
+                        );
                     }
                 }
                 for n in 0..self.nbr_channels {
