@@ -1,4 +1,4 @@
-use num::traits::Float;
+use num_traits::Float;
 
 /// Different window functions that can be used to window the sinc function.
 #[derive(Debug)]

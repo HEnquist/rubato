@@ -60,7 +60,7 @@ pub use crate::windows::WindowFunction;
 
 use crate::interpolation::*;
 use crate::sinc::make_sincs;
-use num::traits::Float;
+use num_traits::Float;
 use std::error;
 use std::fmt;
 
