@@ -1,6 +1,6 @@
 [package]
 name = "rubato"
-version = "0.4.3"
+version = "0.4.4"
 authors = ["HEnquist <henrik.enquist@gmail.com>"]
 description = "Asynchronous resampling library intended for audio data"
 license = "MIT"
