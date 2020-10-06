@@ -1,8 +1,8 @@
 use crate::sinc::make_sincs;
 use crate::windows::WindowFunction;
-use num::integer;
-use num::traits::Zero;
-use num::Complex;
+use num_complex::Complex;
+use num_integer as integer;
+use num_traits::Zero;
 use std::error;
 
 type Res<T> = Result<T, Box<dyn error::Error>>;
