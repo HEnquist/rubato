@@ -1,5 +1,5 @@
 use crate::windows::{make_window, WindowFunction};
-use num::traits::Float;
+use num_traits::Float;
 
 /// Helper function: sinc(x) = sin(pi*x)/(pi*x)
 pub fn sinc<T: Float>(value: T) -> T {
