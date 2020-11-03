@@ -149,7 +149,7 @@ macro_rules! impl_resampler {
                 // multiply with filter FT
                 self.input_f
                     .iter_mut()
-                    .take(self.fft_size_in+1)
+                    .take(self.fft_size_in + 1)
                     .zip(self.filter_f.iter())
                     .for_each(|(spec, filt)| *spec *= filt);
                 let new_len = if self.fft_size_in < self.fft_size_out {
