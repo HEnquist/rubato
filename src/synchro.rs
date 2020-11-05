@@ -418,7 +418,11 @@ macro_rules! resampler_FftFixedout {
                     wave_out[n].truncate(self.chunk_size_out);
                 }
                 //calculate number of needed frames from next round
-                let frames_needed_out = self.chunk_size_out - self.saved_frames;
+                let frames_needed_out = if self.chunk_size_out > self.saved_frames {
+                    self.chunk_size_out - self.saved_frames
+                } else {
+                    0
+                };
                 let chunks_needed =
                     (frames_needed_out as f32 / self.fft_size_out as f32).ceil() as usize;
                 self.frames_needed = chunks_needed * self.fft_size_in;
@@ -653,5 +657,27 @@ mod tests {
         let out = resampler.process(&waves).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 640);
+    }
+
+    #[test]
+    fn make_resampler_fio_unusualratio() {
+        // asking for 1024 give the nearest which is 1029 -> 1120
+        let mut resampler = FftFixedInOut::<f64>::new(44100, 44110, 1024, 2);
+        let frames = resampler.nbr_frames_needed();
+        let waves = vec![vec![0.0f64; frames]; 2];
+        let out = resampler.process(&waves).unwrap();
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].len(), 4411);
+    }
+
+    #[test]
+    fn make_resampler_fo_unusualratio() {
+        let mut resampler = FftFixedOut::<f64>::new(44100, 44110, 1024, 2, 2);
+        let frames = resampler.nbr_frames_needed();
+        assert_eq!(frames, 4410);
+        let waves = vec![vec![0.0f64; frames]; 2];
+        let out = resampler.process(&waves).unwrap();
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].len(), 1024);
     }
 }
