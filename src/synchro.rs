@@ -248,6 +248,8 @@ macro_rules! resampler_FftFixedinout {
             }
 
             /// Resample a chunk of audio. The input and output lengths are fixed.
+            /// If the waveform for a channel is empty, this channel will be ignored and produce a
+            /// corresponding empty output waveform.
             /// # Errors
             ///
             /// The function returns an error if the size of the input data is not equal
@@ -258,22 +260,32 @@ macro_rules! resampler_FftFixedinout {
                         "Wrong number of channels in input",
                     )));
                 }
-                if wave_in[0].len() != self.chunk_size_in {
-                    return Err(Box::new(ResamplerError::new(
-                        format!(
-                            "Wrong number of frames in input, expected {}, got {}",
-                            self.chunk_size_in,
-                            wave_in[0].len()
-                        )
-                        .as_str(),
-                    )));
+                let mut used_channels = Vec::new();
+                for (chan, wave) in wave_in.iter().enumerate() {
+                    if !wave.is_empty() {
+                        used_channels.push(chan);
+                        if wave.len() != self.chunk_size_in {
+                            return Err(Box::new(ResamplerError::new(
+                                format!(
+                                    "Wrong number of frames in input, expected {}, got {}",
+                                    self.chunk_size_in,
+                                    wave_in[0].len()
+                                )
+                                .as_str(),
+                            )));
+                        }
+                    }
                 }
-                let mut wave_out = vec![vec![0.0 as $t; self.chunk_size_out]; self.nbr_channels];
-                for n in 0..self.nbr_channels {
+                let mut wave_out = vec![Vec::new(); self.nbr_channels];
+                for chan in used_channels.iter() {
+                    wave_out[*chan] = vec![0.0 as $t; self.chunk_size_out];
+                }
+
+                for n in used_channels.iter() {
                     self.resampler.resample_unit(
-                        &wave_in[n],
-                        &mut wave_out[n],
-                        &mut self.overlaps[n],
+                        &wave_in[*n],
+                        &mut wave_out[*n],
+                        &mut self.overlaps[*n],
                     )
                 }
                 Ok(wave_out)
@@ -368,6 +380,8 @@ macro_rules! resampler_FftFixedout {
 
             /// Resample a chunk of audio. The required input length is provided by
             /// the "nbr_frames_needed" function, and the output length is fixed.
+            /// If the waveform for a channel is empty, this channel will be ignored and produce a
+            /// corresponding empty output waveform.
             /// # Errors
             ///
             /// The function returns an error if the length of the input data is not
@@ -379,43 +393,56 @@ macro_rules! resampler_FftFixedout {
                         "Wrong number of channels in input",
                     )));
                 }
-                if wave_in[0].len() != self.frames_needed {
-                    return Err(Box::new(ResamplerError::new(
-                        format!(
-                            "Wrong number of frames in input, expected {}, got {}",
-                            self.frames_needed,
-                            wave_in[0].len()
-                        )
-                        .as_str(),
-                    )));
-                }
-
-                let mut wave_out = self.output_buffers.clone();
-                let mut processed_samples = self.saved_frames * self.nbr_channels;
-                for n in 0..self.nbr_channels {
-                    for (in_chunk, out_chunk) in wave_in[n]
-                        .chunks(self.fft_size_in)
-                        .zip(wave_out[n][self.saved_frames..].chunks_mut(self.fft_size_out))
-                    {
-                        self.resampler
-                            .resample_unit(in_chunk, out_chunk, &mut self.overlaps[n]);
-                        processed_samples += self.fft_size_out;
+                let mut used_channels = Vec::new();
+                for (chan, wave) in wave_in.iter().enumerate() {
+                    if !wave.is_empty() {
+                        used_channels.push(chan);
+                        if wave.len() != self.frames_needed {
+                            return Err(Box::new(ResamplerError::new(
+                                format!(
+                                    "Wrong number of frames in input, expected {}, got {}",
+                                    self.frames_needed,
+                                    wave.len()
+                                )
+                                .as_str(),
+                            )));
+                        }
                     }
                 }
-                let processed_frames = processed_samples / self.nbr_channels;
+
+                let mut wave_out = vec![Vec::new(); self.nbr_channels];
+                for chan in used_channels.iter() {
+                    wave_out[*chan] = self.output_buffers[*chan].clone();
+                }
+
+                //let mut wave_out = self.output_buffers.clone();
+                //let mut processed_frames = self.saved_frames * used_channels.len();
+                for n in used_channels.iter() {
+                    for (in_chunk, out_chunk) in wave_in[*n]
+                        .chunks(self.fft_size_in)
+                        .zip(wave_out[*n][self.saved_frames..].chunks_mut(self.fft_size_out))
+                    {
+                        self.resampler
+                            .resample_unit(in_chunk, out_chunk, &mut self.overlaps[*n]);
+                        //processed_samples += self.fft_size_out;
+                    }
+                }
+                //let processed_frames = processed_samples / used_channels.len();
+                let processed_frames =
+                    self.saved_frames + self.fft_size_out * (self.frames_needed / self.fft_size_in);
 
                 // save extra frames for next round
                 self.saved_frames = processed_frames - self.chunk_size_out;
                 if processed_frames > self.chunk_size_out {
-                    for n in 0..self.nbr_channels {
-                        self.output_buffers[n][0..self.saved_frames].copy_from_slice(
-                            &wave_out[n]
+                    for n in used_channels.iter() {
+                        self.output_buffers[*n][0..self.saved_frames].copy_from_slice(
+                            &wave_out[*n]
                                 [self.chunk_size_out..(self.chunk_size_out + self.saved_frames)],
                         );
                     }
                 }
-                for n in 0..self.nbr_channels {
-                    wave_out[n].truncate(self.chunk_size_out);
+                for n in used_channels.iter() {
+                    wave_out[*n].truncate(self.chunk_size_out);
                 }
                 //calculate number of needed frames from next round
                 let frames_needed_out = if self.chunk_size_out > self.saved_frames {
@@ -514,6 +541,8 @@ macro_rules! resampler_FftFixedin {
 
             /// Resample a chunk of audio. The required input length is provided by
             /// the "nbr_frames_needed" function, and the output length is fixed.
+            /// If the waveform for a channel is empty, this channel will be ignored and produce a
+            /// corresponding empty output waveform.
             /// # Errors
             ///
             /// The function returns an error if the length of the input data is not
@@ -525,32 +554,43 @@ macro_rules! resampler_FftFixedin {
                         "Wrong number of channels in input",
                     )));
                 }
-                if wave_in[0].len() != self.chunk_size_in {
-                    return Err(Box::new(ResamplerError::new(
-                        format!(
-                            "Wrong number of frames in input, expected {}, got {}",
-                            self.chunk_size_in,
-                            wave_in[0].len()
-                        )
-                        .as_str(),
-                    )));
+                let mut used_channels = Vec::new();
+                for (chan, wave) in wave_in.iter().enumerate() {
+                    if !wave.is_empty() {
+                        used_channels.push(chan);
+                        if wave.len() != self.chunk_size_in {
+                            return Err(Box::new(ResamplerError::new(
+                                format!(
+                                    "Wrong number of frames in input, expected {}, got {}",
+                                    self.chunk_size_in,
+                                    wave.len()
+                                )
+                                .as_str(),
+                            )));
+                        }
+                    }
+                }
+
+                let mut input_temp = vec![Vec::new(); self.nbr_channels];
+                for chan in used_channels.iter() {
+                    input_temp[*chan] = vec![0.0; self.saved_frames + self.chunk_size_in];
                 }
 
                 // copy new samples to input buffer
-                let mut input_temp =
-                    vec![vec![0.0; self.saved_frames + self.chunk_size_in]; self.nbr_channels];
-                for n in 0..self.nbr_channels {
-                    for (input, buffer) in self.input_buffers[n]
+                //let mut input_temp =
+                //    vec![vec![0.0; self.saved_frames + self.chunk_size_in]; self.nbr_channels];
+                for n in used_channels.iter() {
+                    for (input, buffer) in self.input_buffers[*n]
                         .iter()
                         .take(self.saved_frames)
-                        .zip(input_temp[n].iter_mut())
+                        .zip(input_temp[*n].iter_mut())
                     {
                         *buffer = *input;
                     }
                 }
-                for n in 0..self.nbr_channels {
-                    for (input, buffer) in wave_in[n].iter().zip(
-                        input_temp[n]
+                for n in used_channels.iter() {
+                    for (input, buffer) in wave_in[*n].iter().zip(
+                        input_temp[*n]
                             .iter_mut()
                             .skip(self.saved_frames)
                             .take(self.chunk_size_in),
@@ -562,16 +602,18 @@ macro_rules! resampler_FftFixedin {
 
                 let nbr_chunks_ready =
                     (self.saved_frames as f32 / self.fft_size_in as f32).floor() as usize;
-                let mut wave_out =
-                    vec![vec![0.0; nbr_chunks_ready * self.fft_size_out]; self.nbr_channels];
-                for n in 0..self.nbr_channels {
-                    for (in_chunk, out_chunk) in input_temp[n]
+                let mut wave_out = vec![Vec::new(); self.nbr_channels];
+                for chan in used_channels.iter() {
+                    wave_out[*chan] = vec![0.0; nbr_chunks_ready * self.fft_size_out];
+                }
+                for n in used_channels.iter() {
+                    for (in_chunk, out_chunk) in input_temp[*n]
                         .chunks(self.fft_size_in)
                         .take(nbr_chunks_ready)
-                        .zip(wave_out[n].chunks_mut(self.fft_size_out))
+                        .zip(wave_out[*n].chunks_mut(self.fft_size_out))
                     {
                         self.resampler
-                            .resample_unit(in_chunk, out_chunk, &mut self.overlaps[n]);
+                            .resample_unit(in_chunk, out_chunk, &mut self.overlaps[*n]);
                     }
                 }
 
@@ -580,12 +622,12 @@ macro_rules! resampler_FftFixedin {
                 let extra = self.saved_frames - frames_in_used;
 
                 if self.saved_frames > frames_in_used {
-                    for n in 0..self.nbr_channels {
-                        for (input, buffer) in input_temp[n]
+                    for n in used_channels.iter() {
+                        for (input, buffer) in input_temp[*n]
                             .iter()
                             .skip(frames_in_used)
                             .take(extra)
-                            .zip(self.input_buffers[n].iter_mut())
+                            .zip(self.input_buffers[*n].iter_mut())
                         {
                             *buffer = *input;
                         }
@@ -638,6 +680,18 @@ mod tests {
     }
 
     #[test]
+    fn make_resampler_fio_skipped() {
+        // asking for 1024 give the nearest which is 1029 -> 1120
+        let mut resampler = FftFixedInOut::<f64>::new(44100, 48000, 1024, 2);
+        let frames = resampler.nbr_frames_needed();
+        let waves = vec![vec![0.0f64; frames], Vec::new()];
+        let out = resampler.process(&waves).unwrap();
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].len(), 1120);
+        assert!(out[1].is_empty());
+    }
+
+    #[test]
     fn make_resampler_fo() {
         let mut resampler = FftFixedOut::<f64>::new(44100, 192000, 1024, 2, 2);
         let frames = resampler.nbr_frames_needed();
@@ -649,6 +703,30 @@ mod tests {
     }
 
     #[test]
+    fn make_resampler_fo_skipped() {
+        let mut resampler = FftFixedOut::<f64>::new(44100, 192000, 1024, 2, 2);
+        let frames = resampler.nbr_frames_needed();
+        assert_eq!(frames, 294);
+        let waves = vec![vec![0.0f64; frames], Vec::new()];
+        let out = resampler.process(&waves).unwrap();
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].len(), 1024);
+        assert!(out[1].is_empty());
+    }
+
+    #[test]
+    fn make_resampler_fo_empty() {
+        let mut resampler = FftFixedOut::<f64>::new(44100, 192000, 1024, 2, 2);
+        let frames = resampler.nbr_frames_needed();
+        assert_eq!(frames, 294);
+        let waves = vec![Vec::new(); 2];
+        let out = resampler.process(&waves).unwrap();
+        assert_eq!(out.len(), 2);
+        assert!(out[0].is_empty());
+        assert!(out[1].is_empty());
+    }
+
+    #[test]
     fn make_resampler_fi() {
         let mut resampler = FftFixedIn::<f64>::new(44100, 48000, 1024, 2, 2);
         let frames = resampler.nbr_frames_needed();
@@ -657,6 +735,30 @@ mod tests {
         let out = resampler.process(&waves).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 640);
+    }
+
+    #[test]
+    fn make_resampler_fi_skipped() {
+        let mut resampler = FftFixedIn::<f64>::new(44100, 48000, 1024, 2, 2);
+        let frames = resampler.nbr_frames_needed();
+        assert_eq!(frames, 1024);
+        let waves = vec![vec![0.0f64; frames], Vec::new()];
+        let out = resampler.process(&waves).unwrap();
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].len(), 640);
+        assert!(out[1].is_empty());
+    }
+
+    #[test]
+    fn make_resampler_fi_empty() {
+        let mut resampler = FftFixedIn::<f64>::new(44100, 48000, 1024, 2, 2);
+        let frames = resampler.nbr_frames_needed();
+        assert_eq!(frames, 1024);
+        let waves = vec![Vec::new(); 2];
+        let out = resampler.process(&waves).unwrap();
+        assert_eq!(out.len(), 2);
+        assert!(out[0].is_empty());
+        assert!(out[1].is_empty());
     }
 
     #[test]
