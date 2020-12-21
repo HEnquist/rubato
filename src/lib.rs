@@ -594,7 +594,7 @@ macro_rules! resampler_sincfixedout {
                         wav[idx] = wav[idx + self.current_buffer_fill];
                     }
                 }
-                self.current_buffer_fill = wave_in[0].len();
+                self.current_buffer_fill = self.needed_input_size;
                 //for (chan, wav) in wave_in.iter().enumerate() {
                 //    for (idx, sample) in wav.iter().enumerate() {
                 //        self.buffer[chan][idx + 2 * self.sinc_len] = *sample;
@@ -820,6 +820,11 @@ mod tests {
         assert_eq!(out.len(), 2);
         assert!(out[0].len() > 1150 && out[0].len() < 1250);
         assert!(out[1].is_empty());
+        let waves = vec![Vec::new(), vec![0.0f64; 1024]];
+        let out = resampler.process(&waves).unwrap();
+        assert_eq!(out.len(), 2);
+        assert!(out[1].len() > 1150 && out[0].len() < 1250);
+        assert!(out[0].is_empty());
     }
 
     #[test]
@@ -878,5 +883,12 @@ mod tests {
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 1024);
         assert!(out[1].is_empty());
+
+        let frames = resampler.nbr_frames_needed();
+        let waves = vec![Vec::new(), vec![0.0f64; frames]];
+        let out = resampler.process(&waves).unwrap();
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[1].len(), 1024);
+        assert!(out[0].is_empty());
     }
 }
