@@ -878,17 +878,21 @@ mod tests {
         let frames = resampler.nbr_frames_needed();
         println!("{}", frames);
         assert!(frames > 800 && frames < 900);
-        let waves = vec![vec![0.0f64; frames], Vec::new()];
+        let mut waves = vec![vec![0.0f64; frames], Vec::new()];
+        waves[0][10] = 3.0;
         let out = resampler.process(&waves).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 1024);
         assert!(out[1].is_empty());
+        assert!(out[0].iter().sum::<f64>() > 2.0);
 
         let frames = resampler.nbr_frames_needed();
-        let waves = vec![Vec::new(), vec![0.0f64; frames]];
+        let mut waves = vec![Vec::new(), vec![0.0f64; frames]];
+        waves[1][10] = 3.0;
         let out = resampler.process(&waves).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[1].len(), 1024);
         assert!(out[0].is_empty());
+        assert!(out[1].iter().sum::<f64>() > 2.0);
     }
 }
