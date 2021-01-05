@@ -234,18 +234,18 @@ macro_rules! impl_resampler {
 
             /// Perform cubic polynomial interpolation to get value at x.
             /// Input points are assumed to be at x = -1, 0, 1, 2
-            fn interp_cubic(&self, x: $ft, yvals: &[$ft]) -> $ft {
-                let a0 = yvals[1];
+            unsafe fn interp_cubic(&self, x: $ft, yvals: &[$ft]) -> $ft {
+                let a0 = yvals.get_unchecked(1);
                 let a1 =
-                    -(1.0 / 3.0) * yvals[0] - 0.5 * yvals[1] + yvals[2] - (1.0 / 6.0) * yvals[3];
-                let a2 = 0.5 * (yvals[0] + yvals[2]) - yvals[1];
-                let a3 = 0.5 * (yvals[1] - yvals[2]) + (1.0 / 6.0) * (yvals[3] - yvals[0]);
+                    -(1.0 / 3.0) * yvals.get_unchecked(0) - 0.5 * yvals.get_unchecked(1) + yvals.get_unchecked(2) - (1.0 / 6.0) * yvals.get_unchecked(3);
+                let a2 = 0.5 * (yvals.get_unchecked(0) + yvals.get_unchecked(2)) - yvals.get_unchecked(1);
+                let a3 = 0.5 * (yvals.get_unchecked(1) - yvals.get_unchecked(2)) + (1.0 / 6.0) * (yvals.get_unchecked(3) - yvals.get_unchecked(0));
                 a0 + a1 * x + a2 * x.powi(2) + a3 * x.powi(3)
             }
 
             /// Linear interpolation between two points at x=0 and x=1
-            fn interp_lin(&self, x: $ft, yvals: &[$ft]) -> $ft {
-                (1.0 - x) * yvals[0] + x * yvals[1]
+            unsafe fn interp_lin(&self, x: $ft, yvals: &[$ft]) -> $ft {
+                (1.0 - x) * yvals.get_unchecked(0) + x * yvals.get_unchecked(1)
             }
         }
     };
@@ -378,7 +378,9 @@ macro_rules! resampler_sincfixedin {
                                         n.1 as usize,
                                     );
                                 }
-                                wave_out[*chan][n] = self.interp_cubic(frac_offset, &points);
+                                unsafe {
+                                    wave_out[*chan][n] = self.interp_cubic(frac_offset, &points);
+                                }
                             }
                             n += 1;
                         }
@@ -405,7 +407,9 @@ macro_rules! resampler_sincfixedin {
                                         n.1 as usize,
                                     );
                                 }
-                                wave_out[*chan][n] = self.interp_lin(frac_offset, &points);
+                                unsafe {
+                                    wave_out[*chan][n] = self.interp_lin(frac_offset, &points);
+                                }
                             }
                             n += 1;
                         }
@@ -636,7 +640,9 @@ macro_rules! resampler_sincfixedout {
                                         n.1 as usize,
                                     );
                                 }
-                                wave_out[*chan][n] = self.interp_cubic(frac_offset, &points);
+                                unsafe {
+                                    wave_out[*chan][n] = self.interp_cubic(frac_offset, &points);
+                                }
                             }
                         }
                     }
@@ -658,7 +664,9 @@ macro_rules! resampler_sincfixedout {
                                         n.1 as usize,
                                     );
                                 }
-                                wave_out[*chan][n] = self.interp_lin(frac_offset, &points);
+                                unsafe {
+                                    wave_out[*chan][n] = self.interp_lin(frac_offset, &points);
+                                }
                             }
                         }
                     }
@@ -724,8 +732,10 @@ mod tests {
         };
         let resampler = SincFixedIn::<f64>::new(1.2, params, 1024, 2);
         let yvals = vec![0.0f64, 2.0f64, 4.0f64, 6.0f64];
-        let interp = resampler.interp_cubic(0.5f64, &yvals);
-        assert_eq!(interp, 3.0f64);
+        unsafe {
+            let interp = resampler.interp_cubic(0.5f64, &yvals);
+            assert_eq!(interp, 3.0f64);
+        }
     }
 
     #[test]
@@ -739,8 +749,10 @@ mod tests {
         };
         let resampler = SincFixedIn::<f32>::new(1.2, params, 1024, 2);
         let yvals = vec![1.0f32, 5.0f32];
-        let interp = resampler.interp_lin(0.25f32, &yvals);
-        assert_eq!(interp, 2.0f32);
+        unsafe {
+            let interp = resampler.interp_lin(0.25f32, &yvals);
+            assert_eq!(interp, 2.0f32);
+        }
     }
 
     #[test]
@@ -754,8 +766,10 @@ mod tests {
         };
         let resampler = SincFixedIn::<f32>::new(1.2, params, 1024, 2);
         let yvals = vec![0.0f32, 2.0f32, 4.0f32, 6.0f32];
-        let interp = resampler.interp_cubic(0.5f32, &yvals);
-        assert_eq!(interp, 3.0f32);
+        unsafe {
+            let interp = resampler.interp_cubic(0.5f32, &yvals);
+            assert_eq!(interp, 3.0f32);
+        }
     }
 
     #[test]
@@ -769,8 +783,10 @@ mod tests {
         };
         let resampler = SincFixedIn::<f64>::new(1.2, params, 1024, 2);
         let yvals = vec![1.0f64, 5.0f64];
-        let interp = resampler.interp_lin(0.25f64, &yvals);
-        assert_eq!(interp, 2.0f64);
+        unsafe {
+            let interp = resampler.interp_lin(0.25f64, &yvals);
+            assert_eq!(interp, 2.0f64);
+        }
     }
 
     #[test]
