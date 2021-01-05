@@ -236,10 +236,13 @@ macro_rules! impl_resampler {
             /// Input points are assumed to be at x = -1, 0, 1, 2
             unsafe fn interp_cubic(&self, x: $ft, yvals: &[$ft]) -> $ft {
                 let a0 = yvals.get_unchecked(1);
-                let a1 =
-                    -(1.0 / 3.0) * yvals.get_unchecked(0) - 0.5 * yvals.get_unchecked(1) + yvals.get_unchecked(2) - (1.0 / 6.0) * yvals.get_unchecked(3);
-                let a2 = 0.5 * (yvals.get_unchecked(0) + yvals.get_unchecked(2)) - yvals.get_unchecked(1);
-                let a3 = 0.5 * (yvals.get_unchecked(1) - yvals.get_unchecked(2)) + (1.0 / 6.0) * (yvals.get_unchecked(3) - yvals.get_unchecked(0));
+                let a1 = -(1.0 / 3.0) * yvals.get_unchecked(0) - 0.5 * yvals.get_unchecked(1)
+                    + yvals.get_unchecked(2)
+                    - (1.0 / 6.0) * yvals.get_unchecked(3);
+                let a2 = 0.5 * (yvals.get_unchecked(0) + yvals.get_unchecked(2))
+                    - yvals.get_unchecked(1);
+                let a3 = 0.5 * (yvals.get_unchecked(1) - yvals.get_unchecked(2))
+                    + (1.0 / 6.0) * (yvals.get_unchecked(3) - yvals.get_unchecked(0));
                 a0 + a1 * x + a2 * x.powi(2) + a3 * x.powi(3)
             }
 
