@@ -95,7 +95,7 @@ macro_rules! impl_resampler {
                 let mut filter_t: Vec<$ft> = vec![0.0; 2 * fft_size_in];
                 let mut filter_f: Vec<Complex<$ft>> = vec![Complex::zero(); fft_size_in + 1];
                 for n in 0..fft_size_in {
-                    filter_t[n] = sinc[0][n] / (fft_size_in as $ft);
+                    filter_t[n] = sinc[0][n] / (2 * fft_size_in) as $ft;
                 }
 
                 let input_f: Vec<Complex<$ft>> = vec![Complex::zero(); fft_size_in + 1];
