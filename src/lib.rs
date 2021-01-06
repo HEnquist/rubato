@@ -602,27 +602,18 @@ macro_rules! resampler_sincfixedout {
                     }
                 }
                 self.current_buffer_fill = self.needed_input_size;
-                //for (chan, wav) in wave_in.iter().enumerate() {
-                //    for (idx, sample) in wav.iter().enumerate() {
-                //        self.buffer[chan][idx + 2 * self.sinc_len] = *sample;
-                //    }
-                //}
 
                 let mut wave_out = vec![Vec::new(); self.nbr_channels];
 
                 for chan in used_channels.iter() {
-                //for (chan, wav) in wave_in.iter().enumerate() {
                     for (idx, sample) in wave_in[*chan].iter().enumerate() {
                         self.buffer[*chan][idx + 2 * self.sinc_len] = *sample;
                     }
                     wave_out[*chan] = vec![0.0 as $t; self.chunk_size];
                 }
-    //
-//
+
                 let mut idx = self.last_index;
                 let t_ratio = 1.0 / self.resample_ratio as f64;
-
-                //let mut wave_out = vec![vec![0.0 as $t; self.chunk_size]; self.nbr_channels];
 
                 match self.interpolation {
                     InterpolationType::Cubic => {
