@@ -234,18 +234,21 @@ macro_rules! impl_resampler {
 
             /// Perform cubic polynomial interpolation to get value at x.
             /// Input points are assumed to be at x = -1, 0, 1, 2
-            fn interp_cubic(&self, x: $ft, yvals: &[$ft]) -> $ft {
-                let a0 = yvals[1];
-                let a1 =
-                    -(1.0 / 3.0) * yvals[0] - 0.5 * yvals[1] + yvals[2] - (1.0 / 6.0) * yvals[3];
-                let a2 = 0.5 * (yvals[0] + yvals[2]) - yvals[1];
-                let a3 = 0.5 * (yvals[1] - yvals[2]) + (1.0 / 6.0) * (yvals[3] - yvals[0]);
+            unsafe fn interp_cubic(&self, x: $ft, yvals: &[$ft]) -> $ft {
+                let a0 = yvals.get_unchecked(1);
+                let a1 = -(1.0 / 3.0) * yvals.get_unchecked(0) - 0.5 * yvals.get_unchecked(1)
+                    + yvals.get_unchecked(2)
+                    - (1.0 / 6.0) * yvals.get_unchecked(3);
+                let a2 = 0.5 * (yvals.get_unchecked(0) + yvals.get_unchecked(2))
+                    - yvals.get_unchecked(1);
+                let a3 = 0.5 * (yvals.get_unchecked(1) - yvals.get_unchecked(2))
+                    + (1.0 / 6.0) * (yvals.get_unchecked(3) - yvals.get_unchecked(0));
                 a0 + a1 * x + a2 * x.powi(2) + a3 * x.powi(3)
             }
 
             /// Linear interpolation between two points at x=0 and x=1
-            fn interp_lin(&self, x: $ft, yvals: &[$ft]) -> $ft {
-                (1.0 - x) * yvals[0] + x * yvals[1]
+            unsafe fn interp_lin(&self, x: $ft, yvals: &[$ft]) -> $ft {
+                (1.0 - x) * yvals.get_unchecked(0) + x * yvals.get_unchecked(1)
             }
         }
     };
@@ -306,6 +309,8 @@ macro_rules! resampler_sincfixedin {
     ($t:ty) => {
         impl Resampler<$t> for SincFixedIn<$t> {
             /// Resample a chunk of audio. The input length is fixed, and the output varies in length.
+            /// If the waveform for a channel is empty, this channel will be ignored and produce a
+            /// corresponding empty output waveform.
             /// # Errors
             ///
             /// The function returns an error if the length of the input data is not equal
@@ -316,10 +321,16 @@ macro_rules! resampler_sincfixedin {
                         "Wrong number of channels in input",
                     )));
                 }
-                if wave_in[0].len() != self.chunk_size {
-                    return Err(Box::new(ResamplerError::new(
-                        "Wrong number of frames in input",
-                    )));
+                let mut used_channels = Vec::new();
+                for (chan, wave) in wave_in.iter().enumerate() {
+                    if !wave.is_empty() {
+                        used_channels.push(chan);
+                        if wave.len() != self.chunk_size {
+                            return Err(Box::new(ResamplerError::new(
+                                "Wrong number of frames in input",
+                            )));
+                        }
+                    }
                 }
                 let end_idx = self.chunk_size as isize - (self.sinc_len as isize + 1);
                 //update buffer with new data
@@ -328,23 +339,23 @@ macro_rules! resampler_sincfixedin {
                         wav[idx] = wav[idx + self.chunk_size];
                     }
                 }
-                for (chan, wav) in wave_in.iter().enumerate() {
-                    for (idx, sample) in wav.iter().enumerate() {
-                        self.buffer[chan][idx + 2 * self.sinc_len] = *sample;
+
+                let mut wave_out = vec![Vec::new(); self.nbr_channels];
+
+                for chan in used_channels.iter() {
+                    for (idx, sample) in wave_in[*chan].iter().enumerate() {
+                        self.buffer[*chan][idx + 2 * self.sinc_len] = *sample;
                     }
+                    wave_out[*chan] = vec![
+                        0.0 as $t;
+                        (self.chunk_size as f64 * self.resample_ratio + 10.0)
+                            as usize
+                    ];
                 }
 
                 let mut idx = self.last_index;
                 let t_ratio = 1.0 / self.resample_ratio as f64;
 
-                let mut wave_out = vec![
-                    vec![
-                        0.0 as $t;
-                        (self.chunk_size as f64 * self.resample_ratio + 10.0)
-                            as usize
-                    ];
-                    self.nbr_channels
-                ];
                 let mut n = 0;
 
                 match self.interpolation {
@@ -361,7 +372,8 @@ macro_rules! resampler_sincfixedin {
                             let frac = idx * self.oversampling_factor as f64
                                 - (idx * self.oversampling_factor as f64).floor();
                             let frac_offset = frac as $t;
-                            for (chan, buf) in self.buffer.iter().enumerate() {
+                            for chan in used_channels.iter() {
+                                let buf = &self.buffer[*chan];
                                 for (n, p) in nearest.iter().zip(points.iter_mut()) {
                                     *p = self.get_sinc_interpolated(
                                         &buf,
@@ -369,7 +381,9 @@ macro_rules! resampler_sincfixedin {
                                         n.1 as usize,
                                     );
                                 }
-                                wave_out[chan][n] = self.interp_cubic(frac_offset, &points);
+                                unsafe {
+                                    wave_out[*chan][n] = self.interp_cubic(frac_offset, &points);
+                                }
                             }
                             n += 1;
                         }
@@ -387,7 +401,8 @@ macro_rules! resampler_sincfixedin {
                             let frac = idx * self.oversampling_factor as f64
                                 - (idx * self.oversampling_factor as f64).floor();
                             let frac_offset = frac as $t;
-                            for (chan, buf) in self.buffer.iter().enumerate() {
+                            for chan in used_channels.iter() {
+                                let buf = &self.buffer[*chan];
                                 for (n, p) in nearest.iter().zip(points.iter_mut()) {
                                     *p = self.get_sinc_interpolated(
                                         &buf,
@@ -395,7 +410,9 @@ macro_rules! resampler_sincfixedin {
                                         n.1 as usize,
                                     );
                                 }
-                                wave_out[chan][n] = self.interp_lin(frac_offset, &points);
+                                unsafe {
+                                    wave_out[*chan][n] = self.interp_lin(frac_offset, &points);
+                                }
                             }
                             n += 1;
                         }
@@ -406,13 +423,14 @@ macro_rules! resampler_sincfixedin {
                         while idx < end_idx as f64 {
                             idx += t_ratio;
                             nearest = get_nearest_time(idx, self.oversampling_factor as isize);
-                            for (chan, buf) in self.buffer.iter().enumerate() {
+                            for chan in used_channels.iter() {
+                                let buf = &self.buffer[*chan];
                                 point = self.get_sinc_interpolated(
                                     &buf,
                                     (nearest.0 + 2 * self.sinc_len as isize) as usize,
                                     nearest.1 as usize,
                                 );
-                                wave_out[chan][n] = point;
+                                wave_out[*chan][n] = point;
                             }
                             n += 1;
                         }
@@ -421,13 +439,15 @@ macro_rules! resampler_sincfixedin {
 
                 // store last index for next iteration
                 self.last_index = idx - self.chunk_size as f64;
-                for w in wave_out.iter_mut() {
-                    w.truncate(n);
+                for chan in used_channels.iter() {
+                    //for w in wave_out.iter_mut() {
+                    wave_out[*chan].truncate(n);
                 }
                 trace!(
-                    "Resampling, {} frames in, {} frames out",
-                    wave_in[0].len(),
-                    wave_out[0].len()
+                    "Resampling channels {:?}, {} frames in, {} frames out",
+                    used_channels,
+                    self.chunk_size,
+                    n,
                 );
                 Ok(wave_out)
             }
@@ -550,6 +570,8 @@ macro_rules! resampler_sincfixedout {
 
             /// Resample a chunk of audio. The required input length is provided by
             /// the "nbr_frames_needed" function, and the output length is fixed.
+            /// If the waveform for a channel is empty, this channel will be ignored and produce a
+            /// corresponding empty output waveform.
             /// # Errors
             ///
             /// The function returns an error if the length of the input data is not
@@ -562,27 +584,36 @@ macro_rules! resampler_sincfixedout {
                         "Wrong number of channels in input",
                     )));
                 }
-                if wave_in[0].len() != self.needed_input_size {
-                    return Err(Box::new(ResamplerError::new(
-                        "Wrong number of frames in input",
-                    )));
+
+                let mut used_channels = Vec::new();
+                for (chan, wave) in wave_in.iter().enumerate() {
+                    if !wave.is_empty() {
+                        used_channels.push(chan);
+                        if wave.len() != self.needed_input_size {
+                            return Err(Box::new(ResamplerError::new(
+                                "Wrong number of frames in input",
+                            )));
+                        }
+                    }
                 }
                 for wav in self.buffer.iter_mut() {
                     for idx in 0..(2 * self.sinc_len) {
                         wav[idx] = wav[idx + self.current_buffer_fill];
                     }
                 }
-                self.current_buffer_fill = wave_in[0].len();
-                for (chan, wav) in wave_in.iter().enumerate() {
-                    for (idx, sample) in wav.iter().enumerate() {
-                        self.buffer[chan][idx + 2 * self.sinc_len] = *sample;
+                self.current_buffer_fill = self.needed_input_size;
+
+                let mut wave_out = vec![Vec::new(); self.nbr_channels];
+
+                for chan in used_channels.iter() {
+                    for (idx, sample) in wave_in[*chan].iter().enumerate() {
+                        self.buffer[*chan][idx + 2 * self.sinc_len] = *sample;
                     }
+                    wave_out[*chan] = vec![0.0 as $t; self.chunk_size];
                 }
 
                 let mut idx = self.last_index;
                 let t_ratio = 1.0 / self.resample_ratio as f64;
-
-                let mut wave_out = vec![vec![0.0 as $t; self.chunk_size]; self.nbr_channels];
 
                 match self.interpolation {
                     InterpolationType::Cubic => {
@@ -594,7 +625,8 @@ macro_rules! resampler_sincfixedout {
                             let frac = idx * self.oversampling_factor as f64
                                 - (idx * self.oversampling_factor as f64).floor();
                             let frac_offset = frac as $t;
-                            for (chan, buf) in self.buffer.iter().enumerate() {
+                            for chan in used_channels.iter() {
+                                let buf = &self.buffer[*chan];
                                 for (n, p) in nearest.iter().zip(points.iter_mut()) {
                                     *p = self.get_sinc_interpolated(
                                         &buf,
@@ -602,7 +634,9 @@ macro_rules! resampler_sincfixedout {
                                         n.1 as usize,
                                     );
                                 }
-                                wave_out[chan][n] = self.interp_cubic(frac_offset, &points);
+                                unsafe {
+                                    wave_out[*chan][n] = self.interp_cubic(frac_offset, &points);
+                                }
                             }
                         }
                     }
@@ -615,7 +649,8 @@ macro_rules! resampler_sincfixedout {
                             let frac = idx * self.oversampling_factor as f64
                                 - (idx * self.oversampling_factor as f64).floor();
                             let frac_offset = frac as $t;
-                            for (chan, buf) in self.buffer.iter().enumerate() {
+                            for chan in used_channels.iter() {
+                                let buf = &self.buffer[*chan];
                                 for (n, p) in nearest.iter().zip(points.iter_mut()) {
                                     *p = self.get_sinc_interpolated(
                                         &buf,
@@ -623,7 +658,9 @@ macro_rules! resampler_sincfixedout {
                                         n.1 as usize,
                                     );
                                 }
-                                wave_out[chan][n] = self.interp_lin(frac_offset, &points);
+                                unsafe {
+                                    wave_out[*chan][n] = self.interp_lin(frac_offset, &points);
+                                }
                             }
                         }
                     }
@@ -633,18 +670,20 @@ macro_rules! resampler_sincfixedout {
                         for n in 0..self.chunk_size {
                             idx += t_ratio;
                             nearest = get_nearest_time(idx, self.oversampling_factor as isize);
-                            for (chan, buf) in self.buffer.iter().enumerate() {
+                            for chan in used_channels.iter() {
+                                let buf = &self.buffer[*chan];
                                 point = self.get_sinc_interpolated(
                                     &buf,
                                     (nearest.0 + 2 * self.sinc_len as isize) as usize,
                                     nearest.1 as usize,
                                 );
-                                wave_out[chan][n] = point;
+                                wave_out[*chan][n] = point;
                             }
                         }
                     }
                 }
 
+                let prev_input_len = self.needed_input_size;
                 // store last index for next iteration
                 self.last_index = idx - self.current_buffer_fill as f64;
                 self.needed_input_size = (self.last_index as f32
@@ -653,9 +692,10 @@ macro_rules! resampler_sincfixedout {
                     .ceil() as usize
                     + 2;
                 trace!(
-                    "Resampling, {} frames in, {} frames out. Next needed length: {} frames, last index {}",
-                    wave_in[0].len(),
-                    wave_out[0].len(),
+                    "Resampling channels {:?}, {} frames in, {} frames out. Next needed length: {} frames, last index {}",
+                    used_channels,
+                    prev_input_len,
+                    self.chunk_size,
                     self.needed_input_size,
                     self.last_index
                 );
@@ -686,8 +726,10 @@ mod tests {
         };
         let resampler = SincFixedIn::<f64>::new(1.2, params, 1024, 2);
         let yvals = vec![0.0f64, 2.0f64, 4.0f64, 6.0f64];
-        let interp = resampler.interp_cubic(0.5f64, &yvals);
-        assert_eq!(interp, 3.0f64);
+        unsafe {
+            let interp = resampler.interp_cubic(0.5f64, &yvals);
+            assert_eq!(interp, 3.0f64);
+        }
     }
 
     #[test]
@@ -701,8 +743,10 @@ mod tests {
         };
         let resampler = SincFixedIn::<f32>::new(1.2, params, 1024, 2);
         let yvals = vec![1.0f32, 5.0f32];
-        let interp = resampler.interp_lin(0.25f32, &yvals);
-        assert_eq!(interp, 2.0f32);
+        unsafe {
+            let interp = resampler.interp_lin(0.25f32, &yvals);
+            assert_eq!(interp, 2.0f32);
+        }
     }
 
     #[test]
@@ -716,8 +760,10 @@ mod tests {
         };
         let resampler = SincFixedIn::<f32>::new(1.2, params, 1024, 2);
         let yvals = vec![0.0f32, 2.0f32, 4.0f32, 6.0f32];
-        let interp = resampler.interp_cubic(0.5f32, &yvals);
-        assert_eq!(interp, 3.0f32);
+        unsafe {
+            let interp = resampler.interp_cubic(0.5f32, &yvals);
+            assert_eq!(interp, 3.0f32);
+        }
     }
 
     #[test]
@@ -731,8 +777,10 @@ mod tests {
         };
         let resampler = SincFixedIn::<f64>::new(1.2, params, 1024, 2);
         let yvals = vec![1.0f64, 5.0f64];
-        let interp = resampler.interp_lin(0.25f64, &yvals);
-        assert_eq!(interp, 2.0f64);
+        unsafe {
+            let interp = resampler.interp_lin(0.25f64, &yvals);
+            assert_eq!(interp, 2.0f64);
+        }
     }
 
     #[test]
@@ -765,6 +813,28 @@ mod tests {
         let out = resampler.process(&waves).unwrap();
         assert_eq!(out.len(), 2);
         assert!(out[0].len() > 1150 && out[0].len() < 1250);
+    }
+
+    #[test]
+    fn make_resampler_fi_skipped() {
+        let params = InterpolationParameters {
+            sinc_len: 64,
+            f_cutoff: 0.95,
+            interpolation: InterpolationType::Cubic,
+            oversampling_factor: 16,
+            window: WindowFunction::BlackmanHarris2,
+        };
+        let mut resampler = SincFixedIn::<f64>::new(1.2, params, 1024, 2);
+        let waves = vec![vec![0.0f64; 1024], Vec::new()];
+        let out = resampler.process(&waves).unwrap();
+        assert_eq!(out.len(), 2);
+        assert!(out[0].len() > 1150 && out[0].len() < 1250);
+        assert!(out[1].is_empty());
+        let waves = vec![Vec::new(), vec![0.0f64; 1024]];
+        let out = resampler.process(&waves).unwrap();
+        assert_eq!(out.len(), 2);
+        assert!(out[1].len() > 1150 && out[0].len() < 1250);
+        assert!(out[0].is_empty());
     }
 
     #[test]
@@ -803,5 +873,36 @@ mod tests {
         let out = resampler.process(&waves).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 1024);
+    }
+
+    #[test]
+    fn make_resampler_fo_skipped() {
+        let params = InterpolationParameters {
+            sinc_len: 64,
+            f_cutoff: 0.95,
+            interpolation: InterpolationType::Cubic,
+            oversampling_factor: 16,
+            window: WindowFunction::BlackmanHarris2,
+        };
+        let mut resampler = SincFixedOut::<f64>::new(1.2, params, 1024, 2);
+        let frames = resampler.nbr_frames_needed();
+        println!("{}", frames);
+        assert!(frames > 800 && frames < 900);
+        let mut waves = vec![vec![0.0f64; frames], Vec::new()];
+        waves[0][10] = 3.0;
+        let out = resampler.process(&waves).unwrap();
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].len(), 1024);
+        assert!(out[1].is_empty());
+        assert!(out[0].iter().sum::<f64>() > 2.0);
+
+        let frames = resampler.nbr_frames_needed();
+        let mut waves = vec![Vec::new(), vec![0.0f64; frames]];
+        waves[1][10] = 3.0;
+        let out = resampler.process(&waves).unwrap();
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[1].len(), 1024);
+        assert!(out[0].is_empty());
+        assert!(out[1].iter().sum::<f64>() > 2.0);
     }
 }

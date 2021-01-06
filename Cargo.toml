@@ -1,6 +1,6 @@
 [package]
 name = "rubato"
-version = "0.5.2"
+version = "0.6.0"
 authors = ["HEnquist <henrik.enquist@gmail.com>"]
 description = "Asynchronous resampling library intended for audio data"
 license = "MIT"
@@ -14,9 +14,9 @@ edition = "2018"
 
 [dependencies]
 log = "0.4.11"
-realfft = "0.3.0"
+realfft = "0.4.0"
 num-complex = "0.3"
-num-integer = "0.1.39"
+num-integer = "0.1.44"
 num-traits = "0.2"
 
 [dev-dependencies] 
