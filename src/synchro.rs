@@ -136,10 +136,6 @@ macro_rules! impl_resampler {
                 {
                     *item = 0.0;
                 }
-                //for (n, item) in wave_in.iter().enumerate().take(self.fft_size_in) {
-                //    self.input_buf[n] = *item;
-                //    self.input_buf[n+self.fft_size_in] = 0.0;
-                //}
 
                 // FFT and store result in history, update index
                 self.fft
@@ -415,8 +411,6 @@ macro_rules! resampler_FftFixedout {
                     wave_out[*chan] = self.output_buffers[*chan].clone();
                 }
 
-                //let mut wave_out = self.output_buffers.clone();
-                //let mut processed_frames = self.saved_frames * used_channels.len();
                 for n in used_channels.iter() {
                     for (in_chunk, out_chunk) in wave_in[*n]
                         .chunks(self.fft_size_in)
@@ -424,10 +418,8 @@ macro_rules! resampler_FftFixedout {
                     {
                         self.resampler
                             .resample_unit(in_chunk, out_chunk, &mut self.overlaps[*n]);
-                        //processed_samples += self.fft_size_out;
                     }
                 }
-                //let processed_frames = processed_samples / used_channels.len();
                 let processed_frames =
                     self.saved_frames + self.fft_size_out * (self.frames_needed / self.fft_size_in);
 
@@ -577,8 +569,6 @@ macro_rules! resampler_FftFixedin {
                 }
 
                 // copy new samples to input buffer
-                //let mut input_temp =
-                //    vec![vec![0.0; self.saved_frames + self.chunk_size_in]; self.nbr_channels];
                 for n in used_channels.iter() {
                     for (input, buffer) in self.input_buffers[*n]
                         .iter()
