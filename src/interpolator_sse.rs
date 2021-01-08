@@ -4,13 +4,13 @@ use crate::windows::WindowFunction;
 //use crate::{InterpolationParameters, InterpolationType};
 use crate::sinc::make_sincs;
 //use num_traits::Float;
-use std::error;
+//use std::error;
 //use std::fmt;
 use core::arch::x86_64::{__m128d, __m128};
 use core::arch::x86_64::{_mm_loadu_ps, _mm_setzero_ps, _mm_add_ps, _mm_hadd_ps, _mm_mul_ps};
 use core::arch::x86_64::{_mm_loadu_pd, _mm_setzero_pd, _mm_add_pd, _mm_hadd_pd, _mm_mul_pd};
 //use std::any::TypeId;
-
+use std::marker::PhantomData;
 
 //type Res<T> = Result<T, Box<dyn error::Error>>;
 
@@ -24,7 +24,7 @@ pub struct SseInterpolator<T> {
     sincs_d: Option<Vec<Vec<__m128d>>>,
     length: usize,
     nbr_sincs: usize,
-    dummy: T,
+    phantom: PhantomData<T>,
 }
 
 
@@ -39,9 +39,9 @@ impl SincInterpolator<f32> for SseInterpolator<f32> {
             let mut w_idx = 0;
             let mut s_idx = 0;
             for _ in 0..wave_cut.len()/8 {
-                let w0 = _mm_loadu_ps(wave_cut.get_unchecked(w_idx + 0));
+                let w0 = _mm_loadu_ps(wave_cut.get_unchecked(w_idx));
                 let w1 = _mm_loadu_ps(wave_cut.get_unchecked(w_idx + 4));
-                let s0 = _mm_mul_ps(w0, *sinc.get_unchecked(s_idx+0));
+                let s0 = _mm_mul_ps(w0, *sinc.get_unchecked(s_idx));
                 let s1 = _mm_mul_ps(w1, *sinc.get_unchecked(s_idx+1));
                 acc0 = _mm_add_ps(acc0, s0);
                 acc1 = _mm_add_ps(acc1, s1);
@@ -77,11 +77,11 @@ impl SincInterpolator<f64> for SseInterpolator<f64> {
             let mut w_idx = 0;
             let mut s_idx = 0;
             for _ in 0..wave_cut.len()/8 {
-                let w0 = _mm_loadu_pd(wave_cut.get_unchecked(w_idx + 0));
+                let w0 = _mm_loadu_pd(wave_cut.get_unchecked(w_idx));
                 let w1 = _mm_loadu_pd(wave_cut.get_unchecked(w_idx + 2));
                 let w2 = _mm_loadu_pd(wave_cut.get_unchecked(w_idx + 4));
                 let w3 = _mm_loadu_pd(wave_cut.get_unchecked(w_idx + 6));
-                let s0 = _mm_mul_pd(w0, *sinc.get_unchecked(s_idx+0));
+                let s0 = _mm_mul_pd(w0, *sinc.get_unchecked(s_idx));
                 let s1 = _mm_mul_pd(w1, *sinc.get_unchecked(s_idx+1));
                 let s2 = _mm_mul_pd(w2, *sinc.get_unchecked(s_idx+2));
                 let s3 = _mm_mul_pd(w3, *sinc.get_unchecked(s_idx+3));
@@ -136,7 +136,7 @@ impl SseInterpolator<f32> {
             sincs_d: None,
             length: sinc_len,
             nbr_sincs: oversampling_factor,
-            dummy: 0.0,
+            phantom: PhantomData,
         }
     }
 
@@ -184,7 +184,7 @@ impl SseInterpolator<f64> {
             sincs_s: None,
             length: sinc_len,
             nbr_sincs: oversampling_factor,
-            dummy: 0.0,
+            phantom: PhantomData,
         }
     }
 

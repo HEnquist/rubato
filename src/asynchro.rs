@@ -451,8 +451,7 @@ macro_rules! impl_new_sincfixedout {
                 let sinc_len = 8 * (((parameters.sinc_len as f32) / 8.0).ceil() as usize);
                 debug!("sinc_len rounded up to {}", sinc_len);
 
-                //let interpolator = Box::new(ScalarInterpolator::<$t>::new(sinc_len, parameters.oversampling_factor, f_cutoff, parameters.window));
-                let interpolator = Box::new(SseInterpolator::<$t>::new(sinc_len, parameters.oversampling_factor, f_cutoff, parameters.window));
+                let interpolator = Box::new(ScalarInterpolator::<$t>::new(sinc_len, parameters.oversampling_factor, f_cutoff, parameters.window));
                 
                 let needed_input_size =
                     (chunk_size as f64 / resample_ratio).ceil() as usize + 2 + sinc_len / 2;
