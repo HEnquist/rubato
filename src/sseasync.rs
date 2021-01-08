@@ -7,6 +7,8 @@ use num_traits::Float;
 use std::error;
 use std::fmt;
 use core::arch::x86_64::{__m128d, __m128};
+use core::arch::x86_64::{_mm_load_ps, _mm_loadu_ps, _mm_setzero_ps, _mm_add_ps, _mm_hadd_ps, _mm_mul_ps};
+use core::arch::x86_64::{_mm_load_pd, _mm_loadu_pd, _mm_setzero_pd, _mm_add_pd, _mm_hadd_pd, _mm_mul_pd};
 use std::any::TypeId;
 
 
@@ -16,10 +18,10 @@ use crate::Resampler;
 use crate::ResamplerError;
 
 enum SincBuffer {
-    //SseSingle(Vec<Vec<__m128>>),
-    //SseDouble(Vec<Vec<__m128d>>),
-    SseSingle(Vec<Vec<f32>>),
-    SseDouble(Vec<Vec<f64>>),
+    SseSingle(Vec<Vec<__m128>>),
+    SseDouble(Vec<Vec<__m128d>>),
+    //SseSingle(Vec<Vec<f32>>),
+    //SseDouble(Vec<Vec<f64>>),
 }
 
 
@@ -67,25 +69,40 @@ macro_rules! impl_resampler_single {
             fn get_sinc_interpolated(&self, wave: &[f32], index: usize, subindex: usize) -> f32 {
                 match &self.sincs {
                     SincBuffer::SseSingle(sincs) => {
-                        let wave_cut = &wave[index..(index + sincs[subindex].len())];
-                        wave_cut
-                            .chunks(8)
-                            .zip(sincs[subindex].chunks(8))
-                            .fold([0.0; 8], |acc, (x, y)| {
-                                [
-                                    acc[0] + x[0] * y[0],
-                                    acc[1] + x[1] * y[1],
-                                    acc[2] + x[2] * y[2],
-                                    acc[3] + x[3] * y[3],
-                                    acc[4] + x[4] * y[4],
-                                    acc[5] + x[5] * y[5],
-                                    acc[6] + x[6] * y[6],
-                                    acc[7] + x[7] * y[7],
-                                ]
-                            })
-                            .iter()
-                            .sum()
+                        unsafe {
+                            let wave_cut = &wave[index..(index + 4*sincs[subindex].len())];
+                            let mut acc0 = _mm_setzero_ps();
+                            let mut acc1 = _mm_setzero_ps();
+                            //for (data, sinc) in wave_cut.chunks(8).zip(sincs[subindex].chunks(2)) {
+                            //    let w0 = _mm_loadu_ps(&data[0]);
+                            //    let w1 = _mm_loadu_ps(&data[4]);
+                            //    let s0 = _mm_mul_ps(w0, sinc[0]);
+                            //    let s1 = _mm_mul_ps(w1, sinc[1]);
+                            //    acc0 = _mm_add_ps(acc0, s0);
+                            //    acc1 = _mm_add_ps(acc1, s1);
+                            //}
+                            //let mut packedsum = _mm_hadd_ps(acc0, acc1);
+                            //packedsum = _mm_hadd_ps(packedsum, packedsum);
+                            //let array = std::mem::transmute::<__m128, [f32; 4]>(packedsum);
+                            //array[0] + array[1]
+                            let mut w_idx = 0;
+                            let mut s_idx = 0;
+                            for _ in 0..wave_cut.len()/8 {
+                                let w0 = _mm_loadu_ps(wave_cut.get_unchecked(w_idx + 0));
+                                let w1 = _mm_loadu_ps(wave_cut.get_unchecked(w_idx + 4));
+                                let s0 = _mm_mul_ps(w0, *sincs.get_unchecked(subindex).get_unchecked(s_idx+0));
+                                let s1 = _mm_mul_ps(w1, *sincs.get_unchecked(subindex).get_unchecked(s_idx+1));
+                                acc0 = _mm_add_ps(acc0, s0);
+                                acc1 = _mm_add_ps(acc1, s1);
+                                w_idx += 8;
+                                s_idx += 2;
+                            }
+                            let mut packedsum = _mm_hadd_ps(acc0, acc1);
+                            packedsum = _mm_hadd_ps(packedsum, packedsum);
+                            let array = std::mem::transmute::<__m128, [f32; 4]>(packedsum);
+                            array[0] + array[1]
                         }
+                    }
                     _ => panic!("Wrong sinc data type")
                 }
             }
@@ -101,7 +118,9 @@ macro_rules! impl_resampler_single {
                     - yvals.get_unchecked(1);
                 let a3 = 0.5 * (yvals.get_unchecked(1) - yvals.get_unchecked(2))
                     + (1.0 / 6.0) * (yvals.get_unchecked(3) - yvals.get_unchecked(0));
-                a0 + a1 * x + a2 * x.powi(2) + a3 * x.powi(3)
+                let x2 = x*x;
+                let x3 = x2*x;
+                a0 + a1 * x + a2 * x2 + a3 * x3
             }
 
             /// Linear interpolation between two points at x=0 and x=1
@@ -111,7 +130,19 @@ macro_rules! impl_resampler_single {
 
             /// Prepare sinc buffer
             fn pack_sincs(sincs: Vec<Vec<f32>>) -> SincBuffer {
-                SincBuffer::SseSingle(sincs)
+                let mut packed_sincs = Vec::new();
+                for sinc in sincs.iter() {
+                    let mut packed = Vec::new();
+                    for elements in sinc.chunks(4) {
+                        unsafe {
+                            let packed_elems = _mm_loadu_ps(&elements[0]);
+                            packed.push(packed_elems);
+                        }
+                        
+                    }
+                    packed_sincs.push(packed);
+                }
+                SincBuffer::SseSingle(packed_sincs)
             }
         }
     };
@@ -125,25 +156,61 @@ macro_rules! impl_resampler_double {
             fn get_sinc_interpolated(&self, wave: &[f64], index: usize, subindex: usize) -> f64 {
                 match &self.sincs {
                     SincBuffer::SseDouble(sincs) => {
-                        let wave_cut = &wave[index..(index + sincs[subindex].len())];
-                        wave_cut
-                            .chunks(8)
-                            .zip(sincs[subindex].chunks(8))
-                            .fold([0.0; 8], |acc, (x, y)| {
-                                [
-                                    acc[0] + x[0] * y[0],
-                                    acc[1] + x[1] * y[1],
-                                    acc[2] + x[2] * y[2],
-                                    acc[3] + x[3] * y[3],
-                                    acc[4] + x[4] * y[4],
-                                    acc[5] + x[5] * y[5],
-                                    acc[6] + x[6] * y[6],
-                                    acc[7] + x[7] * y[7],
-                                ]
-                            })
-                            .iter()
-                            .sum()
+                        unsafe {
+                            //let wave_cut = &wave[index..(index + 2*sincs[subindex].len())];
+                            //let mut acc0 = _mm_setzero_pd();
+                            //let mut acc1 = _mm_setzero_pd();
+                            //let mut acc2 = _mm_setzero_pd();
+                            //let mut acc3 = _mm_setzero_pd();
+                            //for (data, sinc) in wave_cut.chunks(8).zip(sincs[subindex].chunks(4)) {
+                            //    let w0 = _mm_loadu_pd(&data[0]);
+                            //    let w1 = _mm_loadu_pd(&data[2]);
+                            //    let w2 = _mm_loadu_pd(&data[4]);
+                            //    let w3 = _mm_loadu_pd(&data[6]);
+                            //    let s0 = _mm_mul_pd(w0, sinc[0]);
+                            //    let s1 = _mm_mul_pd(w1, sinc[1]);
+                            //    let s2 = _mm_mul_pd(w2, sinc[2]);
+                            //    let s3 = _mm_mul_pd(w3, sinc[3]);
+                            //    acc0 = _mm_add_pd(acc0, s0);
+                            //    acc1 = _mm_add_pd(acc1, s1);
+                            //    acc2 = _mm_add_pd(acc2, s2);
+                            //    acc3 = _mm_add_pd(acc3, s3);
+                            //}
+                            //let mut packedsum0 = _mm_hadd_pd(acc0, acc1);
+                            //let packedsum1 = _mm_hadd_pd(acc2, acc3);
+                            //packedsum0 = _mm_hadd_pd(packedsum0, packedsum1);
+                            //let array = std::mem::transmute::<__m128d, [f64; 2]>(packedsum0);
+                            //array[0] + array[1]
+                            let wave_cut = &wave[index..(index + 2*sincs[subindex].len())];
+                            let mut acc0 = _mm_setzero_pd();
+                            let mut acc1 = _mm_setzero_pd();
+                            let mut acc2 = _mm_setzero_pd();
+                            let mut acc3 = _mm_setzero_pd();
+                            let mut w_idx = 0;
+                            let mut s_idx = 0;
+                            for _ in 0..wave_cut.len()/8 {
+                                let w0 = _mm_loadu_pd(wave_cut.get_unchecked(w_idx + 0));
+                                let w1 = _mm_loadu_pd(wave_cut.get_unchecked(w_idx + 2));
+                                let w2 = _mm_loadu_pd(wave_cut.get_unchecked(w_idx + 4));
+                                let w3 = _mm_loadu_pd(wave_cut.get_unchecked(w_idx + 6));
+                                let s0 = _mm_mul_pd(w0, *sincs.get_unchecked(subindex).get_unchecked(s_idx+0));
+                                let s1 = _mm_mul_pd(w1, *sincs.get_unchecked(subindex).get_unchecked(s_idx+1));
+                                let s2 = _mm_mul_pd(w2, *sincs.get_unchecked(subindex).get_unchecked(s_idx+2));
+                                let s3 = _mm_mul_pd(w3, *sincs.get_unchecked(subindex).get_unchecked(s_idx+3));
+                                acc0 = _mm_add_pd(acc0, s0);
+                                acc1 = _mm_add_pd(acc1, s1);
+                                acc2 = _mm_add_pd(acc2, s2);
+                                acc3 = _mm_add_pd(acc3, s3);
+                                w_idx += 8;
+                                s_idx += 4;
+                            }
+                            let mut packedsum0 = _mm_hadd_pd(acc0, acc1);
+                            let packedsum1 = _mm_hadd_pd(acc2, acc3);
+                            packedsum0 = _mm_hadd_pd(packedsum0, packedsum1);
+                            let array = std::mem::transmute::<__m128d, [f64; 2]>(packedsum0);
+                            array[0] + array[1]
                         }
+                    }
                     _ => panic!("Wrong type")
                 }
             }
@@ -159,7 +226,9 @@ macro_rules! impl_resampler_double {
                     - yvals.get_unchecked(1);
                 let a3 = 0.5 * (yvals.get_unchecked(1) - yvals.get_unchecked(2))
                     + (1.0 / 6.0) * (yvals.get_unchecked(3) - yvals.get_unchecked(0));
-                a0 + a1 * x + a2 * x.powi(2) + a3 * x.powi(3)
+                let x2 = x*x;
+                let x3 = x2*x;
+                a0 + a1 * x + a2 * x2 + a3 * x3
             }
 
             /// Linear interpolation between two points at x=0 and x=1
@@ -169,7 +238,19 @@ macro_rules! impl_resampler_double {
 
             /// Prepare sinc buffer
             fn pack_sincs(sincs: Vec<Vec<f64>>) -> SincBuffer {
-                SincBuffer::SseDouble(sincs)
+                let mut packed_sincs = Vec::new();
+                for sinc in sincs.iter() {
+                    let mut packed = Vec::new();
+                    for elements in sinc.chunks(2) {
+                        unsafe {
+                            let packed_elems = _mm_loadu_pd(&elements[0]);
+                            packed.push(packed_elems);
+                        }
+                        
+                    }
+                    packed_sincs.push(packed);
+                }
+                SincBuffer::SseDouble(packed_sincs)
             }
         }
     };
@@ -829,12 +910,16 @@ mod tests {
         println!("{}", frames);
         assert!(frames > 800 && frames < 900);
         let mut waves = vec![vec![0.0f64; frames], Vec::new()];
-        waves[0][10] = 3.0;
+        waves[0][100] = 3.0;
         let out = resampler.process(&waves).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 1024);
         assert!(out[1].is_empty());
-        assert!(out[0].iter().sum::<f64>() > 2.0);
+        println!("{:?}", out[0]);
+        let summed = out[0].iter().sum::<f64>();
+        println!("sum: {}", summed);
+        assert!(summed < 4.0);
+        assert!(summed > 2.0);
 
         let frames = resampler.nbr_frames_needed();
         let mut waves = vec![Vec::new(), vec![0.0f64; frames]];
@@ -843,6 +928,8 @@ mod tests {
         assert_eq!(out.len(), 2);
         assert_eq!(out[1].len(), 1024);
         assert!(out[0].is_empty());
-        assert!(out[1].iter().sum::<f64>() > 2.0);
+        let summed = out[1].iter().sum::<f64>();
+        assert!(summed < 4.0);
+        assert!(summed > 2.0);
     }
 }
