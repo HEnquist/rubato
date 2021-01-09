@@ -54,11 +54,13 @@
 mod interpolation;
 mod sinc;
 #[cfg(target_arch = "x86_64")]
-mod interpolator_sse;
+pub mod interpolator_sse;
+#[cfg(target_arch = "x86_64")]
+pub mod interpolator_avx;
 mod synchro;
 mod windows;
 //mod sseasync;
-mod asynchro;
+pub mod asynchro;
 pub use crate::synchro::{FftFixedIn, FftFixedInOut, FftFixedOut};
 //pub use crate::sseasync::{SseSincFixedIn, SseSincFixedOut};
 pub use crate::asynchro::{SincFixedIn, SincFixedOut};

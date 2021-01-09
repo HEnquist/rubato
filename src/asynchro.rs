@@ -5,6 +5,8 @@ use crate::{InterpolationParameters, InterpolationType};
 use crate::sinc::make_sincs;
 #[cfg(target_arch = "x86_64")]
 use crate::interpolator_sse::SseInterpolator;
+#[cfg(target_arch = "x86_64")]
+use crate::interpolator_avx::AvxInterpolator;
 
 use num_traits::Float;
 use std::error;
@@ -30,7 +32,7 @@ use crate::ResamplerError;
 /// Functions for making the scalar product with a sinc
 pub trait SincInterpolator<T> {
     /// Make the scalar product between the waveform starting at `index` and the sinc of `subindex`.
-    fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T;
+    unsafe fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T;
 
     /// Sinc length
     fn len(&self) -> usize;
@@ -40,7 +42,7 @@ pub trait SincInterpolator<T> {
 }
 
 /// A plain scalar interpolator 
-struct ScalarInterpolator<T> {
+pub struct ScalarInterpolator<T> {
     sincs: Vec<Vec<T>>,
     length: usize,
     nbr_sincs: usize,
@@ -48,7 +50,7 @@ struct ScalarInterpolator<T> {
 
 impl<T:Float> SincInterpolator<T> for ScalarInterpolator<T> {
     /// Calculate the scalar produt of an input wave and the selected sinc filter
-    fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T {
+    unsafe fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T {
         let wave_cut = &wave[index..(index + self.sincs[subindex].len())];
         wave_cut
             .chunks(8)
@@ -144,27 +146,29 @@ pub struct SincFixedOut<T> {
 macro_rules! impl_resampler {
     ($ft:ty, $rt:ty) => {
         impl $rt {
-            ///// Calculate the scalar produt of an input wave and the selected sinc filter
-            //fn get_sinc_interpolated(&self, wave: &[$ft], index: usize, subindex: usize) -> $ft {
-            //    let wave_cut = &wave[index..(index + self.sincs[subindex].len())];
-            //    wave_cut
-            //        .chunks(8)
-            //        .zip(self.sincs[subindex].chunks(8))
-            //        .fold([0.0; 8], |acc, (x, y)| {
-            //            [
-            //                acc[0] + x[0] * y[0],
-            //                acc[1] + x[1] * y[1],
-            //                acc[2] + x[2] * y[2],
-            //                acc[3] + x[3] * y[3],
-            //                acc[4] + x[4] * y[4],
-            //                acc[5] + x[5] * y[5],
-            //                acc[6] + x[6] * y[6],
-            //                acc[7] + x[7] * y[7],
-            //            ]
-            //        })
-            //        .iter()
-            //        .sum()
-            //}
+
+            pub fn make_interpolator(
+                sinc_len: usize,
+                resample_ratio: f64,
+                f_cutoff: f32,
+                oversampling_factor: usize,
+                window: WindowFunction,
+            ) -> Box<dyn SincInterpolator<$ft>> {
+                let sinc_len = 8 * (((sinc_len as f32) / 8.0).ceil() as usize);
+                let f_cutoff = if resample_ratio >= 1.0 {
+                    f_cutoff
+                } else {
+                    f_cutoff * resample_ratio as f32
+                };
+                if is_x86_feature_detected!("avx") {
+                    return Box::new(SseInterpolator::<$ft>::new(sinc_len, oversampling_factor, f_cutoff, window));
+                }
+                if is_x86_feature_detected!("sse3") {
+                    return Box::new(SseInterpolator::<$ft>::new(sinc_len, oversampling_factor, f_cutoff, window));
+                }
+                Box::new(ScalarInterpolator::<$ft>::new(sinc_len, oversampling_factor, f_cutoff, window))
+            }
+
 
             /// Perform cubic polynomial interpolation to get value at x.
             /// Input points are assumed to be at x = -1, 0, 1, 2
@@ -212,31 +216,46 @@ macro_rules! impl_new_sincfixedin {
                     "Create new SincFixedIn, ratio: {}, chunk_size: {}, channels: {}, parameters: {:?}",
                     resample_ratio, chunk_size, nbr_channels, parameters
                 );
-                let sinc_len = 8 * (((parameters.sinc_len as f32) / 8.0).ceil() as usize);
-                let f_cutoff = if resample_ratio >= 1.0 {
-                    parameters.f_cutoff
-                } else {
-                    parameters.f_cutoff * resample_ratio as f32
-                };
-                
-                debug!("sinc_len rounded up to {}", sinc_len);
-                //is_x86_feature_detected!("avx");"sse3"
-                //let interpolator = Box::new(ScalarInterpolator::<$t>::new(sinc_len, parameters.oversampling_factor, f_cutoff, parameters.window));
-                let interpolator = Box::new(SseInterpolator::<$t>::new(sinc_len, parameters.oversampling_factor, f_cutoff, parameters.window));
+                let interpolator = Self::make_interpolator(parameters.sinc_len,
+                    resample_ratio,
+                    parameters.f_cutoff,
+                    parameters.oversampling_factor,
+                    parameters.window);
 
-                let buffer = vec![vec![0.0; chunk_size + 2 * sinc_len]; nbr_channels];
+                Self::new_with_interpolator(resample_ratio, parameters.interpolation, interpolator, chunk_size, nbr_channels)
+            }
+            
+            /// Create a new SincFixedIn using an existing Interpolator
+            ///
+            /// Parameters are:
+            /// - `resample_ratio`: Ratio between output and input sample rates.
+            /// - `interpolation_type`: Parameters for interpolation, see `InterpolationParameters`
+            /// - `interpolator`:  The interpolator to use
+            /// - `chunk_size`: size of output data in frames
+            /// - `nbr_channels`: number of channels in input/output
+            pub fn new_with_interpolator(
+                resample_ratio: f64,
+                interpolation_type: InterpolationType,
+                interpolator: Box<dyn SincInterpolator<$t>>,
+                chunk_size: usize,
+                nbr_channels: usize,
+            ) -> Self {
+                    
+                let buffer = vec![vec![0.0; chunk_size + 2 * interpolator.len()]; nbr_channels];
 
                 SincFixedIn {
                     nbr_channels,
                     chunk_size,
-                    last_index: -((sinc_len / 2) as f64),
+                    last_index: -((interpolator.len() / 2) as f64),
                     resample_ratio,
                     resample_ratio_original: resample_ratio,
                     interpolator,
                     buffer,
-                    interpolation: parameters.interpolation,
+                    interpolation: interpolation_type,
                 }
             }
+
+
         }
     }
 }
@@ -315,11 +334,13 @@ macro_rules! resampler_sincfixedin {
                             for chan in used_channels.iter() {
                                 let buf = &self.buffer[*chan];
                                 for (n, p) in nearest.iter().zip(points.iter_mut()) {
-                                    *p = self.interpolator.get_sinc_interpolated(
-                                        &buf,
-                                        (n.0 + 2 * sinc_len as isize) as usize,
-                                        n.1 as usize,
-                                    );
+                                    unsafe {
+                                        *p = self.interpolator.get_sinc_interpolated(
+                                            &buf,
+                                            (n.0 + 2 * sinc_len as isize) as usize,
+                                            n.1 as usize,
+                                        );
+                                    }
                                 }
                                 unsafe {
                                     wave_out[*chan][n] = self.interp_cubic(frac_offset, &points);
@@ -344,11 +365,13 @@ macro_rules! resampler_sincfixedin {
                             for chan in used_channels.iter() {
                                 let buf = &self.buffer[*chan];
                                 for (n, p) in nearest.iter().zip(points.iter_mut()) {
-                                    *p = self.interpolator.get_sinc_interpolated(
-                                        &buf,
-                                        (n.0 + 2 * sinc_len as isize) as usize,
-                                        n.1 as usize,
-                                    );
+                                    unsafe {
+                                        *p = self.interpolator.get_sinc_interpolated(
+                                            &buf,
+                                            (n.0 + 2 * sinc_len as isize) as usize,
+                                            n.1 as usize,
+                                        );
+                                    }
                                 }
                                 unsafe {
                                     wave_out[*chan][n] = self.interp_lin(frac_offset, &points);
@@ -365,11 +388,13 @@ macro_rules! resampler_sincfixedin {
                             nearest = get_nearest_time(idx, oversampling_factor as isize);
                             for chan in used_channels.iter() {
                                 let buf = &self.buffer[*chan];
-                                point = self.interpolator.get_sinc_interpolated(
-                                    &buf,
-                                    (nearest.0 + 2 * sinc_len as isize) as usize,
-                                    nearest.1 as usize,
-                                );
+                                unsafe {
+                                    point = self.interpolator.get_sinc_interpolated(
+                                        &buf,
+                                        (nearest.0 + 2 * sinc_len as isize) as usize,
+                                        nearest.1 as usize,
+                                    );
+                                }
                                 wave_out[*chan][n] = point;
                             }
                             n += 1;
@@ -440,33 +465,49 @@ macro_rules! impl_new_sincfixedout {
                 nbr_channels: usize,
             ) -> Self {
                 debug!(
-                    "Create new SincFixedOut, ratio: {}, chunk_size: {}, channels: {}, parameters: {:?}",
+                    "Create new SincFixedIn, ratio: {}, chunk_size: {}, channels: {}, parameters: {:?}",
                     resample_ratio, chunk_size, nbr_channels, parameters
                 );
-                let f_cutoff = if resample_ratio >= 1.0 {
-                    parameters.f_cutoff
-                } else {
-                    parameters.f_cutoff * resample_ratio as f32
-                };
-                let sinc_len = 8 * (((parameters.sinc_len as f32) / 8.0).ceil() as usize);
-                debug!("sinc_len rounded up to {}", sinc_len);
+                let interpolator = Self::make_interpolator(parameters.sinc_len,
+                    resample_ratio,
+                    parameters.f_cutoff,
+                    parameters.oversampling_factor,
+                    parameters.window);
 
-                let interpolator = Box::new(ScalarInterpolator::<$t>::new(sinc_len, parameters.oversampling_factor, f_cutoff, parameters.window));
-                
+                Self::new_with_interpolator(resample_ratio, parameters.interpolation, interpolator, chunk_size, nbr_channels)
+            }
+
+            /// Create a new SincFixedOut using an existing Interpolator
+            ///
+            /// Parameters are:
+            /// - `resample_ratio`: Ratio between output and input sample rates.
+            /// - `interpolation_type`: Parameters for interpolation, see `InterpolationParameters`
+            /// - `interpolator`:  The interpolator to use
+            /// - `chunk_size`: size of output data in frames
+            /// - `nbr_channels`: number of channels in input/output
+            pub fn new_with_interpolator(
+                resample_ratio: f64,
+                interpolation_type: InterpolationType,
+                interpolator: Box<dyn SincInterpolator<$t>>,
+                chunk_size: usize,
+                nbr_channels: usize,
+            ) -> Self {
+                    
                 let needed_input_size =
-                    (chunk_size as f64 / resample_ratio).ceil() as usize + 2 + sinc_len / 2;
-                let buffer = vec![vec![0.0; 3 * needed_input_size / 2 + 2 * sinc_len]; nbr_channels];
+                    (chunk_size as f64 / resample_ratio).ceil() as usize + 2 + interpolator.len() / 2;
+                let buffer = vec![vec![0.0; 3 * needed_input_size / 2 + 2 * interpolator.len()]; nbr_channels];
+
                 SincFixedOut {
                     nbr_channels,
                     chunk_size,
                     needed_input_size,
-                    last_index: -((sinc_len / 2) as f64),
+                    last_index: -((interpolator.len() / 2) as f64),
                     current_buffer_fill: needed_input_size,
                     resample_ratio,
                     resample_ratio_original: resample_ratio,
                     interpolator,
                     buffer,
-                    interpolation: parameters.interpolation,
+                    interpolation: interpolation_type,
                 }
             }
         }
@@ -570,11 +611,13 @@ macro_rules! resampler_sincfixedout {
                             for chan in used_channels.iter() {
                                 let buf = &self.buffer[*chan];
                                 for (n, p) in nearest.iter().zip(points.iter_mut()) {
-                                    *p = self.interpolator.get_sinc_interpolated(
-                                        &buf,
-                                        (n.0 + 2 * sinc_len as isize) as usize,
-                                        n.1 as usize,
-                                    );
+                                    unsafe {
+                                        *p = self.interpolator.get_sinc_interpolated(
+                                            &buf,
+                                            (n.0 + 2 * sinc_len as isize) as usize,
+                                            n.1 as usize,
+                                        );
+                                    }
                                 }
                                 unsafe {
                                     wave_out[*chan][n] = self.interp_cubic(frac_offset, &points);
@@ -594,11 +637,13 @@ macro_rules! resampler_sincfixedout {
                             for chan in used_channels.iter() {
                                 let buf = &self.buffer[*chan];
                                 for (n, p) in nearest.iter().zip(points.iter_mut()) {
-                                    *p = self.interpolator.get_sinc_interpolated(
-                                        &buf,
-                                        (n.0 + 2 * sinc_len as isize) as usize,
-                                        n.1 as usize,
-                                    );
+                                    unsafe {
+                                        *p = self.interpolator.get_sinc_interpolated(
+                                            &buf,
+                                            (n.0 + 2 * sinc_len as isize) as usize,
+                                            n.1 as usize,
+                                        );
+                                    }
                                 }
                                 unsafe {
                                     wave_out[*chan][n] = self.interp_lin(frac_offset, &points);
@@ -614,11 +659,13 @@ macro_rules! resampler_sincfixedout {
                             nearest = get_nearest_time(idx, oversampling_factor as isize);
                             for chan in used_channels.iter() {
                                 let buf = &self.buffer[*chan];
-                                point = self.interpolator.get_sinc_interpolated(
-                                    &buf,
-                                    (nearest.0 + 2 * sinc_len as isize) as usize,
-                                    nearest.1 as usize,
-                                );
+                                unsafe {
+                                    point = self.interpolator.get_sinc_interpolated(
+                                        &buf,
+                                        (nearest.0 + 2 * sinc_len as isize) as usize,
+                                        nearest.1 as usize,
+                                    );
+                                }
                                 wave_out[*chan][n] = point;
                             }
                         }
