@@ -52,11 +52,11 @@
 //! The `rubato` crate requires rustc version 1.40 or newer.
 
 mod interpolation;
-mod sinc;
-#[cfg(target_arch = "x86_64")]
-pub mod interpolator_sse;
 #[cfg(target_arch = "x86_64")]
 pub mod interpolator_avx;
+#[cfg(target_arch = "x86_64")]
+pub mod interpolator_sse;
+mod sinc;
 mod synchro;
 mod windows;
 //mod sseasync;
@@ -176,4 +176,3 @@ pub trait Resampler<T> {
     /// Query for the number of frames needed for the next call to "process".
     fn nbr_frames_needed(&self) -> usize;
 }
-

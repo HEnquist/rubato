@@ -1,7 +1,7 @@
 use num_traits::Float;
 
 /// Different window functions that can be used to window the sinc function.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum WindowFunction {
     /// Blackman. Intermediate rolloff and intermediate attenuation.
     Blackman,

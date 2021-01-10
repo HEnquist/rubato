@@ -1,54 +1,45 @@
 use crate::windows::WindowFunction;
 
 use crate::interpolation::*;
-use crate::{InterpolationParameters, InterpolationType};
-use crate::sinc::make_sincs;
-#[cfg(target_arch = "x86_64")]
-use crate::interpolator_sse::SseInterpolator;
 #[cfg(target_arch = "x86_64")]
 use crate::interpolator_avx::AvxInterpolator;
+#[cfg(target_arch = "x86_64")]
+use crate::interpolator_sse::SseInterpolator;
+use crate::sinc::make_sincs;
+use crate::{InterpolationParameters, InterpolationType};
 
 use num_traits::Float;
 use std::error;
-//use std::fmt;
-//use core::arch::x86_64::{__m128d, __m128};
-//use core::arch::x86_64::{_mm_load_ps, _mm_loadu_ps, _mm_setzero_ps, _mm_add_ps, _mm_hadd_ps, _mm_mul_ps};
-//use core::arch::x86_64::{_mm_load_pd, _mm_loadu_pd, _mm_setzero_pd, _mm_add_pd, _mm_hadd_pd, _mm_mul_pd};
-//use std::any::TypeId;
-
 
 type Res<T> = Result<T, Box<dyn error::Error>>;
 
 use crate::Resampler;
 use crate::ResamplerError;
 
-//enum SincBuffer {
-//    SseSingle(Vec<Vec<__m128>>),
-//    SseDouble(Vec<Vec<__m128d>>),
-//    //SseSingle(Vec<Vec<f32>>),
-//    //SseDouble(Vec<Vec<f64>>),
-//}
-
 /// Functions for making the scalar product with a sinc
 pub trait SincInterpolator<T> {
     /// Make the scalar product between the waveform starting at `index` and the sinc of `subindex`.
+    /// # Safety
+    /// The SIMD implementations of this trait use intrinsics, which are considered unsafe.
+    /// They also use unchecked indexing to avoid bounds checks and maximize performance.
+    /// Callers must ensure to call the function with reasonable parameters.
     unsafe fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T;
 
-    /// Sinc length
+    /// Get sinc length
     fn len(&self) -> usize;
 
     /// Get number of sincs used for oversampling
     fn nbr_sincs(&self) -> usize;
 }
 
-/// A plain scalar interpolator 
+/// A plain scalar interpolator
 pub struct ScalarInterpolator<T> {
     sincs: Vec<Vec<T>>,
     length: usize,
     nbr_sincs: usize,
 }
 
-impl<T:Float> SincInterpolator<T> for ScalarInterpolator<T> {
+impl<T: Float> SincInterpolator<T> for ScalarInterpolator<T> {
     /// Calculate the scalar produt of an input wave and the selected sinc filter
     unsafe fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T {
         let wave_cut = &wave[index..(index + self.sincs[subindex].len())];
@@ -68,7 +59,7 @@ impl<T:Float> SincInterpolator<T> for ScalarInterpolator<T> {
                 ]
             })
             .iter()
-            .fold(T::zero(), |acc, val| { acc + *val})
+            .fold(T::zero(), |acc, val| acc + *val)
     }
 
     fn len(&self) -> usize {
@@ -84,23 +75,18 @@ impl<T: Float> ScalarInterpolator<T> {
     /// Create a new ScalarInterpolator
     ///
     /// Parameters are:
-    /// - `resample_ratio`: Ratio between output and input sample rates.
-    /// - `parameters`: Parameters for interpolation, see `InterpolationParameters`
-    /// - `chunk_size`: size of input data in frames
-    /// - `nbr_channels`: number of channels in input/output
+    /// - `sinc_len`: Length of sinc functions.
+    /// - `oversampling_factor`: Number of intermediate sincs (oversampling factor).
+    /// - `f_cutoff`: Relative cutoff frequency.
+    /// - `window`: Window function to use.
     pub fn new(
         sinc_len: usize,
         oversampling_factor: usize,
         f_cutoff: f32,
         window: WindowFunction,
     ) -> Self {
-        assert!(sinc_len%8 == 0);
-        let sincs = make_sincs(
-            sinc_len,
-            oversampling_factor,
-            f_cutoff,
-            window,
-        );
+        assert!(sinc_len % 8 == 0);
+        let sincs = make_sincs(sinc_len, oversampling_factor, f_cutoff, window);
         Self {
             sincs,
             length: sinc_len,
@@ -146,7 +132,6 @@ pub struct SincFixedOut<T> {
 macro_rules! impl_resampler {
     ($ft:ty, $rt:ty) => {
         impl $rt {
-
             pub fn make_interpolator(
                 sinc_len: usize,
                 resample_ratio: f64,
@@ -160,15 +145,31 @@ macro_rules! impl_resampler {
                 } else {
                     f_cutoff * resample_ratio as f32
                 };
-                if is_x86_feature_detected!("avx") {
-                    return Box::new(SseInterpolator::<$ft>::new(sinc_len, oversampling_factor, f_cutoff, window));
+                #[cfg(target_arch = "x86_64")]
+                if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") {
+                    return Box::new(AvxInterpolator::<$ft>::new(
+                        sinc_len,
+                        oversampling_factor,
+                        f_cutoff,
+                        window,
+                    ));
                 }
+                #[cfg(target_arch = "x86_64")]
                 if is_x86_feature_detected!("sse3") {
-                    return Box::new(SseInterpolator::<$ft>::new(sinc_len, oversampling_factor, f_cutoff, window));
+                    return Box::new(SseInterpolator::<$ft>::new(
+                        sinc_len,
+                        oversampling_factor,
+                        f_cutoff,
+                        window,
+                    ));
                 }
-                Box::new(ScalarInterpolator::<$ft>::new(sinc_len, oversampling_factor, f_cutoff, window))
+                Box::new(ScalarInterpolator::<$ft>::new(
+                    sinc_len,
+                    oversampling_factor,
+                    f_cutoff,
+                    window,
+                ))
             }
-
 
             /// Perform cubic polynomial interpolation to get value at x.
             /// Input points are assumed to be at x = -1, 0, 1, 2
@@ -224,7 +225,7 @@ macro_rules! impl_new_sincfixedin {
 
                 Self::new_with_interpolator(resample_ratio, parameters.interpolation, interpolator, chunk_size, nbr_channels)
             }
-            
+
             /// Create a new SincFixedIn using an existing Interpolator
             ///
             /// Parameters are:
@@ -240,7 +241,7 @@ macro_rules! impl_new_sincfixedin {
                 chunk_size: usize,
                 nbr_channels: usize,
             ) -> Self {
-                    
+
                 let buffer = vec![vec![0.0; chunk_size + 2 * interpolator.len()]; nbr_channels];
 
                 SincFixedIn {
@@ -323,11 +324,7 @@ macro_rules! resampler_sincfixedin {
                         let mut nearest = vec![(0isize, 0isize); 4];
                         while idx < end_idx as f64 {
                             idx += t_ratio;
-                            get_nearest_times_4(
-                                idx,
-                                oversampling_factor as isize,
-                                &mut nearest,
-                            );
+                            get_nearest_times_4(idx, oversampling_factor as isize, &mut nearest);
                             let frac = idx * oversampling_factor as f64
                                 - (idx * oversampling_factor as f64).floor();
                             let frac_offset = frac as $t;
@@ -354,11 +351,7 @@ macro_rules! resampler_sincfixedin {
                         let mut nearest = vec![(0isize, 0isize); 2];
                         while idx < end_idx as f64 {
                             idx += t_ratio;
-                            get_nearest_times_2(
-                                idx,
-                                oversampling_factor as isize,
-                                &mut nearest,
-                            );
+                            get_nearest_times_2(idx, oversampling_factor as isize, &mut nearest);
                             let frac = idx * oversampling_factor as f64
                                 - (idx * oversampling_factor as f64).floor();
                             let frac_offset = frac as $t;
@@ -492,7 +485,7 @@ macro_rules! impl_new_sincfixedout {
                 chunk_size: usize,
                 nbr_channels: usize,
             ) -> Self {
-                    
+
                 let needed_input_size =
                     (chunk_size as f64 / resample_ratio).ceil() as usize + 2 + interpolator.len() / 2;
                 let buffer = vec![vec![0.0; 3 * needed_input_size / 2 + 2 * interpolator.len()]; nbr_channels];
@@ -698,11 +691,61 @@ resampler_sincfixedout!(f64);
 
 #[cfg(test)]
 mod tests {
+    use crate::asynchro::ScalarInterpolator;
+    use crate::asynchro::SincInterpolator;
     use crate::InterpolationParameters;
     use crate::InterpolationType;
     use crate::Resampler;
     use crate::WindowFunction;
     use crate::{SincFixedIn, SincFixedOut};
+    use num_traits::Float;
+    use rand::Rng;
+
+    fn get_sinc_interpolated<T: Float>(wave: &[T], index: usize, sinc: &[T]) -> T {
+        let wave_cut = &wave[index..(index + sinc.len())];
+        wave_cut
+            .iter()
+            .zip(sinc.iter())
+            .fold(T::zero(), |acc, (x, y)| acc + *x * *y)
+    }
+
+    #[test]
+    fn test_scalar_interpolator_64() {
+        let mut rng = rand::thread_rng();
+        let mut wave = Vec::new();
+        for _ in 0..2048 {
+            wave.push(rng.gen::<f64>());
+        }
+        let sinc_len = 256;
+        let f_cutoff = 0.9473371669037001;
+        let oversampling_factor = 256;
+        let window = WindowFunction::BlackmanHarris2;
+
+        let interpolator =
+            ScalarInterpolator::<f64>::new(sinc_len, oversampling_factor, f_cutoff, window);
+        let value = unsafe { interpolator.get_sinc_interpolated(&wave, 333, 123) };
+        let check = get_sinc_interpolated(&wave, 333, &interpolator.sincs[123]);
+        assert!((value - check).abs() < 1.0e-9);
+    }
+
+    #[test]
+    fn test_scalar_interpolator_32() {
+        let mut rng = rand::thread_rng();
+        let mut wave = Vec::new();
+        for _ in 0..2048 {
+            wave.push(rng.gen::<f32>());
+        }
+        let sinc_len = 256;
+        let f_cutoff = 0.9473371669037001;
+        let oversampling_factor = 256;
+        let window = WindowFunction::BlackmanHarris2;
+
+        let interpolator =
+            ScalarInterpolator::<f32>::new(sinc_len, oversampling_factor, f_cutoff, window);
+        let value = unsafe { interpolator.get_sinc_interpolated(&wave, 333, 123) };
+        let check = get_sinc_interpolated(&wave, 333, &interpolator.sincs[123]);
+        assert!((value - check).abs() < 1.0e-6);
+    }
 
     #[test]
     fn int_cubic() {
