@@ -51,11 +51,16 @@
 //!
 //! The `rubato` crate requires rustc version 1.40 or newer.
 
+#![feature(stdsimd)]
+#![feature(aarch64_target_feature)]
+
 mod interpolation;
 #[cfg(target_arch = "x86_64")]
 pub mod interpolator_avx;
 #[cfg(target_arch = "x86_64")]
 pub mod interpolator_sse;
+#[cfg(target_arch = "aarch64")]
+pub mod interpolator_neon;
 mod sinc;
 mod synchro;
 mod windows;

@@ -2,9 +2,10 @@ use crate::windows::WindowFunction;
 
 use crate::sinc::make_sincs;
 use core::arch::aarch64::{float32x4_t, float64x2_t};
-use core::arch::aarch64::{vaddq_f64, _mm_loadu_pd, vmulq_f64, _mm_setzero_pd};
-use core::arch::aarch64::{vaddq_f32, _mm_loadu_ps, vmulq_f32, _mm_setzero_ps};
+use core::arch::aarch64::{vaddq_f64, vmulq_f64};
+use core::arch::aarch64::{vaddq_f32, vmulq_f32};
 use std::marker::PhantomData;
+use std::convert::TryInto;
 
 use crate::asynchro::SincInterpolator;
 
@@ -23,13 +24,15 @@ impl SincInterpolator<f32> for NeonInterpolator<f32> {
     unsafe fn get_sinc_interpolated(&self, wave: &[f32], index: usize, subindex: usize) -> f32 {
         let sinc = &self.sincs_s.as_ref().unwrap().get_unchecked(subindex);
         let wave_cut = &wave[index..(index + self.length)];
-        let mut acc0 = _mm_setzero_ps();
-        let mut acc1 = _mm_setzero_ps();
+        let mut acc0 = std::mem::transmute::<[f32; 4], float32x4_t>([0.0, 0.0, 0.0, 0.0]);
+        let mut acc1 = std::mem::transmute::<[f32; 4], float32x4_t>([0.0, 0.0, 0.0, 0.0]);
         let mut w_idx = 0;
         let mut s_idx = 0;
         for _ in 0..wave_cut.len() / 8 {
-            let w0 = float32x4_t::new(wave_cut.get_unchecked(w_idx), wave_cut.get_unchecked(w_idx+1), wave_cut.get_unchecked(w_idx+2), wave_cut.get_unchecked(w_idx+3));
-            let w1 = float32x4_t::new(wave_cut.get_unchecked(w_idx + 4), wave_cut.get_unchecked(w_idx+5), wave_cut.get_unchecked(w_idx+6), wave_cut.get_unchecked(w_idx+7));
+            //let w0 = float32x4_t::new(wave_cut.get_unchecked(w_idx), wave_cut.get_unchecked(w_idx+1), wave_cut.get_unchecked(w_idx+2), wave_cut.get_unchecked(w_idx+3));
+            //let w1 = float32x4_t::new(wave_cut.get_unchecked(w_idx + 4), wave_cut.get_unchecked(w_idx+5), wave_cut.get_unchecked(w_idx+6), wave_cut.get_unchecked(w_idx+7));
+            let w0 = std::mem::transmute::<[f32; 4],float32x4_t>(wave_cut[w_idx..w_idx+4].try_into().unwrap());
+            let w1 = std::mem::transmute::<[f32; 4],float32x4_t>(wave_cut[w_idx+4..w_idx+8].try_into().unwrap());
             let s0 = vmulq_f32(w0, *sinc.get_unchecked(s_idx));
             let s1 = vmulq_f32(w1, *sinc.get_unchecked(s_idx + 1));
             acc0 = vaddq_f32(acc0, s0);
@@ -40,6 +43,7 @@ impl SincInterpolator<f32> for NeonInterpolator<f32> {
         let packedsum = vaddq_f32(acc0, acc1);
         let array = std::mem::transmute::<float32x4_t, [f32; 4]>(packedsum);
         array[0] + array[1] + array[2] + array[3]
+        //packedsum.0 + packedsum.1 + packedsum.2 + packedsum.3
     }
 
     fn len(&self) -> usize {
@@ -57,17 +61,21 @@ impl SincInterpolator<f64> for NeonInterpolator<f64> {
     unsafe fn get_sinc_interpolated(&self, wave: &[f64], index: usize, subindex: usize) -> f64 {
         let sinc = &self.sincs_d.as_ref().unwrap().get_unchecked(subindex);
         let wave_cut = &wave[index..(index + self.length)];
-        let mut acc0 = _mm_setzero_pd();
-        let mut acc1 = _mm_setzero_pd();
-        let mut acc2 = _mm_setzero_pd();
-        let mut acc3 = _mm_setzero_pd();
+        let mut acc0 = std::mem::transmute::<[f64; 2], float64x2_t>([0.0, 0.0]);
+        let mut acc1 = std::mem::transmute::<[f64; 2], float64x2_t>([0.0, 0.0]);
+        let mut acc2 = std::mem::transmute::<[f64; 2], float64x2_t>([0.0, 0.0]);
+        let mut acc3 = std::mem::transmute::<[f64; 2], float64x2_t>([0.0, 0.0]);
         let mut w_idx = 0;
         let mut s_idx = 0;
         for _ in 0..wave_cut.len() / 8 {
-            let w0 = float64x2_t::new(wave_cut.get_unchecked(w_idx), wave_cut.get_unchecked(w_idx+1));
-            let w1 = float64x2_t::new(wave_cut.get_unchecked(w_idx + 2), wave_cut.get_unchecked(w_idx+3));
-            let w2 = float64x2_t::new(wave_cut.get_unchecked(w_idx + 4), wave_cut.get_unchecked(w_idx+5));
-            let w3 = float64x2_t::new(wave_cut.get_unchecked(w_idx + 6), wave_cut.get_unchecked(w_idx+7));
+            //let w0 = float64x2_t::new(wave_cut.get_unchecked(w_idx), wave_cut.get_unchecked(w_idx+1));
+            //let w1 = float64x2_t::new(wave_cut.get_unchecked(w_idx + 2), wave_cut.get_unchecked(w_idx+3));
+            //let w2 = float64x2_t::new(wave_cut.get_unchecked(w_idx + 4), wave_cut.get_unchecked(w_idx+5));
+            //let w3 = float64x2_t::new(wave_cut.get_unchecked(w_idx + 6), wave_cut.get_unchecked(w_idx+7));
+            let w0 = std::mem::transmute::<[f64; 2],float64x2_t>(wave_cut[w_idx..w_idx+2].try_into().unwrap());
+            let w1 = std::mem::transmute::<[f64; 2],float64x2_t>(wave_cut[w_idx+2..w_idx+4].try_into().unwrap());
+            let w2 = std::mem::transmute::<[f64; 2],float64x2_t>(wave_cut[w_idx+4..w_idx+6].try_into().unwrap());
+            let w3 = std::mem::transmute::<[f64; 2],float64x2_t>(wave_cut[w_idx+6..w_idx+8].try_into().unwrap());
             let s0 = vmulq_f64(w0, *sinc.get_unchecked(s_idx));
             let s1 = vmulq_f64(w1, *sinc.get_unchecked(s_idx + 1));
             let s2 = vmulq_f64(w2, *sinc.get_unchecked(s_idx + 2));
@@ -84,6 +92,7 @@ impl SincInterpolator<f64> for NeonInterpolator<f64> {
         packedsum0 = vaddq_f64(packedsum0, packedsum1);
         let array = std::mem::transmute::<float64x2_t, [f64; 2]>(packedsum0);
         array[0] + array[1]
+        //packedsum0.0 + packedsum0.1
     }
 
     fn len(&self) -> usize {
@@ -131,7 +140,8 @@ impl NeonInterpolator<f32> {
             let mut packed = Vec::new();
             for elements in sinc.chunks(4) {
                 unsafe {
-                    let packed_elems = float32x4_t::new(elements[0], elements[1],elements[2],elements[3]);
+                    //let packed_elems = float32x4_t{elements[0], elements[1],elements[2],elements[3]};
+                    let packed_elems = std::mem::transmute::<[f32; 4],float32x4_t>(elements.try_into().unwrap());
                     packed.push(packed_elems);
                 }
             }
@@ -177,7 +187,8 @@ impl NeonInterpolator<f64> {
             let mut packed = Vec::new();
             for elements in sinc.chunks(2) {
                 unsafe {
-                    let packed_elems = float64x2_t::new(elements[0], elements[1]);
+                    //let packed_elems = float64x2_t::new(elements[0], elements[1]);
+                    let packed_elems = std::mem::transmute::<[f64; 2],float64x2_t>(elements.try_into().unwrap());
                     packed.push(packed_elems);
                 }
             }
