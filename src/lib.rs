@@ -51,8 +51,12 @@
 //!
 //! The `rubato` crate requires rustc version 1.40 or newer.
 
-#![feature(stdsimd)]
-#![feature(aarch64_target_feature)]
+//#[cfg(feature = "neonsimd")]
+//#![feature(stdsimd)]
+//#[cfg(feature = "neonsimd")]
+//#![feature(aarch64_target_feature)]
+#![cfg_attr(feature = "neonsimd", feature(aarch64_target_feature))]
+#![cfg_attr(feature = "neonsimd", feature(stdsimd))]
 
 mod interpolation;
 #[cfg(target_arch = "x86_64")]
