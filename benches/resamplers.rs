@@ -105,17 +105,17 @@ bench_async_resampler!(f64, AvxInterpolator, InterpolationType::Linear,  bench_a
 #[cfg(all(target_arch = "x86_64", feature = "avx"))]
 bench_async_resampler!(f64, AvxInterpolator, InterpolationType::Nearest, bench_avx_async_nearest_64, "avx async nearest 64");
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(target_arch = "aarch64", feature = "neon"))]
 bench_async_resampler!(f32, NeonInterpolator, InterpolationType::Cubic,   bench_neon_async_cubic_32,   "neon async cubic   32");
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(target_arch = "aarch64", feature = "neon"))]
 bench_async_resampler!(f32, NeonInterpolator, InterpolationType::Linear,  bench_neon_async_linear_32,  "neon async linear  32");
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(target_arch = "aarch64", feature = "neon"))]
 bench_async_resampler!(f32, NeonInterpolator, InterpolationType::Nearest, bench_neon_async_nearest_32, "neon async nearest 32");
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(target_arch = "aarch64", feature = "neon"))]
 bench_async_resampler!(f64, NeonInterpolator, InterpolationType::Cubic,   bench_neon_async_cubic_64,   "neon async cubic   64");
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(target_arch = "aarch64", feature = "neon"))]
 bench_async_resampler!(f64, NeonInterpolator, InterpolationType::Linear,  bench_neon_async_linear_64,  "neon async linear  64");
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(target_arch = "aarch64", feature = "neon"))]
 bench_async_resampler!(f64, NeonInterpolator, InterpolationType::Nearest, bench_neon_async_nearest_64, "neon async nearest 64");
 
 #[cfg(all(target_arch = "x86_64", not(feature = "avx")))]
