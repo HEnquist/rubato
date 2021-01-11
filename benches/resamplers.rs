@@ -4,11 +4,11 @@ extern crate rubato;
 use rubato::asynchro::ScalarInterpolator;
 
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_arch = "x86_64", feature = "avx"))]
 use rubato::interpolator_avx::AvxInterpolator;
 #[cfg(target_arch = "x86_64")]
 use rubato::interpolator_sse::SseInterpolator;
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(target_arch = "aarch64", feature = "neon"))]
 use rubato::interpolator_neon::NeonInterpolator;
 
 use rubato::{
