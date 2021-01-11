@@ -162,7 +162,20 @@ criterion_group!(
     bench_avx_async_nearest_64,
 );
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(target_arch = "aarch64", not(feature = "neon")))]
+criterion_group!(
+    benches,
+    bench_fftfixedin,
+    bench_fftfixedin_32,
+    bench_scalar_async_cubic_32,
+    bench_scalar_async_linear_32,
+    bench_scalar_async_nearest_32,
+    bench_scalar_async_cubic_64,
+    bench_scalar_async_linear_64,
+    bench_scalar_async_nearest_64,
+);
+
+#[cfg(all(target_arch = "aarch64", feature = "neon"))]
 criterion_group!(
     benches,
     bench_fftfixedin,
