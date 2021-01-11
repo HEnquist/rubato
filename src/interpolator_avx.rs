@@ -25,22 +25,10 @@ pub struct AvxInterpolator<T> {
 
 impl SincInterpolator<f32> for AvxInterpolator<f32> {
     /// Calculate the scalar produt of an input wave and the selected sinc filter
-    #[target_feature(enable = "avx", enable = "fma")]
-    unsafe fn get_sinc_interpolated(&self, wave: &[f32], index: usize, subindex: usize) -> f32 {
-        let sinc = &self.sincs_s.as_ref().unwrap().get_unchecked(subindex);
-        let wave_cut = &wave[index..(index + self.length)];
-        let mut acc = _mm256_setzero_ps();
-        let mut w_idx = 0;
-        for s_idx in 0..self.length / 8 {
-            let w = _mm256_loadu_ps(wave_cut.get_unchecked(w_idx));
-            acc = _mm256_fmadd_ps(w, *sinc.get_unchecked(s_idx), acc);
-            w_idx += 8;
-        }
-        let acc_high = _mm256_extractf128_ps(acc, 1);
-        let mut acc_low = _mm_add_ps(acc_high, _mm256_castps256_ps128(acc));
-        acc_low = _mm_hadd_ps(acc_low, acc_low);
-        let array = std::mem::transmute::<__m128, [f32; 4]>(acc_low);
-        array[0] + array[1]
+    fn get_sinc_interpolated(&self, wave: &[f32], index: usize, subindex: usize) -> f32 {
+        assert!((index + self.length) < wave.len());
+        assert!(subindex < self.nbr_sincs);
+        unsafe { self.get_sinc_interpolated_unsafe(wave, index, subindex) }
     }
 
     fn len(&self) -> usize {
@@ -54,27 +42,10 @@ impl SincInterpolator<f32> for AvxInterpolator<f32> {
 
 impl SincInterpolator<f64> for AvxInterpolator<f64> {
     /// Calculate the scalar produt of an input wave and the selected sinc filter
-    #[target_feature(enable = "avx", enable = "fma")]
-    unsafe fn get_sinc_interpolated(&self, wave: &[f64], index: usize, subindex: usize) -> f64 {
-        let sinc = &self.sincs_d.as_ref().unwrap().get_unchecked(subindex);
-        let wave_cut = &wave[index..(index + self.length)];
-        let mut acc0 = _mm256_setzero_pd();
-        let mut acc1 = _mm256_setzero_pd();
-        let mut w_idx = 0;
-        let mut s_idx = 0;
-        for _ in 0..wave_cut.len() / 8 {
-            let w0 = _mm256_loadu_pd(wave_cut.get_unchecked(w_idx));
-            let w1 = _mm256_loadu_pd(wave_cut.get_unchecked(w_idx + 4));
-            acc0 = _mm256_fmadd_pd(w0, *sinc.get_unchecked(s_idx), acc0);
-            acc1 = _mm256_fmadd_pd(w1, *sinc.get_unchecked(s_idx + 1), acc1);
-            w_idx += 8;
-            s_idx += 2;
-        }
-        let acc_all = _mm256_add_pd(acc0, acc1);
-        let acc_high = _mm256_extractf128_pd(acc_all, 1);
-        let acc = _mm_add_pd(acc_high, _mm256_castpd256_pd128(acc_all));
-        let array = std::mem::transmute::<__m128d, [f64; 2]>(acc);
-        array[0] + array[1]
+    fn get_sinc_interpolated(&self, wave: &[f64], index: usize, subindex: usize) -> f64 {
+        assert!((index + self.length) < wave.len());
+        assert!(subindex < self.nbr_sincs);
+        unsafe { self.get_sinc_interpolated_unsafe(wave, index, subindex) }
     }
 
     fn len(&self) -> usize {
@@ -129,6 +100,29 @@ impl AvxInterpolator<f32> {
         }
         packed_sincs
     }
+
+    #[target_feature(enable = "avx", enable = "fma")]
+    unsafe fn get_sinc_interpolated_unsafe(
+        &self,
+        wave: &[f32],
+        index: usize,
+        subindex: usize,
+    ) -> f32 {
+        let sinc = &self.sincs_s.as_ref().unwrap().get_unchecked(subindex);
+        let wave_cut = &wave[index..(index + self.length)];
+        let mut acc = _mm256_setzero_ps();
+        let mut w_idx = 0;
+        for s_idx in 0..self.length / 8 {
+            let w = _mm256_loadu_ps(wave_cut.get_unchecked(w_idx));
+            acc = _mm256_fmadd_ps(w, *sinc.get_unchecked(s_idx), acc);
+            w_idx += 8;
+        }
+        let acc_high = _mm256_extractf128_ps(acc, 1);
+        let mut acc_low = _mm_add_ps(acc_high, _mm256_castps256_ps128(acc));
+        acc_low = _mm_hadd_ps(acc_low, acc_low);
+        let array = std::mem::transmute::<__m128, [f32; 4]>(acc_low);
+        array[0] + array[1]
+    }
 }
 
 impl AvxInterpolator<f64> {
@@ -174,6 +168,34 @@ impl AvxInterpolator<f64> {
         }
         packed_sincs
     }
+
+    #[target_feature(enable = "avx", enable = "fma")]
+    unsafe fn get_sinc_interpolated_unsafe(
+        &self,
+        wave: &[f64],
+        index: usize,
+        subindex: usize,
+    ) -> f64 {
+        let sinc = &self.sincs_d.as_ref().unwrap().get_unchecked(subindex);
+        let wave_cut = &wave[index..(index + self.length)];
+        let mut acc0 = _mm256_setzero_pd();
+        let mut acc1 = _mm256_setzero_pd();
+        let mut w_idx = 0;
+        let mut s_idx = 0;
+        for _ in 0..wave_cut.len() / 8 {
+            let w0 = _mm256_loadu_pd(wave_cut.get_unchecked(w_idx));
+            let w1 = _mm256_loadu_pd(wave_cut.get_unchecked(w_idx + 4));
+            acc0 = _mm256_fmadd_pd(w0, *sinc.get_unchecked(s_idx), acc0);
+            acc1 = _mm256_fmadd_pd(w1, *sinc.get_unchecked(s_idx + 1), acc1);
+            w_idx += 8;
+            s_idx += 2;
+        }
+        let acc_all = _mm256_add_pd(acc0, acc1);
+        let acc_high = _mm256_extractf128_pd(acc_all, 1);
+        let acc = _mm_add_pd(acc_high, _mm256_castpd256_pd128(acc_all));
+        let array = std::mem::transmute::<__m128d, [f64; 2]>(acc);
+        array[0] + array[1]
+    }
 }
 
 #[cfg(test)]
@@ -207,7 +229,7 @@ mod tests {
         let sincs = make_sincs::<f64>(sinc_len, oversampling_factor, f_cutoff, window);
         let interpolator =
             AvxInterpolator::<f64>::new(sinc_len, oversampling_factor, f_cutoff, window);
-        let value = unsafe { interpolator.get_sinc_interpolated(&wave, 333, 123) };
+        let value = interpolator.get_sinc_interpolated(&wave, 333, 123);
         let check = get_sinc_interpolated(&wave, 333, &sincs[123]);
         assert!((value - check).abs() < 1.0e-9);
     }
@@ -226,7 +248,7 @@ mod tests {
         let sincs = make_sincs::<f32>(sinc_len, oversampling_factor, f_cutoff, window);
         let interpolator =
             AvxInterpolator::<f32>::new(sinc_len, oversampling_factor, f_cutoff, window);
-        let value = unsafe { interpolator.get_sinc_interpolated(&wave, 333, 123) };
+        let value = interpolator.get_sinc_interpolated(&wave, 333, 123);
         let check = get_sinc_interpolated(&wave, 333, &sincs[123]);
         assert!((value - check).abs() < 1.0e-6);
     }

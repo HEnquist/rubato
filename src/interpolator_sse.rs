@@ -19,28 +19,10 @@ pub struct SseInterpolator<T> {
 
 impl SincInterpolator<f32> for SseInterpolator<f32> {
     /// Calculate the scalar produt of an input wave and the selected sinc filter
-    #[target_feature(enable = "sse3")]
-    unsafe fn get_sinc_interpolated(&self, wave: &[f32], index: usize, subindex: usize) -> f32 {
-        let sinc = &self.sincs_s.as_ref().unwrap().get_unchecked(subindex);
-        let wave_cut = &wave[index..(index + self.length)];
-        let mut acc0 = _mm_setzero_ps();
-        let mut acc1 = _mm_setzero_ps();
-        let mut w_idx = 0;
-        let mut s_idx = 0;
-        for _ in 0..wave_cut.len() / 8 {
-            let w0 = _mm_loadu_ps(wave_cut.get_unchecked(w_idx));
-            let w1 = _mm_loadu_ps(wave_cut.get_unchecked(w_idx + 4));
-            let s0 = _mm_mul_ps(w0, *sinc.get_unchecked(s_idx));
-            let s1 = _mm_mul_ps(w1, *sinc.get_unchecked(s_idx + 1));
-            acc0 = _mm_add_ps(acc0, s0);
-            acc1 = _mm_add_ps(acc1, s1);
-            w_idx += 8;
-            s_idx += 2;
-        }
-        let mut packedsum = _mm_hadd_ps(acc0, acc1);
-        packedsum = _mm_hadd_ps(packedsum, packedsum);
-        let array = std::mem::transmute::<__m128, [f32; 4]>(packedsum);
-        array[0] + array[1]
+    fn get_sinc_interpolated(&self, wave: &[f32], index: usize, subindex: usize) -> f32 {
+        assert!((index + self.length) < wave.len());
+        assert!(subindex < self.nbr_sincs);
+        unsafe { self.get_sinc_interpolated_unsafe(wave, index, subindex) }
     }
 
     fn len(&self) -> usize {
@@ -54,37 +36,10 @@ impl SincInterpolator<f32> for SseInterpolator<f32> {
 
 impl SincInterpolator<f64> for SseInterpolator<f64> {
     /// Calculate the scalar produt of an input wave and the selected sinc filter
-    #[target_feature(enable = "sse3")]
-    unsafe fn get_sinc_interpolated(&self, wave: &[f64], index: usize, subindex: usize) -> f64 {
-        let sinc = &self.sincs_d.as_ref().unwrap().get_unchecked(subindex);
-        let wave_cut = &wave[index..(index + self.length)];
-        let mut acc0 = _mm_setzero_pd();
-        let mut acc1 = _mm_setzero_pd();
-        let mut acc2 = _mm_setzero_pd();
-        let mut acc3 = _mm_setzero_pd();
-        let mut w_idx = 0;
-        let mut s_idx = 0;
-        for _ in 0..wave_cut.len() / 8 {
-            let w0 = _mm_loadu_pd(wave_cut.get_unchecked(w_idx));
-            let w1 = _mm_loadu_pd(wave_cut.get_unchecked(w_idx + 2));
-            let w2 = _mm_loadu_pd(wave_cut.get_unchecked(w_idx + 4));
-            let w3 = _mm_loadu_pd(wave_cut.get_unchecked(w_idx + 6));
-            let s0 = _mm_mul_pd(w0, *sinc.get_unchecked(s_idx));
-            let s1 = _mm_mul_pd(w1, *sinc.get_unchecked(s_idx + 1));
-            let s2 = _mm_mul_pd(w2, *sinc.get_unchecked(s_idx + 2));
-            let s3 = _mm_mul_pd(w3, *sinc.get_unchecked(s_idx + 3));
-            acc0 = _mm_add_pd(acc0, s0);
-            acc1 = _mm_add_pd(acc1, s1);
-            acc2 = _mm_add_pd(acc2, s2);
-            acc3 = _mm_add_pd(acc3, s3);
-            w_idx += 8;
-            s_idx += 4;
-        }
-        let mut packedsum0 = _mm_hadd_pd(acc0, acc1);
-        let packedsum1 = _mm_hadd_pd(acc2, acc3);
-        packedsum0 = _mm_hadd_pd(packedsum0, packedsum1);
-        let array = std::mem::transmute::<__m128d, [f64; 2]>(packedsum0);
-        array[0] + array[1]
+    fn get_sinc_interpolated(&self, wave: &[f64], index: usize, subindex: usize) -> f64 {
+        assert!((index + self.length) < wave.len());
+        assert!(subindex < self.nbr_sincs);
+        unsafe { self.get_sinc_interpolated_unsafe(wave, index, subindex) }
     }
 
     fn len(&self) -> usize {
@@ -140,6 +95,35 @@ impl SseInterpolator<f32> {
         }
         packed_sincs
     }
+
+    #[target_feature(enable = "sse3")]
+    unsafe fn get_sinc_interpolated_unsafe(
+        &self,
+        wave: &[f32],
+        index: usize,
+        subindex: usize,
+    ) -> f32 {
+        let sinc = &self.sincs_s.as_ref().unwrap().get_unchecked(subindex);
+        let wave_cut = &wave[index..(index + self.length)];
+        let mut acc0 = _mm_setzero_ps();
+        let mut acc1 = _mm_setzero_ps();
+        let mut w_idx = 0;
+        let mut s_idx = 0;
+        for _ in 0..wave_cut.len() / 8 {
+            let w0 = _mm_loadu_ps(wave_cut.get_unchecked(w_idx));
+            let w1 = _mm_loadu_ps(wave_cut.get_unchecked(w_idx + 4));
+            let s0 = _mm_mul_ps(w0, *sinc.get_unchecked(s_idx));
+            let s1 = _mm_mul_ps(w1, *sinc.get_unchecked(s_idx + 1));
+            acc0 = _mm_add_ps(acc0, s0);
+            acc1 = _mm_add_ps(acc1, s1);
+            w_idx += 8;
+            s_idx += 2;
+        }
+        let mut packedsum = _mm_hadd_ps(acc0, acc1);
+        packedsum = _mm_hadd_ps(packedsum, packedsum);
+        let array = std::mem::transmute::<__m128, [f32; 4]>(packedsum);
+        array[0] + array[1]
+    }
 }
 
 impl SseInterpolator<f64> {
@@ -186,6 +170,44 @@ impl SseInterpolator<f64> {
         }
         packed_sincs
     }
+
+    #[target_feature(enable = "sse3")]
+    unsafe fn get_sinc_interpolated_unsafe(
+        &self,
+        wave: &[f64],
+        index: usize,
+        subindex: usize,
+    ) -> f64 {
+        let sinc = &self.sincs_d.as_ref().unwrap().get_unchecked(subindex);
+        let wave_cut = &wave[index..(index + self.length)];
+        let mut acc0 = _mm_setzero_pd();
+        let mut acc1 = _mm_setzero_pd();
+        let mut acc2 = _mm_setzero_pd();
+        let mut acc3 = _mm_setzero_pd();
+        let mut w_idx = 0;
+        let mut s_idx = 0;
+        for _ in 0..wave_cut.len() / 8 {
+            let w0 = _mm_loadu_pd(wave_cut.get_unchecked(w_idx));
+            let w1 = _mm_loadu_pd(wave_cut.get_unchecked(w_idx + 2));
+            let w2 = _mm_loadu_pd(wave_cut.get_unchecked(w_idx + 4));
+            let w3 = _mm_loadu_pd(wave_cut.get_unchecked(w_idx + 6));
+            let s0 = _mm_mul_pd(w0, *sinc.get_unchecked(s_idx));
+            let s1 = _mm_mul_pd(w1, *sinc.get_unchecked(s_idx + 1));
+            let s2 = _mm_mul_pd(w2, *sinc.get_unchecked(s_idx + 2));
+            let s3 = _mm_mul_pd(w3, *sinc.get_unchecked(s_idx + 3));
+            acc0 = _mm_add_pd(acc0, s0);
+            acc1 = _mm_add_pd(acc1, s1);
+            acc2 = _mm_add_pd(acc2, s2);
+            acc3 = _mm_add_pd(acc3, s3);
+            w_idx += 8;
+            s_idx += 4;
+        }
+        let mut packedsum0 = _mm_hadd_pd(acc0, acc1);
+        let packedsum1 = _mm_hadd_pd(acc2, acc3);
+        packedsum0 = _mm_hadd_pd(packedsum0, packedsum1);
+        let array = std::mem::transmute::<__m128d, [f64; 2]>(packedsum0);
+        array[0] + array[1]
+    }
 }
 
 #[cfg(test)]
@@ -219,7 +241,7 @@ mod tests {
         let sincs = make_sincs::<f64>(sinc_len, oversampling_factor, f_cutoff, window);
         let interpolator =
             SseInterpolator::<f64>::new(sinc_len, oversampling_factor, f_cutoff, window);
-        let value = unsafe { interpolator.get_sinc_interpolated(&wave, 333, 123) };
+        let value = interpolator.get_sinc_interpolated(&wave, 333, 123);
         let check = get_sinc_interpolated(&wave, 333, &sincs[123]);
         assert!((value - check).abs() < 1.0e-9);
     }
@@ -238,7 +260,7 @@ mod tests {
         let sincs = make_sincs::<f32>(sinc_len, oversampling_factor, f_cutoff, window);
         let interpolator =
             SseInterpolator::<f32>::new(sinc_len, oversampling_factor, f_cutoff, window);
-        let value = unsafe { interpolator.get_sinc_interpolated(&wave, 333, 123) };
+        let value = interpolator.get_sinc_interpolated(&wave, 333, 123);
         let check = get_sinc_interpolated(&wave, 333, &sincs[123]);
         assert!((value - check).abs() < 1.0e-6);
     }

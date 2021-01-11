@@ -25,7 +25,7 @@ pub trait SincInterpolator<T> {
     /// The SIMD implementations of this trait use intrinsics, which are considered unsafe.
     /// They also use unchecked indexing to avoid bounds checks and maximize performance.
     /// Callers must ensure to call the function with reasonable parameters.
-    unsafe fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T;
+    fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T;
 
     /// Get sinc length
     fn len(&self) -> usize;
@@ -48,25 +48,26 @@ pub struct ScalarInterpolator<T> {
 
 impl<T: Float> SincInterpolator<T> for ScalarInterpolator<T> {
     /// Calculate the scalar produt of an input wave and the selected sinc filter
-    unsafe fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T {
-        let wave_cut = &wave[index..(index + self.sincs[subindex].len())];
-        wave_cut
-            .chunks(8)
-            .zip(self.sincs[subindex].chunks(8))
-            .fold([T::zero(); 8], |acc, (x, y)| {
-                [
-                    acc[0] + x[0] * y[0],
-                    acc[1] + x[1] * y[1],
-                    acc[2] + x[2] * y[2],
-                    acc[3] + x[3] * y[3],
-                    acc[4] + x[4] * y[4],
-                    acc[5] + x[5] * y[5],
-                    acc[6] + x[6] * y[6],
-                    acc[7] + x[7] * y[7],
-                ]
-            })
-            .iter()
-            .fold(T::zero(), |acc, val| acc + *val)
+    fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T {
+        self.get_sinc_interpolated_unsafe(wave, index, subindex)
+        //let wave_cut = &wave[index..(index + self.sincs[subindex].len())];
+        //wave_cut
+        //    .chunks(8)
+        //    .zip(self.sincs[subindex].chunks(8))
+        //    .fold([T::zero(); 8], |acc, (x, y)| {
+        //        [
+        //            acc[0] + x[0] * y[0],
+        //            acc[1] + x[1] * y[1],
+        //            acc[2] + x[2] * y[2],
+        //            acc[3] + x[3] * y[3],
+        //            acc[4] + x[4] * y[4],
+        //            acc[5] + x[5] * y[5],
+        //            acc[6] + x[6] * y[6],
+        //            acc[7] + x[7] * y[7],
+        //        ]
+        //    })
+        //    .iter()
+        //    .fold(T::zero(), |acc, val| acc + *val)
     }
 
     fn len(&self) -> usize {
@@ -98,6 +99,34 @@ impl<T: Float> ScalarInterpolator<T> {
             sincs,
             length: sinc_len,
             nbr_sincs: oversampling_factor,
+        }
+    }
+
+    fn get_sinc_interpolated_unsafe(&self, wave: &[T], index: usize, subindex: usize) -> T {
+        let wave_cut = &wave[index..(index + self.sincs[subindex].len())];
+        let sinc = &self.sincs[subindex];
+        unsafe {
+            let mut acc0 = T::zero();
+            let mut acc1 = T::zero();
+            let mut acc2 = T::zero();
+            let mut acc3 = T::zero();
+            let mut acc4 = T::zero();
+            let mut acc5 = T::zero();
+            let mut acc6 = T::zero();
+            let mut acc7 = T::zero();
+            let mut idx = 0;
+            for _ in 0..wave_cut.len() / 8 {
+                acc0 = acc0 + *wave_cut.get_unchecked(idx) * *sinc.get_unchecked(idx);
+                acc1 = acc1 + *wave_cut.get_unchecked(idx + 1) * *sinc.get_unchecked(idx + 1);
+                acc2 = acc2 + *wave_cut.get_unchecked(idx + 2) * *sinc.get_unchecked(idx + 2);
+                acc3 = acc3 + *wave_cut.get_unchecked(idx + 3) * *sinc.get_unchecked(idx + 3);
+                acc4 = acc4 + *wave_cut.get_unchecked(idx + 4) * *sinc.get_unchecked(idx + 4);
+                acc5 = acc5 + *wave_cut.get_unchecked(idx + 5) * *sinc.get_unchecked(idx + 5);
+                acc6 = acc6 + *wave_cut.get_unchecked(idx + 6) * *sinc.get_unchecked(idx + 6);
+                acc7 = acc7 + *wave_cut.get_unchecked(idx + 7) * *sinc.get_unchecked(idx + 7);
+                idx += 8;
+            }
+            acc0 + acc1 + acc2 + acc3 + acc4 + acc5 + acc6 + acc7
         }
     }
 }
@@ -189,21 +218,20 @@ macro_rules! impl_resampler {
 
             /// Perform cubic polynomial interpolation to get value at x.
             /// Input points are assumed to be at x = -1, 0, 1, 2
-            unsafe fn interp_cubic(&self, x: $ft, yvals: &[$ft]) -> $ft {
-                let a0 = yvals.get_unchecked(1);
-                let a1 = -(1.0 / 3.0) * yvals.get_unchecked(0) - 0.5 * yvals.get_unchecked(1)
-                    + yvals.get_unchecked(2)
-                    - (1.0 / 6.0) * yvals.get_unchecked(3);
-                let a2 = 0.5 * (yvals.get_unchecked(0) + yvals.get_unchecked(2))
-                    - yvals.get_unchecked(1);
-                let a3 = 0.5 * (yvals.get_unchecked(1) - yvals.get_unchecked(2))
-                    + (1.0 / 6.0) * (yvals.get_unchecked(3) - yvals.get_unchecked(0));
-                a0 + a1 * x + a2 * x.powi(2) + a3 * x.powi(3)
+            fn interp_cubic(&self, x: $ft, yvals: &[$ft; 4]) -> $ft {
+                let a0 = yvals[1];
+                let a1 =
+                    -(1.0 / 3.0) * yvals[0] - 0.5 * yvals[1] + yvals[2] - (1.0 / 6.0) * yvals[3];
+                let a2 = 0.5 * (yvals[0] + yvals[2]) - yvals[1];
+                let a3 = 0.5 * (yvals[1] - yvals[2]) + (1.0 / 6.0) * (yvals[3] - yvals[0]);
+                let x2 = x * x;
+                let x3 = x2 * x;
+                a0 + a1 * x + a2 * x2 + a3 * x3
             }
 
             /// Linear interpolation between two points at x=0 and x=1
-            unsafe fn interp_lin(&self, x: $ft, yvals: &[$ft]) -> $ft {
-                (1.0 - x) * yvals.get_unchecked(0) + x * yvals.get_unchecked(1)
+            fn interp_lin(&self, x: $ft, yvals: &[$ft; 2]) -> $ft {
+                (1.0 - x) * yvals[0] + x * yvals[1]
             }
         }
     };
@@ -336,8 +364,8 @@ macro_rules! resampler_sincfixedin {
 
                 match self.interpolation {
                     InterpolationType::Cubic => {
-                        let mut points = vec![0.0 as $t; 4];
-                        let mut nearest = vec![(0isize, 0isize); 4];
+                        let mut points = [0.0 as $t; 4];
+                        let mut nearest = [(0isize, 0isize); 4];
                         while idx < end_idx as f64 {
                             idx += t_ratio;
                             get_nearest_times_4(idx, oversampling_factor as isize, &mut nearest);
@@ -347,24 +375,20 @@ macro_rules! resampler_sincfixedin {
                             for chan in used_channels.iter() {
                                 let buf = &self.buffer[*chan];
                                 for (n, p) in nearest.iter().zip(points.iter_mut()) {
-                                    unsafe {
-                                        *p = self.interpolator.get_sinc_interpolated(
-                                            &buf,
-                                            (n.0 + 2 * sinc_len as isize) as usize,
-                                            n.1 as usize,
-                                        );
-                                    }
+                                    *p = self.interpolator.get_sinc_interpolated(
+                                        &buf,
+                                        (n.0 + 2 * sinc_len as isize) as usize,
+                                        n.1 as usize,
+                                    );
                                 }
-                                unsafe {
-                                    wave_out[*chan][n] = self.interp_cubic(frac_offset, &points);
-                                }
+                                wave_out[*chan][n] = self.interp_cubic(frac_offset, &points);
                             }
                             n += 1;
                         }
                     }
                     InterpolationType::Linear => {
-                        let mut points = vec![0.0 as $t; 2];
-                        let mut nearest = vec![(0isize, 0isize); 2];
+                        let mut points = [0.0 as $t; 2];
+                        let mut nearest = [(0isize, 0isize); 2];
                         while idx < end_idx as f64 {
                             idx += t_ratio;
                             get_nearest_times_2(idx, oversampling_factor as isize, &mut nearest);
@@ -374,17 +398,13 @@ macro_rules! resampler_sincfixedin {
                             for chan in used_channels.iter() {
                                 let buf = &self.buffer[*chan];
                                 for (n, p) in nearest.iter().zip(points.iter_mut()) {
-                                    unsafe {
-                                        *p = self.interpolator.get_sinc_interpolated(
-                                            &buf,
-                                            (n.0 + 2 * sinc_len as isize) as usize,
-                                            n.1 as usize,
-                                        );
-                                    }
+                                    *p = self.interpolator.get_sinc_interpolated(
+                                        &buf,
+                                        (n.0 + 2 * sinc_len as isize) as usize,
+                                        n.1 as usize,
+                                    );
                                 }
-                                unsafe {
-                                    wave_out[*chan][n] = self.interp_lin(frac_offset, &points);
-                                }
+                                wave_out[*chan][n] = self.interp_lin(frac_offset, &points);
                             }
                             n += 1;
                         }
@@ -397,13 +417,11 @@ macro_rules! resampler_sincfixedin {
                             nearest = get_nearest_time(idx, oversampling_factor as isize);
                             for chan in used_channels.iter() {
                                 let buf = &self.buffer[*chan];
-                                unsafe {
-                                    point = self.interpolator.get_sinc_interpolated(
-                                        &buf,
-                                        (nearest.0 + 2 * sinc_len as isize) as usize,
-                                        nearest.1 as usize,
-                                    );
-                                }
+                                point = self.interpolator.get_sinc_interpolated(
+                                    &buf,
+                                    (nearest.0 + 2 * sinc_len as isize) as usize,
+                                    nearest.1 as usize,
+                                );
                                 wave_out[*chan][n] = point;
                             }
                             n += 1;
@@ -609,8 +627,8 @@ macro_rules! resampler_sincfixedout {
 
                 match self.interpolation {
                     InterpolationType::Cubic => {
-                        let mut points = vec![0.0 as $t; 4];
-                        let mut nearest = vec![(0isize, 0isize); 4];
+                        let mut points = [0.0 as $t; 4];
+                        let mut nearest = [(0isize, 0isize); 4];
                         for n in 0..self.chunk_size {
                             idx += t_ratio;
                             get_nearest_times_4(idx, oversampling_factor as isize, &mut nearest);
@@ -620,23 +638,19 @@ macro_rules! resampler_sincfixedout {
                             for chan in used_channels.iter() {
                                 let buf = &self.buffer[*chan];
                                 for (n, p) in nearest.iter().zip(points.iter_mut()) {
-                                    unsafe {
-                                        *p = self.interpolator.get_sinc_interpolated(
-                                            &buf,
-                                            (n.0 + 2 * sinc_len as isize) as usize,
-                                            n.1 as usize,
-                                        );
-                                    }
+                                    *p = self.interpolator.get_sinc_interpolated(
+                                        &buf,
+                                        (n.0 + 2 * sinc_len as isize) as usize,
+                                        n.1 as usize,
+                                    );
                                 }
-                                unsafe {
-                                    wave_out[*chan][n] = self.interp_cubic(frac_offset, &points);
-                                }
+                                wave_out[*chan][n] = self.interp_cubic(frac_offset, &points);
                             }
                         }
                     }
                     InterpolationType::Linear => {
-                        let mut points = vec![0.0 as $t; 2];
-                        let mut nearest = vec![(0isize, 0isize); 2];
+                        let mut points = [0.0 as $t; 2];
+                        let mut nearest = [(0isize, 0isize); 2];
                         for n in 0..self.chunk_size {
                             idx += t_ratio;
                             get_nearest_times_2(idx, oversampling_factor as isize, &mut nearest);
@@ -646,17 +660,13 @@ macro_rules! resampler_sincfixedout {
                             for chan in used_channels.iter() {
                                 let buf = &self.buffer[*chan];
                                 for (n, p) in nearest.iter().zip(points.iter_mut()) {
-                                    unsafe {
-                                        *p = self.interpolator.get_sinc_interpolated(
-                                            &buf,
-                                            (n.0 + 2 * sinc_len as isize) as usize,
-                                            n.1 as usize,
-                                        );
-                                    }
+                                    *p = self.interpolator.get_sinc_interpolated(
+                                        &buf,
+                                        (n.0 + 2 * sinc_len as isize) as usize,
+                                        n.1 as usize,
+                                    );
                                 }
-                                unsafe {
-                                    wave_out[*chan][n] = self.interp_lin(frac_offset, &points);
-                                }
+                                wave_out[*chan][n] = self.interp_lin(frac_offset, &points);
                             }
                         }
                     }
@@ -668,13 +678,11 @@ macro_rules! resampler_sincfixedout {
                             nearest = get_nearest_time(idx, oversampling_factor as isize);
                             for chan in used_channels.iter() {
                                 let buf = &self.buffer[*chan];
-                                unsafe {
-                                    point = self.interpolator.get_sinc_interpolated(
-                                        &buf,
-                                        (nearest.0 + 2 * sinc_len as isize) as usize,
-                                        nearest.1 as usize,
-                                    );
-                                }
+                                point = self.interpolator.get_sinc_interpolated(
+                                    &buf,
+                                    (nearest.0 + 2 * sinc_len as isize) as usize,
+                                    nearest.1 as usize,
+                                );
                                 wave_out[*chan][n] = point;
                             }
                         }
@@ -739,7 +747,7 @@ mod tests {
 
         let interpolator =
             ScalarInterpolator::<f64>::new(sinc_len, oversampling_factor, f_cutoff, window);
-        let value = unsafe { interpolator.get_sinc_interpolated(&wave, 333, 123) };
+        let value = interpolator.get_sinc_interpolated(&wave, 333, 123);
         let check = get_sinc_interpolated(&wave, 333, &interpolator.sincs[123]);
         assert!((value - check).abs() < 1.0e-9);
     }
@@ -758,7 +766,7 @@ mod tests {
 
         let interpolator =
             ScalarInterpolator::<f32>::new(sinc_len, oversampling_factor, f_cutoff, window);
-        let value = unsafe { interpolator.get_sinc_interpolated(&wave, 333, 123) };
+        let value = interpolator.get_sinc_interpolated(&wave, 333, 123);
         let check = get_sinc_interpolated(&wave, 333, &interpolator.sincs[123]);
         assert!((value - check).abs() < 1.0e-6);
     }
@@ -773,11 +781,9 @@ mod tests {
             window: WindowFunction::BlackmanHarris2,
         };
         let resampler = SincFixedIn::<f64>::new(1.2, params, 1024, 2);
-        let yvals = vec![0.0f64, 2.0f64, 4.0f64, 6.0f64];
-        unsafe {
-            let interp = resampler.interp_cubic(0.5f64, &yvals);
-            assert_eq!(interp, 3.0f64);
-        }
+        let yvals = [0.0f64, 2.0f64, 4.0f64, 6.0f64];
+        let interp = resampler.interp_cubic(0.5f64, &yvals);
+        assert_eq!(interp, 3.0f64);
     }
 
     #[test]
@@ -790,11 +796,9 @@ mod tests {
             window: WindowFunction::BlackmanHarris2,
         };
         let resampler = SincFixedIn::<f32>::new(1.2, params, 1024, 2);
-        let yvals = vec![1.0f32, 5.0f32];
-        unsafe {
-            let interp = resampler.interp_lin(0.25f32, &yvals);
-            assert_eq!(interp, 2.0f32);
-        }
+        let yvals = [1.0f32, 5.0f32];
+        let interp = resampler.interp_lin(0.25f32, &yvals);
+        assert_eq!(interp, 2.0f32);
     }
 
     #[test]
@@ -807,11 +811,9 @@ mod tests {
             window: WindowFunction::BlackmanHarris2,
         };
         let resampler = SincFixedIn::<f32>::new(1.2, params, 1024, 2);
-        let yvals = vec![0.0f32, 2.0f32, 4.0f32, 6.0f32];
-        unsafe {
-            let interp = resampler.interp_cubic(0.5f32, &yvals);
-            assert_eq!(interp, 3.0f32);
-        }
+        let yvals = [0.0f32, 2.0f32, 4.0f32, 6.0f32];
+        let interp = resampler.interp_cubic(0.5f32, &yvals);
+        assert_eq!(interp, 3.0f32);
     }
 
     #[test]
@@ -824,11 +826,9 @@ mod tests {
             window: WindowFunction::BlackmanHarris2,
         };
         let resampler = SincFixedIn::<f64>::new(1.2, params, 1024, 2);
-        let yvals = vec![1.0f64, 5.0f64];
-        unsafe {
-            let interp = resampler.interp_lin(0.25f64, &yvals);
-            assert_eq!(interp, 2.0f64);
-        }
+        let yvals = [1.0f64, 5.0f64];
+        let interp = resampler.interp_lin(0.25f64, &yvals);
+        assert_eq!(interp, 2.0f64);
     }
 
     #[test]
