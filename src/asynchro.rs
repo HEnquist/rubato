@@ -5,7 +5,7 @@ use crate::interpolation::*;
 use crate::interpolator_avx::AvxInterpolator;
 #[cfg(target_arch = "x86_64")]
 use crate::interpolator_sse::SseInterpolator;
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(target_arch = "aarch64", feature = "neon"))]
 use crate::interpolator_neon::NeonInterpolator;
 use crate::sinc::make_sincs;
 use crate::{InterpolationParameters, InterpolationType};
