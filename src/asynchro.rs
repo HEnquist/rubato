@@ -3,10 +3,10 @@ use crate::windows::WindowFunction;
 use crate::interpolation::*;
 #[cfg(all(target_arch = "x86_64", feature = "avx"))]
 use crate::interpolator_avx::AvxInterpolator;
-#[cfg(target_arch = "x86_64")]
-use crate::interpolator_sse::SseInterpolator;
 #[cfg(all(target_arch = "aarch64", feature = "neon"))]
 use crate::interpolator_neon::NeonInterpolator;
+#[cfg(target_arch = "x86_64")]
+use crate::interpolator_sse::SseInterpolator;
 use crate::sinc::make_sincs;
 use crate::{InterpolationParameters, InterpolationType};
 

@@ -61,10 +61,10 @@
 mod interpolation;
 #[cfg(all(target_arch = "x86_64", feature = "avx"))]
 pub mod interpolator_avx;
-#[cfg(target_arch = "x86_64")]
-pub mod interpolator_sse;
 #[cfg(all(target_arch = "aarch64", feature = "neon"))]
 pub mod interpolator_neon;
+#[cfg(target_arch = "x86_64")]
+pub mod interpolator_sse;
 mod sinc;
 mod synchro;
 mod windows;
