@@ -14,7 +14,7 @@ use std::marker::PhantomData;
 
 use crate::asynchro::SincInterpolator;
 
-/// Aa AVX accelerated interpolator
+/// An AVX accelerated interpolator
 pub struct AvxInterpolator<T> {
     sincs_s: Option<Vec<Vec<__m256>>>,
     sincs_d: Option<Vec<Vec<__m256d>>>,

@@ -1,7 +1,7 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 extern crate rubato;
 
-use rubato::asynchro::ScalarInterpolator;
+use rubato::ScalarInterpolator;
 
 #[cfg(all(target_arch = "x86_64", feature = "avx"))]
 use rubato::interpolator_avx::AvxInterpolator;
