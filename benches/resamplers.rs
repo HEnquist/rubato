@@ -16,6 +16,8 @@ use rubato::{
     WindowFunction,
 };
 
+#![allow(non_snake_case)]
+
 fn bench_fftfixedin(c: &mut Criterion) {
     let chunksize = 1024;
     let mut resampler = FftFixedIn::<f64>::new(44100, 192000, 1024, 2, 1);
@@ -38,527 +40,128 @@ fn bench_fftfixedin_32(c: &mut Criterion) {
     });
 }
 
-//fn bench_fftfixedout(c: &mut Criterion) {
-//    let mut resampler = FftFixedOut::<f64>::new(44100, 192000, 4096, 2, 1);
-//    c.bench_function("FftFixedOut f64", |b| {
-//        b.iter(|| {
-//            let needed = resampler.nbr_frames_needed();
-//            let mut waveform = vec![vec![0.0 as f64; needed]; 1];
-//            let _resampled = resampler.process(&mut waveform).unwrap();
-//        })
-//    });
-//}
-
-fn bench_sincfixedin_cubic(c: &mut Criterion) {
-    let chunksize = 1024;
-    let sinc_len = 256;
-    let f_cutoff = 0.9473371669037001;
-    let oversampling_factor = 256;
-    let window = WindowFunction::BlackmanHarris2;
-    let resample_ratio = 192000 as f64 / 44100 as f64;
-    let interpolation_type = InterpolationType::Cubic;
-
-    let interpolator = Box::new(ScalarInterpolator::<f64>::new(
-        sinc_len,
-        oversampling_factor,
-        f_cutoff,
-        window,
-    ));
-    let mut resampler = SincFixedIn::<f64>::new_with_interpolator(
-        resample_ratio,
-        interpolation_type,
-        interpolator,
-        chunksize,
-        1,
-    );
-    let mut waveform = vec![vec![0.0 as f64; chunksize]; 1];
-    c.bench_function("SincFixedIn cubic f64", |b| {
-        b.iter(|| {
-            let _resampled = resampler.process(&mut waveform).unwrap();
-        })
-    });
+macro_rules! bench_async_resampler {
+    ($ft:ty, $it:ident, $ip:expr, $f:ident, $desc:literal) => {
+        fn $f(c: &mut Criterion) {
+            let chunksize = 1024;
+            let sinc_len = 256;
+            let f_cutoff = 0.9473371669037001;
+            let oversampling_factor = 256;
+            let window = WindowFunction::BlackmanHarris2;
+            let resample_ratio = 192000 as f64 / 44100 as f64;
+            let interpolation_type = $ip;
+        
+            let interpolator = Box::new($it::<$ft>::new(
+                sinc_len,
+                oversampling_factor,
+                f_cutoff,
+                window,
+            ));
+            let mut resampler = SincFixedIn::<$ft>::new_with_interpolator(
+                resample_ratio,
+                interpolation_type,
+                interpolator,
+                chunksize,
+                1,
+            );
+            let mut waveform = vec![vec![0.0 as $ft; chunksize]; 1];
+            c.bench_function($desc, |b| {
+                b.iter(|| {
+                    let _resampled = resampler.process(&mut waveform).unwrap();
+                })
+            });
+        }
+    }
 }
 
-fn bench_sincfixedin_linear(c: &mut Criterion) {
-    let chunksize = 1024;
-    let sinc_len = 256;
-    let f_cutoff = 0.9473371669037001;
-    let oversampling_factor = 256;
-    let window = WindowFunction::BlackmanHarris2;
-    let resample_ratio = 192000 as f64 / 44100 as f64;
-    let interpolation_type = InterpolationType::Linear;
-
-    let interpolator = Box::new(ScalarInterpolator::<f64>::new(
-        sinc_len,
-        oversampling_factor,
-        f_cutoff,
-        window,
-    ));
-    let mut resampler = SincFixedIn::<f64>::new_with_interpolator(
-        resample_ratio,
-        interpolation_type,
-        interpolator,
-        chunksize,
-        1,
-    );
-    let mut waveform = vec![vec![0.0 as f64; chunksize]; 1];
-    c.bench_function("SincFixedIn linear f64", |b| {
-        b.iter(|| {
-            let _resampled = resampler.process(&mut waveform).unwrap();
-        })
-    });
-}
-
-fn bench_sincfixedin_nearest(c: &mut Criterion) {
-    let chunksize = 1024;
-    let sinc_len = 256;
-    let f_cutoff = 0.9473371669037001;
-    let oversampling_factor = 640;
-    let window = WindowFunction::BlackmanHarris2;
-    let resample_ratio = 192000 as f64 / 44100 as f64;
-    let interpolation_type = InterpolationType::Nearest;
-
-    let interpolator = Box::new(ScalarInterpolator::<f64>::new(
-        sinc_len,
-        oversampling_factor,
-        f_cutoff,
-        window,
-    ));
-    let mut resampler = SincFixedIn::<f64>::new_with_interpolator(
-        resample_ratio,
-        interpolation_type,
-        interpolator,
-        chunksize,
-        1,
-    );
-    let mut waveform = vec![vec![0.0 as f64; chunksize]; 1];
-    c.bench_function("SincFixedIn nearest f64", |b| {
-        b.iter(|| {
-            let _resampled = resampler.process(&mut waveform).unwrap();
-        })
-    });
-}
-
-fn bench_sincfixedin_cubic_32(c: &mut Criterion) {
-    let chunksize = 1024;
-    let sinc_len = 256;
-    let f_cutoff = 0.9473371669037001;
-    let oversampling_factor = 256;
-    let window = WindowFunction::BlackmanHarris2;
-    let resample_ratio = 192000 as f64 / 44100 as f64;
-    let interpolation_type = InterpolationType::Cubic;
-
-    let interpolator = Box::new(ScalarInterpolator::<f32>::new(
-        sinc_len,
-        oversampling_factor,
-        f_cutoff,
-        window,
-    ));
-    let mut resampler = SincFixedIn::<f32>::new_with_interpolator(
-        resample_ratio,
-        interpolation_type,
-        interpolator,
-        chunksize,
-        1,
-    );
-    let mut waveform = vec![vec![0.0 as f32; chunksize]; 1];
-    c.bench_function("SincFixedIn cubic f32", |b| {
-        b.iter(|| {
-            let _resampled = resampler.process(&mut waveform).unwrap();
-        })
-    });
-}
-
-fn bench_sincfixedin_linear_32(c: &mut Criterion) {
-    let chunksize = 1024;
-    let sinc_len = 256;
-    let f_cutoff = 0.9473371669037001;
-    let oversampling_factor = 256;
-    let window = WindowFunction::BlackmanHarris2;
-    let resample_ratio = 192000 as f64 / 44100 as f64;
-    let interpolation_type = InterpolationType::Linear;
-
-    let interpolator = Box::new(ScalarInterpolator::<f32>::new(
-        sinc_len,
-        oversampling_factor,
-        f_cutoff,
-        window,
-    ));
-    let mut resampler = SincFixedIn::<f32>::new_with_interpolator(
-        resample_ratio,
-        interpolation_type,
-        interpolator,
-        chunksize,
-        1,
-    );
-    let mut waveform = vec![vec![0.0 as f32; chunksize]; 1];
-    c.bench_function("SincFixedIn linear f32", |b| {
-        b.iter(|| {
-            let _resampled = resampler.process(&mut waveform).unwrap();
-        })
-    });
-}
-
-fn bench_sincfixedin_nearest_32(c: &mut Criterion) {
-    let chunksize = 1024;
-    let sinc_len = 256;
-    let f_cutoff = 0.9473371669037001;
-    let oversampling_factor = 640;
-    let window = WindowFunction::BlackmanHarris2;
-    let resample_ratio = 192000 as f64 / 44100 as f64;
-    let interpolation_type = InterpolationType::Nearest;
-
-    let interpolator = Box::new(ScalarInterpolator::<f32>::new(
-        sinc_len,
-        oversampling_factor,
-        f_cutoff,
-        window,
-    ));
-    let mut resampler = SincFixedIn::<f32>::new_with_interpolator(
-        resample_ratio,
-        interpolation_type,
-        interpolator,
-        chunksize,
-        1,
-    );
-    let mut waveform = vec![vec![0.0 as f32; chunksize]; 1];
-    c.bench_function("SincFixedIn nearest f32", |b| {
-        b.iter(|| {
-            let _resampled = resampler.process(&mut waveform).unwrap();
-        })
-    });
-}
+bench_async_resampler!(f32, ScalarInterpolator, InterpolationType::Cubic,   bench_scalar_async_cubic___32, "scalar async cubic   32");
+bench_async_resampler!(f32, ScalarInterpolator, InterpolationType::Linear,  bench_scalar_async_linear__32, "scalar async linear  32");
+bench_async_resampler!(f32, ScalarInterpolator, InterpolationType::Nearest, bench_scalar_async_nearest_32, "scalar async nearest 32");
+bench_async_resampler!(f64, ScalarInterpolator, InterpolationType::Cubic,   bench_scalar_async_cubic___64, "scalar async cubic   64");
+bench_async_resampler!(f64, ScalarInterpolator, InterpolationType::Linear,  bench_scalar_async_linear__64, "scalar async linear  64");
+bench_async_resampler!(f64, ScalarInterpolator, InterpolationType::Nearest, bench_scalar_async_nearest_64, "scalar async nearest 64");
 
 #[cfg(target_arch = "x86_64")]
-fn bench_sse_sincfixedin_cubic(c: &mut Criterion) {
-    let chunksize = 1024;
-    let sinc_len = 256;
-    let f_cutoff = 0.9473371669037001;
-    let oversampling_factor = 256;
-    let window = WindowFunction::BlackmanHarris2;
-    let resample_ratio = 192000 as f64 / 44100 as f64;
-    let interpolation_type = InterpolationType::Cubic;
-
-    let interpolator = Box::new(SseInterpolator::<f64>::new(
-        sinc_len,
-        oversampling_factor,
-        f_cutoff,
-        window,
-    ));
-    let mut resampler = SincFixedIn::<f64>::new_with_interpolator(
-        resample_ratio,
-        interpolation_type,
-        interpolator,
-        chunksize,
-        1,
-    );
-    let mut waveform = vec![vec![0.0 as f64; chunksize]; 1];
-    c.bench_function("SSE SincFixedIn cubic f64", |b| {
-        b.iter(|| {
-            let _resampled = resampler.process(&mut waveform).unwrap();
-        })
-    });
-}
-
+bench_async_resampler!(f32, SseInterpolator, InterpolationType::Cubic,   bench_sse_async_cubic___32, "sse async cubic   32");
 #[cfg(target_arch = "x86_64")]
-fn bench_sse_sincfixedin_linear(c: &mut Criterion) {
-    let chunksize = 1024;
-    let sinc_len = 256;
-    let f_cutoff = 0.9473371669037001;
-    let oversampling_factor = 256;
-    let window = WindowFunction::BlackmanHarris2;
-    let resample_ratio = 192000 as f64 / 44100 as f64;
-    let interpolation_type = InterpolationType::Linear;
-
-    let interpolator = Box::new(SseInterpolator::<f64>::new(
-        sinc_len,
-        oversampling_factor,
-        f_cutoff,
-        window,
-    ));
-    let mut resampler = SincFixedIn::<f64>::new_with_interpolator(
-        resample_ratio,
-        interpolation_type,
-        interpolator,
-        chunksize,
-        1,
-    );
-    let mut waveform = vec![vec![0.0 as f64; chunksize]; 1];
-    c.bench_function("SSE SincFixedIn linear f64", |b| {
-        b.iter(|| {
-            let _resampled = resampler.process(&mut waveform).unwrap();
-        })
-    });
-}
-
+bench_async_resampler!(f32, SseInterpolator, InterpolationType::Linear,  bench_sse_async_linear__32, "sse async linear  32");
 #[cfg(target_arch = "x86_64")]
-fn bench_sse_sincfixedin_nearest(c: &mut Criterion) {
-    let chunksize = 1024;
-    let sinc_len = 256;
-    let f_cutoff = 0.9473371669037001;
-    let oversampling_factor = 640;
-    let window = WindowFunction::BlackmanHarris2;
-    let resample_ratio = 192000 as f64 / 44100 as f64;
-    let interpolation_type = InterpolationType::Nearest;
-
-    let interpolator = Box::new(SseInterpolator::<f64>::new(
-        sinc_len,
-        oversampling_factor,
-        f_cutoff,
-        window,
-    ));
-    let mut resampler = SincFixedIn::<f64>::new_with_interpolator(
-        resample_ratio,
-        interpolation_type,
-        interpolator,
-        chunksize,
-        1,
-    );
-    let mut waveform = vec![vec![0.0 as f64; chunksize]; 1];
-    c.bench_function("SSE SincFixedIn nearest f64", |b| {
-        b.iter(|| {
-            let _resampled = resampler.process(&mut waveform).unwrap();
-        })
-    });
-}
-
+bench_async_resampler!(f32, SseInterpolator, InterpolationType::Nearest, bench_sse_async_nearest_32, "sse async nearest 32");
 #[cfg(target_arch = "x86_64")]
-fn bench_sse_sincfixedin_cubic_32(c: &mut Criterion) {
-    let chunksize = 1024;
-    let sinc_len = 256;
-    let f_cutoff = 0.9473371669037001;
-    let oversampling_factor = 256;
-    let window = WindowFunction::BlackmanHarris2;
-    let resample_ratio = 192000 as f64 / 44100 as f64;
-    let interpolation_type = InterpolationType::Cubic;
-
-    let interpolator = Box::new(SseInterpolator::<f32>::new(
-        sinc_len,
-        oversampling_factor,
-        f_cutoff,
-        window,
-    ));
-    let mut resampler = SincFixedIn::<f32>::new_with_interpolator(
-        resample_ratio,
-        interpolation_type,
-        interpolator,
-        chunksize,
-        1,
-    );
-    let mut waveform = vec![vec![0.0 as f32; chunksize]; 1];
-    c.bench_function("SSE SincFixedIn cubic f32", |b| {
-        b.iter(|| {
-            let _resampled = resampler.process(&mut waveform).unwrap();
-        })
-    });
-}
-
+bench_async_resampler!(f64, SseInterpolator, InterpolationType::Cubic,   bench_sse_async_cubic___64, "sse async cubic   64");
 #[cfg(target_arch = "x86_64")]
-fn bench_sse_sincfixedin_linear_32(c: &mut Criterion) {
-    let chunksize = 1024;
-    let sinc_len = 256;
-    let f_cutoff = 0.9473371669037001;
-    let oversampling_factor = 256;
-    let window = WindowFunction::BlackmanHarris2;
-    let resample_ratio = 192000 as f64 / 44100 as f64;
-    let interpolation_type = InterpolationType::Linear;
-
-    let interpolator = Box::new(SseInterpolator::<f32>::new(
-        sinc_len,
-        oversampling_factor,
-        f_cutoff,
-        window,
-    ));
-    let mut resampler = SincFixedIn::<f32>::new_with_interpolator(
-        resample_ratio,
-        interpolation_type,
-        interpolator,
-        chunksize,
-        1,
-    );
-    let mut waveform = vec![vec![0.0 as f32; chunksize]; 1];
-    c.bench_function("SSE SincFixedIn linear f32", |b| {
-        b.iter(|| {
-            let _resampled = resampler.process(&mut waveform).unwrap();
-        })
-    });
-}
-
+bench_async_resampler!(f64, SseInterpolator, InterpolationType::Linear,  bench_sse_async_linear__64, "sse async linear  64");
 #[cfg(target_arch = "x86_64")]
-fn bench_sse_sincfixedin_nearest_32(c: &mut Criterion) {
-    let chunksize = 1024;
-    let sinc_len = 256;
-    let f_cutoff = 0.9473371669037001;
-    let oversampling_factor = 640;
-    let window = WindowFunction::BlackmanHarris2;
-    let resample_ratio = 192000 as f64 / 44100 as f64;
-    let interpolation_type = InterpolationType::Nearest;
+bench_async_resampler!(f64, SseInterpolator, InterpolationType::Nearest, bench_sse_async_nearest_64, "sse async nearest 64");
 
-    let interpolator = Box::new(SseInterpolator::<f32>::new(
-        sinc_len,
-        oversampling_factor,
-        f_cutoff,
-        window,
-    ));
-    let mut resampler = SincFixedIn::<f32>::new_with_interpolator(
-        resample_ratio,
-        interpolation_type,
-        interpolator,
-        chunksize,
-        1,
-    );
-    let mut waveform = vec![vec![0.0 as f32; chunksize]; 1];
-    c.bench_function("SSE SincFixedIn nearest f32", |b| {
-        b.iter(|| {
-            let _resampled = resampler.process(&mut waveform).unwrap();
-        })
-    });
-}
-
-#[cfg(target_arch = "x86_64")]
-fn bench_avx_sincfixedin_cubic(c: &mut Criterion) {
-    let chunksize = 1024;
-    let sinc_len = 256;
-    let f_cutoff = 0.9473371669037001;
-    let oversampling_factor = 256;
-    let window = WindowFunction::BlackmanHarris2;
-    let resample_ratio = 192000 as f64 / 44100 as f64;
-    let interpolation_type = InterpolationType::Cubic;
-
-    let interpolator = Box::new(AvxInterpolator::<f64>::new(
-        sinc_len,
-        oversampling_factor,
-        f_cutoff,
-        window,
-    ));
-    let mut resampler = SincFixedIn::<f64>::new_with_interpolator(
-        resample_ratio,
-        interpolation_type,
-        interpolator,
-        chunksize,
-        1,
-    );
-    let mut waveform = vec![vec![0.0 as f64; chunksize]; 1];
-    c.bench_function("AVX SincFixedIn cubic f64", |b| {
-        b.iter(|| {
-            let _resampled = resampler.process(&mut waveform).unwrap();
-        })
-    });
-}
-
-#[cfg(target_arch = "x86_64")]
-fn bench_avx_sincfixedin_cubic_32(c: &mut Criterion) {
-    let chunksize = 1024;
-    let sinc_len = 256;
-    let f_cutoff = 0.9473371669037001;
-    let oversampling_factor = 256;
-    let window = WindowFunction::BlackmanHarris2;
-    let resample_ratio = 192000 as f64 / 44100 as f64;
-    let interpolation_type = InterpolationType::Cubic;
-
-    let interpolator = Box::new(AvxInterpolator::<f32>::new(
-        sinc_len,
-        oversampling_factor,
-        f_cutoff,
-        window,
-    ));
-    let mut resampler = SincFixedIn::<f32>::new_with_interpolator(
-        resample_ratio,
-        interpolation_type,
-        interpolator,
-        chunksize,
-        1,
-    );
-    let mut waveform = vec![vec![0.0 as f32; chunksize]; 1];
-    c.bench_function("AVX SincFixedIn cubic f32", |b| {
-        b.iter(|| {
-            let _resampled = resampler.process(&mut waveform).unwrap();
-        })
-    });
-}
-
+#[cfg(all(target_arch = "x86_64", feature = "avx"))]
+bench_async_resampler!(f32, AvxInterpolator, InterpolationType::Cubic,   bench_avx_async_cubic___32, "avx async cubic   32");
+#[cfg(all(target_arch = "x86_64", feature = "avx"))]
+bench_async_resampler!(f32, AvxInterpolator, InterpolationType::Linear,  bench_avx_async_linear__32, "avx async linear  32");
+#[cfg(all(target_arch = "x86_64", feature = "avx"))]
+bench_async_resampler!(f32, AvxInterpolator, InterpolationType::Nearest, bench_avx_async_nearest_32, "avx async nearest 32");
+#[cfg(all(target_arch = "x86_64", feature = "avx"))]
+bench_async_resampler!(f64, AvxInterpolator, InterpolationType::Cubic,   bench_avx_async_cubic___64, "avx async cubic   64");
+#[cfg(all(target_arch = "x86_64", feature = "avx"))]
+bench_async_resampler!(f64, AvxInterpolator, InterpolationType::Linear,  bench_avx_async_linear__64, "avx async linear  64");
+#[cfg(all(target_arch = "x86_64", feature = "avx"))]
+bench_async_resampler!(f64, AvxInterpolator, InterpolationType::Nearest, bench_avx_async_nearest_64, "avx async nearest 64");
 
 #[cfg(target_arch = "aarch64")]
-fn bench_neon_sincfixedin_cubic(c: &mut Criterion) {
-    let chunksize = 1024;
-    let sinc_len = 256;
-    let f_cutoff = 0.9473371669037001;
-    let oversampling_factor = 256;
-    let window = WindowFunction::BlackmanHarris2;
-    let resample_ratio = 192000 as f64 / 44100 as f64;
-    let interpolation_type = InterpolationType::Cubic;
-
-    let interpolator = Box::new(NeonInterpolator::<f64>::new(
-        sinc_len,
-        oversampling_factor,
-        f_cutoff,
-        window,
-    ));
-    let mut resampler = SincFixedIn::<f64>::new_with_interpolator(
-        resample_ratio,
-        interpolation_type,
-        interpolator,
-        chunksize,
-        1,
-    );
-    let mut waveform = vec![vec![0.0 as f64; chunksize]; 1];
-    c.bench_function("Neon SincFixedIn cubic f64", |b| {
-        b.iter(|| {
-            let _resampled = resampler.process(&mut waveform).unwrap();
-        })
-    });
-}
-
+bench_async_resampler!(f32, NeonInterpolator, InterpolationType::Cubic,   bench_neon_async_cubic___32, "neon async cubic   32");
 #[cfg(target_arch = "aarch64")]
-fn bench_neon_sincfixedin_cubic_32(c: &mut Criterion) {
-    let chunksize = 1024;
-    let sinc_len = 256;
-    let f_cutoff = 0.9473371669037001;
-    let oversampling_factor = 256;
-    let window = WindowFunction::BlackmanHarris2;
-    let resample_ratio = 192000 as f64 / 44100 as f64;
-    let interpolation_type = InterpolationType::Cubic;
+bench_async_resampler!(f32, NeonInterpolator, InterpolationType::Linear,  bench_neon_async_linear__32, "neon async linear  32");
+#[cfg(target_arch = "aarch64")]
+bench_async_resampler!(f32, NeonInterpolator, InterpolationType::Nearest, bench_neon_async_nearest_32, "neon async nearest 32");
+#[cfg(target_arch = "aarch64")]
+bench_async_resampler!(f64, NeonInterpolator, InterpolationType::Cubic,   bench_neon_async_cubic___64, "neon async cubic   64");
+#[cfg(target_arch = "aarch64")]
+bench_async_resampler!(f64, NeonInterpolator, InterpolationType::Linear,  bench_neon_async_linear__64, "neon async linear  64");
+#[cfg(target_arch = "aarch64")]
+bench_async_resampler!(f64, NeonInterpolator, InterpolationType::Nearest, bench_neon_async_nearest_64, "neon async nearest 64");
 
-    let interpolator = Box::new(NeonInterpolator::<f32>::new(
-        sinc_len,
-        oversampling_factor,
-        f_cutoff,
-        window,
-    ));
-    let mut resampler = SincFixedIn::<f32>::new_with_interpolator(
-        resample_ratio,
-        interpolation_type,
-        interpolator,
-        chunksize,
-        1,
-    );
-    let mut waveform = vec![vec![0.0 as f32; chunksize]; 1];
-    c.bench_function("Neon SincFixedIn cubic f32", |b| {
-        b.iter(|| {
-            let _resampled = resampler.process(&mut waveform).unwrap();
-        })
-    });
-}
-
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_arch = "x86_64", not(feature = "avx")))]
 criterion_group!(
     benches,
     bench_fftfixedin,
     bench_fftfixedin_32,
-    bench_sincfixedin_cubic,
-    bench_sse_sincfixedin_cubic,
-    bench_avx_sincfixedin_cubic,
-    bench_sincfixedin_cubic_32,
-    bench_sse_sincfixedin_cubic_32,
-    bench_avx_sincfixedin_cubic_32,
-    bench_sincfixedin_linear,
-    bench_sse_sincfixedin_linear,
-    bench_sincfixedin_linear_32,
-    bench_sse_sincfixedin_linear_32,
-    bench_sincfixedin_nearest,
-    bench_sse_sincfixedin_nearest,
-    bench_sincfixedin_nearest_32,
-    bench_sse_sincfixedin_nearest_32,
+    bench_scalar_async_cubic___32,
+    bench_scalar_async_linear__32,
+    bench_scalar_async_nearest_32,
+    bench_scalar_async_cubic___64,
+    bench_scalar_async_linear__64,
+    bench_scalar_async_nearest_64,
+    bench_sse_async_cubic___32,
+    bench_sse_async_linear__32,
+    bench_sse_async_nearest_32,
+    bench_sse_async_cubic___64,
+    bench_sse_async_linear__64,
+    bench_sse_async_nearest_64,
+);
+
+#[cfg(all(target_arch = "x86_64", feature = "avx"))]
+criterion_group!(
+    benches,
+    bench_fftfixedin,
+    bench_fftfixedin_32,
+    bench_scalar_async_cubic___32,
+    bench_scalar_async_linear__32,
+    bench_scalar_async_nearest_32,
+    bench_scalar_async_cubic___64,
+    bench_scalar_async_linear__64,
+    bench_scalar_async_nearest_64,
+    bench_sse_async_cubic___32,
+    bench_sse_async_linear__32,
+    bench_sse_async_nearest_32,
+    bench_sse_async_cubic___64,
+    bench_sse_async_linear__64,
+    bench_sse_async_nearest_64,
+    bench_avx_async_cubic___32,
+    bench_avx_async_linear__32,
+    bench_avx_async_nearest_32,
+    bench_avx_async_cubic___64,
+    bench_avx_async_linear__64,
+    bench_avx_async_nearest_64,
 );
 
 #[cfg(target_arch = "aarch64")]
@@ -566,15 +169,20 @@ criterion_group!(
     benches,
     bench_fftfixedin,
     bench_fftfixedin_32,
-    bench_sincfixedin_cubic,
-    bench_neon_sincfixedin_cubic,
-    bench_sincfixedin_cubic_32,
-    bench_neon_sincfixedin_cubic_32,
-    bench_sincfixedin_linear,
-    bench_sincfixedin_linear_32,
-    bench_sincfixedin_nearest,
-    bench_sincfixedin_nearest_32,
-
+    bench_scalar_async_cubic___32,
+    bench_scalar_async_linear__32,
+    bench_scalar_async_nearest_32,
+    bench_scalar_async_cubic___64,
+    bench_scalar_async_linear__64,
+    bench_scalar_async_nearest_64,
+    bench_neon_async_cubic___32,
+    bench_neon_async_linear__32,
+    bench_neon_async_nearest_32,
+    bench_neon_async_cubic___64,
+    bench_neon_async_linear__64,
+    bench_neon_async_nearest_64,
 );
+
+
 
 criterion_main!(benches);

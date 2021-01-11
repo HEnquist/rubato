@@ -1,7 +1,7 @@
 use crate::windows::WindowFunction;
 
 use crate::interpolation::*;
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_arch = "x86_64", feature = "avx"))]
 use crate::interpolator_avx::AvxInterpolator;
 #[cfg(target_arch = "x86_64")]
 use crate::interpolator_sse::SseInterpolator;
@@ -147,7 +147,7 @@ macro_rules! impl_resampler {
                 } else {
                     f_cutoff * resample_ratio as f32
                 };
-                #[cfg(target_arch = "x86_64")]
+                #[cfg(all(target_arch = "x86_64", feature = "avx"))]
                 if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") {
                     return Box::new(AvxInterpolator::<$ft>::new(
                         sinc_len,
@@ -159,6 +159,15 @@ macro_rules! impl_resampler {
                 #[cfg(target_arch = "x86_64")]
                 if is_x86_feature_detected!("sse3") {
                     return Box::new(SseInterpolator::<$ft>::new(
+                        sinc_len,
+                        oversampling_factor,
+                        f_cutoff,
+                        window,
+                    ));
+                }
+                #[cfg(all(target_arch = "aarch64", feature = "neon"))]
+                if is_aarch64_feature_detected!("neon") {
+                    return Box::new(NeonInterpolator::<$ft>::new(
                         sinc_len,
                         oversampling_factor,
                         f_cutoff,

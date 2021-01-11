@@ -55,15 +55,15 @@
 //#![feature(stdsimd)]
 //#[cfg(feature = "neonsimd")]
 //#![feature(aarch64_target_feature)]
-#![cfg_attr(feature = "neonsimd", feature(aarch64_target_feature))]
-#![cfg_attr(feature = "neonsimd", feature(stdsimd))]
+#![cfg_attr(feature = "neon", feature(aarch64_target_feature))]
+#![cfg_attr(feature = "neon", feature(stdsimd))]
 
 mod interpolation;
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_arch = "x86_64", feature = "avx"))]
 pub mod interpolator_avx;
 #[cfg(target_arch = "x86_64")]
 pub mod interpolator_sse;
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(target_arch = "aarch64", feature = "neon"))]
 pub mod interpolator_neon;
 mod sinc;
 mod synchro;

@@ -145,7 +145,11 @@ impl AvxInterpolator<f64> {
         f_cutoff: f32,
         window: WindowFunction,
     ) -> Self {
-        assert!(sinc_len % 8 == 0);
+        assert!(
+            is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma"),
+            "CPU does not have the required AVX and FMA support!"
+        );
+        assert!(sinc_len % 8 == 0, "Sinc length must be a multiple of 8.");
         let sincs = make_sincs(sinc_len, oversampling_factor, f_cutoff, window);
         let sincs = unsafe { Self::pack_sincs_double(sincs) };
         Self {
