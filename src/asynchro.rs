@@ -30,6 +30,11 @@ pub trait SincInterpolator<T> {
     /// Get sinc length
     fn len(&self) -> usize;
 
+    /// Check if sincs are empty
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Get number of sincs used for oversampling
     fn nbr_sincs(&self) -> usize;
 }
