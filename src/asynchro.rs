@@ -21,10 +21,6 @@ use crate::ResamplerError;
 /// Functions for making the scalar product with a sinc
 pub trait SincInterpolator<T> {
     /// Make the scalar product between the waveform starting at `index` and the sinc of `subindex`.
-    /// # Safety
-    /// The SIMD implementations of this trait use intrinsics, which are considered unsafe.
-    /// They also use unchecked indexing to avoid bounds checks and maximize performance.
-    /// Callers must ensure to call the function with reasonable parameters.
     fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T;
 
     /// Get sinc length
@@ -49,25 +45,31 @@ pub struct ScalarInterpolator<T> {
 impl<T: Float> SincInterpolator<T> for ScalarInterpolator<T> {
     /// Calculate the scalar produt of an input wave and the selected sinc filter
     fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T {
-        self.get_sinc_interpolated_unsafe(wave, index, subindex)
-        //let wave_cut = &wave[index..(index + self.sincs[subindex].len())];
-        //wave_cut
-        //    .chunks(8)
-        //    .zip(self.sincs[subindex].chunks(8))
-        //    .fold([T::zero(); 8], |acc, (x, y)| {
-        //        [
-        //            acc[0] + x[0] * y[0],
-        //            acc[1] + x[1] * y[1],
-        //            acc[2] + x[2] * y[2],
-        //            acc[3] + x[3] * y[3],
-        //            acc[4] + x[4] * y[4],
-        //            acc[5] + x[5] * y[5],
-        //            acc[6] + x[6] * y[6],
-        //            acc[7] + x[7] * y[7],
-        //        ]
-        //    })
-        //    .iter()
-        //    .fold(T::zero(), |acc, val| acc + *val)
+        let wave_cut = &wave[index..(index + self.sincs[subindex].len())];
+        let sinc = &self.sincs[subindex];
+        unsafe {
+            let mut acc0 = T::zero();
+            let mut acc1 = T::zero();
+            let mut acc2 = T::zero();
+            let mut acc3 = T::zero();
+            let mut acc4 = T::zero();
+            let mut acc5 = T::zero();
+            let mut acc6 = T::zero();
+            let mut acc7 = T::zero();
+            let mut idx = 0;
+            for _ in 0..wave_cut.len() / 8 {
+                acc0 = acc0 + *wave_cut.get_unchecked(idx) * *sinc.get_unchecked(idx);
+                acc1 = acc1 + *wave_cut.get_unchecked(idx + 1) * *sinc.get_unchecked(idx + 1);
+                acc2 = acc2 + *wave_cut.get_unchecked(idx + 2) * *sinc.get_unchecked(idx + 2);
+                acc3 = acc3 + *wave_cut.get_unchecked(idx + 3) * *sinc.get_unchecked(idx + 3);
+                acc4 = acc4 + *wave_cut.get_unchecked(idx + 4) * *sinc.get_unchecked(idx + 4);
+                acc5 = acc5 + *wave_cut.get_unchecked(idx + 5) * *sinc.get_unchecked(idx + 5);
+                acc6 = acc6 + *wave_cut.get_unchecked(idx + 6) * *sinc.get_unchecked(idx + 6);
+                acc7 = acc7 + *wave_cut.get_unchecked(idx + 7) * *sinc.get_unchecked(idx + 7);
+                idx += 8;
+            }
+            acc0 + acc1 + acc2 + acc3 + acc4 + acc5 + acc6 + acc7
+        }
     }
 
     fn len(&self) -> usize {
@@ -99,34 +101,6 @@ impl<T: Float> ScalarInterpolator<T> {
             sincs,
             length: sinc_len,
             nbr_sincs: oversampling_factor,
-        }
-    }
-
-    fn get_sinc_interpolated_unsafe(&self, wave: &[T], index: usize, subindex: usize) -> T {
-        let wave_cut = &wave[index..(index + self.sincs[subindex].len())];
-        let sinc = &self.sincs[subindex];
-        unsafe {
-            let mut acc0 = T::zero();
-            let mut acc1 = T::zero();
-            let mut acc2 = T::zero();
-            let mut acc3 = T::zero();
-            let mut acc4 = T::zero();
-            let mut acc5 = T::zero();
-            let mut acc6 = T::zero();
-            let mut acc7 = T::zero();
-            let mut idx = 0;
-            for _ in 0..wave_cut.len() / 8 {
-                acc0 = acc0 + *wave_cut.get_unchecked(idx) * *sinc.get_unchecked(idx);
-                acc1 = acc1 + *wave_cut.get_unchecked(idx + 1) * *sinc.get_unchecked(idx + 1);
-                acc2 = acc2 + *wave_cut.get_unchecked(idx + 2) * *sinc.get_unchecked(idx + 2);
-                acc3 = acc3 + *wave_cut.get_unchecked(idx + 3) * *sinc.get_unchecked(idx + 3);
-                acc4 = acc4 + *wave_cut.get_unchecked(idx + 4) * *sinc.get_unchecked(idx + 4);
-                acc5 = acc5 + *wave_cut.get_unchecked(idx + 5) * *sinc.get_unchecked(idx + 5);
-                acc6 = acc6 + *wave_cut.get_unchecked(idx + 6) * *sinc.get_unchecked(idx + 6);
-                acc7 = acc7 + *wave_cut.get_unchecked(idx + 7) * *sinc.get_unchecked(idx + 7);
-                idx += 8;
-            }
-            acc0 + acc1 + acc2 + acc3 + acc4 + acc5 + acc6 + acc7
         }
     }
 }
