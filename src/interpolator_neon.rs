@@ -129,7 +129,6 @@ impl NeonInterpolator<f32> {
         let packedsum = vaddq_f32(acc0, acc1);
         let array = std::mem::transmute::<float32x4_t, [f32; 4]>(packedsum);
         array[0] + array[1] + array[2] + array[3]
-        //packedsum.0 + packedsum.1 + packedsum.2 + packedsum.3
     }
 }
 
@@ -198,24 +197,22 @@ impl NeonInterpolator<f64> {
             let w0 = std::mem::transmute(f64x2::from_slice_unaligned(
                 wave_cut.get_unchecked(w_idx..w_idx + 2),
             ));
-            let s0 = vmulq_f64(w0, *sinc.get_unchecked(s_idx));
-            acc0 = vaddq_f64(acc0, s0);
             let w1 = std::mem::transmute(f64x2::from_slice_unaligned(
                 wave_cut.get_unchecked(w_idx + 2..w_idx + 4),
             ));
-            let s1 = vmulq_f64(w1, *sinc.get_unchecked(s_idx + 1));
-            acc1 = vaddq_f64(acc1, s1);
             let w2 = std::mem::transmute(f64x2::from_slice_unaligned(
                 wave_cut.get_unchecked(w_idx + 4..w_idx + 6),
             ));
-            let s2 = vmulq_f64(w2, *sinc.get_unchecked(s_idx + 2));
-            acc2 = vaddq_f64(acc2, s2);
             let w3 = std::mem::transmute(f64x2::from_slice_unaligned(
                 wave_cut.get_unchecked(w_idx + 6..w_idx + 8),
             ));
-
+            let s0 = vmulq_f64(w0, *sinc.get_unchecked(s_idx));
+            let s1 = vmulq_f64(w1, *sinc.get_unchecked(s_idx + 1));
+            let s2 = vmulq_f64(w2, *sinc.get_unchecked(s_idx + 2));
             let s3 = vmulq_f64(w3, *sinc.get_unchecked(s_idx + 3));
-
+            acc0 = vaddq_f64(acc0, s0);
+            acc1 = vaddq_f64(acc1, s1);
+            acc2 = vaddq_f64(acc2, s2);
             acc3 = vaddq_f64(acc3, s3);
             w_idx += 8;
             s_idx += 4;
@@ -225,7 +222,6 @@ impl NeonInterpolator<f64> {
         packedsum0 = vaddq_f64(packedsum0, packedsum1);
         let array = std::mem::transmute::<float64x2_t, [f64; 2]>(packedsum0);
         array[0] + array[1]
-        //packedsum0.0 + packedsum0.1
     }
 }
 

@@ -18,16 +18,23 @@
 //! This type of resampler is considerably faster but doesn't support changing the resampling ratio.
 //!
 //! ## Features
-//! ### `avx`: AVX on x86_64
-//! The asynchronous resampler will always use SSE3 if available. This gives a speedup of about
-//! 2x for 64-bit float data, and 3-4x for 32-bit. With the `avx` feature (enabled by default)
-//! it will check for AVX and use that if available. Depending on the cpu, this may give up to 1.5x the speed of SSE.
-//! On other architechtures than x86_64 the `avx` feature will do nothing.
+//! ### SIMD acceleration
+//! The asynchronous resampler is designed to benefit from auto-vectorization, meaning that the Rust compiler
+//! can recognize calculations that can be done in parallel. It will then use SIMD instructions for those.
+//! This works quite well, but there is still room for improvement.
+//! On x86_64 it will always use SSE3 if available. The speed benefit compared to auto-vectorization
+//! depends on the CPU, but tends to be in the range 20-30% for 64-bit data, and 50-100% for 32-bit data.
 //!
-//! ### `neon`: Experimental Neon support on aarch64
+//! #### `avx`: AVX on x86_64
+//! The `avx` feature is enabled by default, and enables the use of AVX when it's available.
+//! The speed increase compared to SSE depends on the CPU, and tends to range from zero to 50%.
+//! On other architectures than x86_64 the `avx` feature does nothing.
+//!
+//! #### `neon`: Experimental Neon support on aarch64
 //! Experimental support for Neon is available for aarch64 (64-bit Arm) by enabling the `neon` feature.
 //! This requires the use of a nightly compiler, as the Neon support in Rust is still experimental.
-//! On a Raspberry Pi 4, this gives a boost of 1.7x for 64-bit floats and 2.4x for 32-bit floats.
+//! On a Raspberry Pi 4, this gives a boost of about 10% for 64-bit floats and 50% for 32-bit floats when
+//! compared to the auto-vectorized implementation.
 //! Note that this only works on a full 64-bit operating system.
 //!
 //! ## Documentation
@@ -64,13 +71,10 @@
 //!
 //! The `rubato` crate requires rustc version 1.40 or newer.
 
-//#[cfg(feature = "neonsimd")]
-//#![feature(stdsimd)]
-//#[cfg(feature = "neonsimd")]
-//#![feature(aarch64_target_feature)]
 #![cfg_attr(feature = "neon", feature(aarch64_target_feature))]
 #![cfg_attr(feature = "neon", feature(stdsimd))]
 
+mod asynchro;
 mod interpolation;
 #[cfg(all(target_arch = "x86_64", feature = "avx"))]
 pub mod interpolator_avx;
@@ -81,16 +85,10 @@ pub mod interpolator_sse;
 mod sinc;
 mod synchro;
 mod windows;
-//mod sseasync;
-mod asynchro;
-pub use crate::synchro::{FftFixedIn, FftFixedInOut, FftFixedOut};
-//pub use crate::sseasync::{SseSincFixedIn, SseSincFixedOut};
 pub use crate::asynchro::{ScalarInterpolator, SincFixedIn, SincFixedOut};
+pub use crate::synchro::{FftFixedIn, FftFixedInOut, FftFixedOut};
 pub use crate::windows::WindowFunction;
 
-//use crate::interpolation::*;
-//use crate::sinc::make_sincs;
-//use num_traits::Float;
 use std::error;
 use std::fmt;
 
@@ -156,7 +154,6 @@ pub struct InterpolationParameters {
 /// It's more efficient to combine the sinc filters with some other interpolation technique.
 /// Then sinc filters are used to provide a fixed number of interpolated points between input samples,
 /// and then the new value is calculated by interpolation between those points.
-
 #[derive(Debug)]
 pub enum InterpolationType {
     /// For cubic interpolation, the four nearest intermediate points are calculated
