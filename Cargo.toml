@@ -15,7 +15,7 @@ edition = "2018"
 [features]
 default = ["avx"]
 avx = []
-neon = []
+neon = ["packed_simd_2"]
 
 [dependencies]
 log = "0.4.11"
@@ -23,6 +23,7 @@ realfft = "0.4.0"
 num-complex = "0.3"
 num-integer = "0.1.44"
 num-traits = "0.2"
+packed_simd_2 = {version="0.3.4", optional=true}
 
 [dev-dependencies] 
 env_logger = "0.7.1"
