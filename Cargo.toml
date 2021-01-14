@@ -19,7 +19,8 @@ neon = ["packed_simd_2"]
 
 [dependencies]
 log = "0.4.11"
-realfft = "0.4.0"
+#realfft = "0.4.0"
+realfft = { git = "https://github.com/HEnquist/realfft", branch = "odds" }
 num-complex = "0.3"
 num-integer = "0.1.44"
 num-traits = "0.2"
