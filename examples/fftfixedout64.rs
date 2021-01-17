@@ -101,18 +101,12 @@ fn main() {
     let num_chunks = f_in_ram.len() / (8 * channels * chunksize);
     let start = Instant::now();
     for _chunk in 0..num_chunks {
-        //let waves = read_frames(&mut f_in, chunksize, channels);
-        //let waves_out = resampler.process(&waves).unwrap();
-        //write_frames(waves_out, &mut f_out, channels);
-        //let start2 = Instant::now();
         let nbr_frames = resampler.nbr_frames_needed();
         let waves = read_frames(&mut f_in, nbr_frames, channels);
-        //println!("Read took: {:?}", start2.elapsed());
         if waves[0].len() < nbr_frames {
             break;
         }
         let waves_out = resampler.process(&waves).unwrap();
-        //println!("got {} frames", waves_out[0].len());
         write_frames(waves_out, &mut f_out, channels);
     }
 

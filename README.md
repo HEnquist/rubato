@@ -19,14 +19,14 @@ Synchronous resampling is implemented via FFT. The data is FFT:ed, the spectrum 
 and then inverse FFT:ed to get the resampled data.
 This type of resampler is considerably faster but doesn't support changing the resampling ratio.
 
-### Features
-#### SIMD acceleration
+### SIMD acceleration
 The asynchronous resampler is designed to benefit from auto-vectorization, meaning that the Rust compiler
 can recognize calculations that can be done in parallel. It will then use SIMD instructions for those.
 This works quite well, but there is still room for improvement.
 On x86_64 it will always use SSE3 if available. The speed benefit compared to auto-vectorization
 depends on the CPU, but tends to be in the range 20-30% for 64-bit data, and 50-100% for 32-bit data.
 
+### Cargo features
 ##### `avx`: AVX on x86_64
 The `avx` feature is enabled by default, and enables the use of AVX when it's available.
 The speed increase compared to SSE depends on the CPU, and tends to range from zero to 50%.
