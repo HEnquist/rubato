@@ -52,8 +52,8 @@
 //! let params = InterpolationParameters {
 //!     sinc_len: 256,
 //!     f_cutoff: 0.95,
-//!     interpolation: InterpolationType::Nearest,
-//!     oversampling_factor: 160,
+//!     interpolation: InterpolationType::Linear,
+//!     oversampling_factor: 256,
 //!     window: WindowFunction::BlackmanHarris2,
 //! };
 //! let mut resampler = SincFixedIn::<f64>::new(
