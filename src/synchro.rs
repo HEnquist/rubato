@@ -4,20 +4,23 @@ use num_complex::Complex;
 use num_integer as integer;
 use num_traits::Zero;
 use std::error;
+use std::sync::Arc;
 
 type Res<T> = Result<T, Box<dyn error::Error>>;
 
 use crate::Resampler;
 use crate::ResamplerError;
-use realfft::{ComplexToReal, RealToComplex};
+use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 
 /// A helper for resampling a single chunk of data.
 struct FftResampler<T> {
     fft_size_in: usize,
     fft_size_out: usize,
     filter_f: Vec<Complex<T>>,
-    fft: RealToComplex<T>,
-    ifft: ComplexToReal<T>,
+    fft: Arc<dyn RealToComplex<T>>,
+    ifft: Arc<dyn ComplexToReal<T>>,
+    scratch_fw: Vec<Complex<T>>,
+    scratch_inv: Vec<Complex<T>>,
     input_buf: Vec<T>,
     input_f: Vec<Complex<T>>,
     output_f: Vec<Complex<T>>,
@@ -102,10 +105,12 @@ macro_rules! impl_resampler {
                 let input_buf: Vec<$ft> = vec![0.0; 2 * fft_size_in];
                 let output_f: Vec<Complex<$ft>> = vec![Complex::zero(); fft_size_out + 1];
                 let output_buf: Vec<$ft> = vec![0.0; 2 * fft_size_out];
-                let mut fft = RealToComplex::<$ft>::new(2 * fft_size_in).unwrap();
-                let ifft = ComplexToReal::<$ft>::new(2 * fft_size_out).unwrap();
+                let mut planner = RealFftPlanner::<$ft>::new();
+                let fft = planner.plan_fft_forward(2 * fft_size_in);
+                let ifft = planner.plan_fft_inverse(2 * fft_size_out);
                 fft.process(&mut filter_t, &mut filter_f).unwrap();
-
+                let scratch_fw = fft.make_scratch_vec();
+                let scratch_inv = ifft.make_scratch_vec();
                 FftResampler {
                     fft_size_in,
                     fft_size_out,
@@ -116,6 +121,8 @@ macro_rules! impl_resampler {
                     input_f,
                     output_f,
                     output_buf,
+                    scratch_fw,
+                    scratch_inv,
                 }
             }
 
@@ -139,7 +146,11 @@ macro_rules! impl_resampler {
 
                 // FFT and store result in history, update index
                 self.fft
-                    .process(&mut self.input_buf, &mut self.input_f)
+                    .process_with_scratch(
+                        &mut self.input_buf,
+                        &mut self.input_f,
+                        &mut self.scratch_fw,
+                    )
                     .unwrap();
 
                 // multiply with filter FT
@@ -149,18 +160,25 @@ macro_rules! impl_resampler {
                     .zip(self.filter_f.iter())
                     .for_each(|(spec, filt)| *spec *= filt);
                 let new_len = if self.fft_size_in < self.fft_size_out {
-                    self.fft_size_in
+                    self.fft_size_in + 1
                 } else {
                     self.fft_size_out
                 };
 
                 // copy to modified spectrum
                 self.output_f[0..new_len].copy_from_slice(&self.input_f[0..new_len]);
-                self.output_f[self.fft_size_out] = self.input_f[self.fft_size_in];
+                for val in self.output_f[new_len..].iter_mut() {
+                    *val = Complex::zero();
+                }
+                //self.output_f[self.fft_size_out] = self.input_f[self.fft_size_in];
 
                 // IFFT result, store result and overlap
                 self.ifft
-                    .process(&self.output_f, &mut self.output_buf)
+                    .process_with_scratch(
+                        &mut self.output_f,
+                        &mut self.output_buf,
+                        &mut self.scratch_inv,
+                    )
                     .unwrap();
                 for (n, item) in wave_out.iter_mut().enumerate().take(self.fft_size_out) {
                     *item = self.output_buf[n] + overlap[n];

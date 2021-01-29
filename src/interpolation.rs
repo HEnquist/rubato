@@ -1,5 +1,5 @@
 /// Get the two nearest time points for time t in format (index, subindex)
-pub fn get_nearest_times_2(t: f64, factor: isize, points: &mut [(isize, isize)]) {
+pub fn get_nearest_times_2(t: f64, factor: isize, points: &mut [(isize, isize); 2]) {
     let mut index = t.floor() as isize;
     let mut subindex = ((t - t.floor()) * (factor as f64)).floor() as isize;
     points[0] = (index, subindex);
@@ -12,7 +12,7 @@ pub fn get_nearest_times_2(t: f64, factor: isize, points: &mut [(isize, isize)])
 }
 
 /// Get the four nearest time points for time t in format (index, subindex).
-pub fn get_nearest_times_4(t: f64, factor: isize, points: &mut [(isize, isize)]) {
+pub fn get_nearest_times_4(t: f64, factor: isize, points: &mut [(isize, isize); 4]) {
     let start = t.floor() as isize;
     let frac = ((t - t.floor()) * (factor as f64)).floor() as isize;
     let mut index;
@@ -51,7 +51,7 @@ mod tests {
     #[test]
     fn get_nearest_2() {
         let t = 5.9f64;
-        let mut times = vec![(0isize, 0isize); 2];
+        let mut times = [(0isize, 0isize); 2];
         get_nearest_times_2(t, 8, &mut times);
         assert_eq!(times[0], (5, 7));
         assert_eq!(times[1], (6, 0));
@@ -60,7 +60,7 @@ mod tests {
     #[test]
     fn get_nearest_4() {
         let t = 5.9f64;
-        let mut times = vec![(0isize, 0isize); 4];
+        let mut times = [(0isize, 0isize); 4];
         get_nearest_times_4(t, 8, &mut times);
         assert_eq!(times[0], (5, 6));
         assert_eq!(times[1], (5, 7));
@@ -71,7 +71,7 @@ mod tests {
     #[test]
     fn get_nearest_4_neg() {
         let t = -5.999f64;
-        let mut times = vec![(0isize, 0isize); 4];
+        let mut times = [(0isize, 0isize); 4];
         get_nearest_times_4(t, 8, &mut times);
         assert_eq!(times[0], (-7, 7));
         assert_eq!(times[1], (-6, 0));
@@ -82,7 +82,7 @@ mod tests {
     #[test]
     fn get_nearest_4_zero() {
         let t = -0.00001f64;
-        let mut times = vec![(0isize, 0isize); 4];
+        let mut times = [(0isize, 0isize); 4];
         get_nearest_times_4(t, 8, &mut times);
         assert_eq!(times[0], (-1, 6));
         assert_eq!(times[1], (-1, 7));

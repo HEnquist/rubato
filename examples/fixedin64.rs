@@ -111,7 +111,7 @@ fn main() {
     //    window: WindowFunction::Hann2,
     //};
 
-    // Balanced for sync for 44100 -> 96000 etc
+    // Balanced for sync for 44100 -> 96000 etc (note that for sync it's better to use the fft resampler)
     //let sinc_len = 128;
     //let f_cutoff = 0.925914648491266;
     //let params = InterpolationParameters {
@@ -133,7 +133,7 @@ fn main() {
     //    window: WindowFunction::Blackman2,
     //};
     //
-    //// Best for sync for 44100 -> 96000 etc
+    //// Best for sync for 44100 -> 96000 etc (note that for sync it's better to use the fft resampler)
     let sinc_len = 256;
     let f_cutoff = 0.9473371669037001;
     let params = InterpolationParameters {
@@ -144,7 +144,7 @@ fn main() {
         window: WindowFunction::BlackmanHarris2,
     };
 
-    // Best for async
+    // Best quality for async
     //let sinc_len = 256;
     //let f_cutoff = 0.9473371669037001;
     //let params = InterpolationParameters {
