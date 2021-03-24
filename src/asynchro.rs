@@ -12,7 +12,7 @@ use crate::{InterpolationParameters, InterpolationType};
 
 use num_traits::Float;
 
-use crate::error::{ResamplerError, Result};
+use crate::error::{Error, Result};
 use crate::Resampler;
 
 /// Functions for making the scalar product with a sinc
@@ -290,18 +290,21 @@ macro_rules! resampler_sincfixedin {
             /// to the number of channels and chunk size defined when creating the instance.
             fn process(&mut self, wave_in: &[Vec<$t>]) -> Result<Vec<Vec<$t>>> {
                 if wave_in.len() != self.nbr_channels {
-                    return Err(Box::new(ResamplerError::new(
-                        "Wrong number of channels in input",
-                    )));
+                    return Err(Error::WrongNumberOfChannels {
+                        expected: self.nbr_channels,
+                        actual: wave_in.len(),
+                    });
                 }
                 let mut used_channels = Vec::new();
                 for (chan, wave) in wave_in.iter().enumerate() {
                     if !wave.is_empty() {
                         used_channels.push(chan);
                         if wave.len() != self.chunk_size {
-                            return Err(Box::new(ResamplerError::new(
-                                "Wrong number of frames in input",
-                            )));
+                            return Err(Error::WrongNumberOfFrames {
+                                channel: chan,
+                                expected: self.chunk_size,
+                                actual: wave.len(),
+                            });
                         }
                     }
                 }
@@ -424,9 +427,7 @@ macro_rules! resampler_sincfixedin {
                     self.resample_ratio = new_ratio;
                     Ok(())
                 } else {
-                    Err(Box::new(ResamplerError::new(
-                        "New resample ratio is too far off from original",
-                    )))
+                    Err(Error::BadResampleRatioUpdate)
                 }
             }
             /// Update the resample ratio relative to the original one
@@ -536,9 +537,7 @@ macro_rules! resampler_sincfixedout {
                         + 2;
                     Ok(())
                 } else {
-                    Err(Box::new(ResamplerError::new(
-                        "New resample ratio is too far off from original",
-                    )))
+                    Err(Error::BadResampleRatioUpdate)
                 }
             }
 
@@ -560,9 +559,10 @@ macro_rules! resampler_sincfixedout {
             fn process(&mut self, wave_in: &[Vec<$t>]) -> Result<Vec<Vec<$t>>> {
                 //update buffer with new data
                 if wave_in.len() != self.nbr_channels {
-                    return Err(Box::new(ResamplerError::new(
-                        "Wrong number of channels in input",
-                    )));
+                    return Err(Error::WrongNumberOfChannels {
+                        expected: self.nbr_channels,
+                        actual: wave_in.len(),
+                    });
                 }
                 let sinc_len = self.interpolator.len();
                 let oversampling_factor = self.interpolator.nbr_sincs();
@@ -571,9 +571,11 @@ macro_rules! resampler_sincfixedout {
                     if !wave.is_empty() {
                         used_channels.push(chan);
                         if wave.len() != self.needed_input_size {
-                            return Err(Box::new(ResamplerError::new(
-                                "Wrong number of frames in input",
-                            )));
+                            return Err(Error::WrongNumberOfFrames {
+                                channel: chan,
+                                expected: self.needed_input_size,
+                                actual: wave.len(),
+                            });
                         }
                     }
                 }
