@@ -11,12 +11,9 @@ use crate::sinc::make_sincs;
 use crate::{InterpolationParameters, InterpolationType};
 
 use num_traits::Float;
-use std::error;
 
-type Res<T> = Result<T, Box<dyn error::Error>>;
-
+use crate::error::{ResamplerError, Result};
 use crate::Resampler;
-use crate::ResamplerError;
 
 /// Functions for making the scalar product with a sinc
 pub trait SincInterpolator<T> {
@@ -291,7 +288,7 @@ macro_rules! resampler_sincfixedin {
             ///
             /// The function returns an error if the length of the input data is not equal
             /// to the number of channels and chunk size defined when creating the instance.
-            fn process(&mut self, wave_in: &[Vec<$t>]) -> Res<Vec<Vec<$t>>> {
+            fn process(&mut self, wave_in: &[Vec<$t>]) -> Result<Vec<Vec<$t>>> {
                 if wave_in.len() != self.nbr_channels {
                     return Err(Box::new(ResamplerError::new(
                         "Wrong number of channels in input",
@@ -419,7 +416,7 @@ macro_rules! resampler_sincfixedin {
             }
 
             /// Update the resample ratio. New value must be within +-10% of the original one
-            fn set_resample_ratio(&mut self, new_ratio: f64) -> Res<()> {
+            fn set_resample_ratio(&mut self, new_ratio: f64) -> Result<()> {
                 trace!("Change resample ratio to {}", new_ratio);
                 if (new_ratio / self.resample_ratio_original > 0.9)
                     && (new_ratio / self.resample_ratio_original < 1.1)
@@ -433,7 +430,7 @@ macro_rules! resampler_sincfixedin {
                 }
             }
             /// Update the resample ratio relative to the original one
-            fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> Res<()> {
+            fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> Result<()> {
                 let new_ratio = self.resample_ratio_original * rel_ratio;
                 self.set_resample_ratio(new_ratio)
             }
@@ -526,7 +523,7 @@ macro_rules! resampler_sincfixedout {
             }
 
             /// Update the resample ratio. New value must be within +-10% of the original one
-            fn set_resample_ratio(&mut self, new_ratio: f64) -> Res<()> {
+            fn set_resample_ratio(&mut self, new_ratio: f64) -> Result<()> {
                 trace!("Change resample ratio to {}", new_ratio);
                 if (new_ratio / self.resample_ratio_original > 0.9)
                     && (new_ratio / self.resample_ratio_original < 1.1)
@@ -546,7 +543,7 @@ macro_rules! resampler_sincfixedout {
             }
 
             /// Update the resample ratio relative to the original one
-            fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> Res<()> {
+            fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> Result<()> {
                 let new_ratio = self.resample_ratio_original * rel_ratio;
                 self.set_resample_ratio(new_ratio)
             }
@@ -560,7 +557,7 @@ macro_rules! resampler_sincfixedout {
             /// The function returns an error if the length of the input data is not
             /// equal to the number of channels defined when creating the instance,
             /// and the number of audio frames given by "nbr_frames_needed".
-            fn process(&mut self, wave_in: &[Vec<$t>]) -> Res<Vec<Vec<$t>>> {
+            fn process(&mut self, wave_in: &[Vec<$t>]) -> Result<Vec<Vec<$t>>> {
                 //update buffer with new data
                 if wave_in.len() != self.nbr_channels {
                     return Err(Box::new(ResamplerError::new(

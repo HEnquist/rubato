@@ -1,15 +1,13 @@
+use crate::error::Result;
 use crate::sinc::make_sincs;
 use crate::windows::WindowFunction;
 use num_complex::Complex;
 use num_integer as integer;
 use num_traits::Zero;
-use std::error;
 use std::sync::Arc;
 
-type Res<T> = Result<T, Box<dyn error::Error>>;
-
+use crate::error::ResamplerError;
 use crate::Resampler;
-use crate::ResamplerError;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 
 /// A helper for resampling a single chunk of data.
@@ -247,7 +245,7 @@ macro_rules! resampler_FftFixedinout {
             }
 
             /// Update the resample ratio. This is not supported by this resampler and always returns an error.
-            fn set_resample_ratio(&mut self, _new_ratio: f64) -> Res<()> {
+            fn set_resample_ratio(&mut self, _new_ratio: f64) -> Result<()> {
                 Err(Box::new(ResamplerError::new(
                     "Not possible to adjust a synchronous resampler)",
                 )))
@@ -255,7 +253,7 @@ macro_rules! resampler_FftFixedinout {
 
             /// Update the resample ratio relative to the original one.
             /// This is not supported by this resampler and always returns an error.
-            fn set_resample_ratio_relative(&mut self, _rel_ratio: f64) -> Res<()> {
+            fn set_resample_ratio_relative(&mut self, _rel_ratio: f64) -> Result<()> {
                 Err(Box::new(ResamplerError::new(
                     "Not possible to adjust a synchronous resampler)",
                 )))
@@ -268,7 +266,7 @@ macro_rules! resampler_FftFixedinout {
             ///
             /// The function returns an error if the size of the input data is not equal
             /// to the number of channels and input size defined when creating the instance.
-            fn process(&mut self, wave_in: &[Vec<$t>]) -> Res<Vec<Vec<$t>>> {
+            fn process(&mut self, wave_in: &[Vec<$t>]) -> Result<Vec<Vec<$t>>> {
                 if wave_in.len() != self.nbr_channels {
                     return Err(Box::new(ResamplerError::new(
                         "Wrong number of channels in input",
@@ -378,7 +376,7 @@ macro_rules! resampler_FftFixedout {
             }
 
             /// Update the resample ratio. This is not supported by this resampler and always returns an error.
-            fn set_resample_ratio(&mut self, _new_ratio: f64) -> Res<()> {
+            fn set_resample_ratio(&mut self, _new_ratio: f64) -> Result<()> {
                 Err(Box::new(ResamplerError::new(
                     "Not possible to adjust a synchronous resampler)",
                 )))
@@ -386,7 +384,7 @@ macro_rules! resampler_FftFixedout {
 
             /// Update the resample ratio relative to the original one.
             /// This is not supported by this resampler and always returns an error.
-            fn set_resample_ratio_relative(&mut self, _rel_ratio: f64) -> Res<()> {
+            fn set_resample_ratio_relative(&mut self, _rel_ratio: f64) -> Result<()> {
                 Err(Box::new(ResamplerError::new(
                     "Not possible to adjust a synchronous resampler)",
                 )))
@@ -401,7 +399,7 @@ macro_rules! resampler_FftFixedout {
             /// The function returns an error if the length of the input data is not
             /// equal to the number of channels defined when creating the instance,
             /// and the number of audio frames given by "nbr_frames_needed".
-            fn process(&mut self, wave_in: &[Vec<$t>]) -> Res<Vec<Vec<$t>>> {
+            fn process(&mut self, wave_in: &[Vec<$t>]) -> Result<Vec<Vec<$t>>> {
                 if wave_in.len() != self.nbr_channels {
                     return Err(Box::new(ResamplerError::new(
                         "Wrong number of channels in input",
@@ -535,7 +533,7 @@ macro_rules! resampler_FftFixedin {
             }
 
             /// Update the resample ratio. This is not supported by this resampler and always returns an error.
-            fn set_resample_ratio(&mut self, _new_ratio: f64) -> Res<()> {
+            fn set_resample_ratio(&mut self, _new_ratio: f64) -> Result<()> {
                 Err(Box::new(ResamplerError::new(
                     "Not possible to adjust a synchronous resampler)",
                 )))
@@ -543,7 +541,7 @@ macro_rules! resampler_FftFixedin {
 
             /// Update the resample ratio relative to the original one.
             /// This is not supported by this resampler and always returns an error.
-            fn set_resample_ratio_relative(&mut self, _rel_ratio: f64) -> Res<()> {
+            fn set_resample_ratio_relative(&mut self, _rel_ratio: f64) -> Result<()> {
                 Err(Box::new(ResamplerError::new(
                     "Not possible to adjust a synchronous resampler)",
                 )))
@@ -558,7 +556,7 @@ macro_rules! resampler_FftFixedin {
             /// The function returns an error if the length of the input data is not
             /// equal to the number of channels defined when creating the instance,
             /// and the number of audio frames given by "nbr_frames_needed".
-            fn process(&mut self, wave_in: &[Vec<$t>]) -> Res<Vec<Vec<$t>>> {
+            fn process(&mut self, wave_in: &[Vec<$t>]) -> Result<Vec<Vec<$t>>> {
                 if wave_in.len() != self.nbr_channels {
                     return Err(Box::new(ResamplerError::new(
                         "Wrong number of channels in input",

@@ -75,6 +75,7 @@
 #![cfg_attr(feature = "neon", feature(stdsimd))]
 
 mod asynchro;
+mod error;
 mod interpolation;
 #[cfg(all(target_arch = "x86_64", feature = "avx"))]
 pub mod interpolator_avx;
@@ -89,39 +90,10 @@ pub use crate::asynchro::{ScalarInterpolator, SincFixedIn, SincFixedOut};
 pub use crate::synchro::{FftFixedIn, FftFixedInOut, FftFixedOut};
 pub use crate::windows::WindowFunction;
 
-use std::error;
-use std::fmt;
+pub use crate::error::{Error, Result};
 
 #[macro_use]
 extern crate log;
-
-type Res<T> = Result<T, Box<dyn error::Error>>;
-
-/// Custom error returned by resamplers
-#[derive(Debug)]
-pub struct ResamplerError {
-    desc: String,
-}
-
-impl fmt::Display for ResamplerError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.desc)
-    }
-}
-
-impl error::Error for ResamplerError {
-    fn description(&self) -> &str {
-        &self.desc
-    }
-}
-
-impl ResamplerError {
-    pub fn new(desc: &str) -> Self {
-        ResamplerError {
-            desc: desc.to_owned(),
-        }
-    }
-}
 
 /// A struct holding the parameters for interpolation.
 #[derive(Debug)]
@@ -184,13 +156,13 @@ pub enum InterpolationType {
 pub trait Resampler<T> {
     /// Resample a chunk of audio. Input and output data is stored in a vector,
     /// where each element contains a vector with all samples for a single channel.
-    fn process(&mut self, wave_in: &[Vec<T>]) -> Res<Vec<Vec<T>>>;
+    fn process(&mut self, wave_in: &[Vec<T>]) -> Result<Vec<Vec<T>>>;
 
     /// Update the resample ratio.
-    fn set_resample_ratio(&mut self, new_ratio: f64) -> Res<()>;
+    fn set_resample_ratio(&mut self, new_ratio: f64) -> Result<()>;
 
     /// Update the resample ratio relative to the original one.
-    fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> Res<()>;
+    fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> Result<()>;
 
     /// Query for the number of frames needed for the next call to "process".
     fn nbr_frames_needed(&self) -> usize;
