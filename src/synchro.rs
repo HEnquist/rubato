@@ -434,8 +434,8 @@ macro_rules! resampler_FftFixedout {
 
                 wave_out.resize(self.nbr_channels, Vec::new());
                 for chan in used_channels.iter() {
-                    let output_buffer = self.output_buffers[*chan].len();
-                    wave_out[*chan].resize(output_buffer, 0.0);
+                    let new_len = self.output_buffers[*chan].len();
+                    wave_out[*chan].resize(new_len, 0.0);
                     wave_out[*chan].copy_from_slice(&self.output_buffers[*chan]);
                 }
 

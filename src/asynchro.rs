@@ -328,8 +328,8 @@ macro_rules! resampler_sincfixedin {
                     for (idx, sample) in wave_in[*chan].iter().enumerate() {
                         self.buffer[*chan][idx + 2 * sinc_len] = *sample;
                     }
-                    let new_size = (self.chunk_size as f64 * self.resample_ratio + 10.0) as usize;
-                    wave_out[*chan].resize(new_size, 0.0);
+                    let new_len = (self.chunk_size as f64 * self.resample_ratio + 10.0) as usize;
+                    wave_out[*chan].resize(new_len, 0.0);
                 }
 
                 let mut idx = self.last_index;
