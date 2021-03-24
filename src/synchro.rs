@@ -268,7 +268,7 @@ macro_rules! resampler_FftFixedinout {
             ///
             /// The function returns an error if the size of the input data is not equal
             /// to the number of channels and input size defined when creating the instance.
-            fn process_in_place(
+            fn process_into_buffer(
                 &mut self,
                 wave_in: &[Vec<$t>],
                 wave_out: &mut Vec<Vec<$t>>,
@@ -405,7 +405,7 @@ macro_rules! resampler_FftFixedout {
             /// The function returns an error if the length of the input data is not
             /// equal to the number of channels defined when creating the instance,
             /// and the number of audio frames given by "nbr_frames_needed".
-            fn process_in_place(
+            fn process_into_buffer(
                 &mut self,
                 wave_in: &[Vec<$t>],
                 wave_out: &mut Vec<Vec<$t>>,
@@ -568,7 +568,7 @@ macro_rules! resampler_FftFixedin {
             /// The function returns an error if the length of the input data is not
             /// equal to the number of channels defined when creating the instance,
             /// and the number of audio frames given by "nbr_frames_needed".
-            fn process_in_place(
+            fn process_into_buffer(
                 &mut self,
                 wave_in: &[Vec<$t>],
                 wave_out: &mut Vec<Vec<$t>>,

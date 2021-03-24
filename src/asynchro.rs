@@ -291,7 +291,7 @@ macro_rules! resampler_sincfixedin {
             ///
             /// The function returns an error if the length of the input data is not equal
             /// to the number of channels and chunk size defined when creating the instance.
-            fn process_in_place(
+            fn process_into_buffer(
                 &mut self,
                 wave_in: &[Vec<$t>],
                 wave_out: &mut Vec<Vec<$t>>,
@@ -561,7 +561,7 @@ macro_rules! resampler_sincfixedout {
             /// The function returns an error if the length of the input data is not
             /// equal to the number of channels defined when creating the instance,
             /// and the number of audio frames given by "nbr_frames_needed".
-            fn process_in_place(&mut self, wave_in: &[Vec<$t>], wave_out: &mut Vec<Vec<$t>>) -> Res<()> {
+            fn process_into_buffer(&mut self, wave_in: &[Vec<$t>], wave_out: &mut Vec<Vec<$t>>) -> Res<()> {
                 //update buffer with new data
                 if wave_in.len() != self.nbr_channels {
                     return Err(Box::new(ResamplerError::new(
