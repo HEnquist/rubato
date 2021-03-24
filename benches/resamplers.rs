@@ -15,22 +15,18 @@ use rubato::{FftFixedIn, InterpolationType, Resampler, SincFixedIn, WindowFuncti
 fn bench_fftfixedin(c: &mut Criterion) {
     let chunksize = 1024;
     let mut resampler = FftFixedIn::<f64>::new(44100, 192000, 1024, 2, 1);
-    let mut waveform = vec![vec![0.0 as f64; chunksize]; 1];
+    let waveform = vec![vec![0.0 as f64; chunksize]; 1];
     c.bench_function("FftFixedIn f64", |b| {
-        b.iter(|| {
-            let _resampled = resampler.process(&mut waveform).unwrap();
-        })
+        b.iter(|| resampler.process(&waveform).unwrap())
     });
 }
 
 fn bench_fftfixedin_32(c: &mut Criterion) {
     let chunksize = 1024;
     let mut resampler = FftFixedIn::<f32>::new(44100, 192000, 1024, 2, 1);
-    let mut waveform = vec![vec![0.0 as f32; chunksize]; 1];
+    let waveform = vec![vec![0.0 as f32; chunksize]; 1];
     c.bench_function("FftFixedIn f32", |b| {
-        b.iter(|| {
-            let _resampled = resampler.process(&mut waveform).unwrap();
-        })
+        b.iter(|| resampler.process(&waveform).unwrap())
     });
 }
 
@@ -58,12 +54,8 @@ macro_rules! bench_async_resampler {
                 chunksize,
                 1,
             );
-            let mut waveform = vec![vec![0.0 as $ft; chunksize]; 1];
-            c.bench_function($desc, |b| {
-                b.iter(|| {
-                    let _resampled = resampler.process(&mut waveform).unwrap();
-                })
-            });
+            let waveform = vec![vec![0.0 as $ft; chunksize]; 1];
+            c.bench_function($desc, |b| b.iter(|| resampler.process(&waveform).unwrap()));
         }
     };
 }
