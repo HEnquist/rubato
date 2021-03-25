@@ -54,14 +54,14 @@ where
             let mut acc7 = T::zero();
             let mut idx = 0;
             for _ in 0..wave_cut.len() / 8 {
-                acc0 = acc0 + *wave_cut.get_unchecked(idx) * *sinc.get_unchecked(idx);
-                acc1 = acc1 + *wave_cut.get_unchecked(idx + 1) * *sinc.get_unchecked(idx + 1);
-                acc2 = acc2 + *wave_cut.get_unchecked(idx + 2) * *sinc.get_unchecked(idx + 2);
-                acc3 = acc3 + *wave_cut.get_unchecked(idx + 3) * *sinc.get_unchecked(idx + 3);
-                acc4 = acc4 + *wave_cut.get_unchecked(idx + 4) * *sinc.get_unchecked(idx + 4);
-                acc5 = acc5 + *wave_cut.get_unchecked(idx + 5) * *sinc.get_unchecked(idx + 5);
-                acc6 = acc6 + *wave_cut.get_unchecked(idx + 6) * *sinc.get_unchecked(idx + 6);
-                acc7 = acc7 + *wave_cut.get_unchecked(idx + 7) * *sinc.get_unchecked(idx + 7);
+                acc0 += *wave_cut.get_unchecked(idx) * *sinc.get_unchecked(idx);
+                acc1 += *wave_cut.get_unchecked(idx + 1) * *sinc.get_unchecked(idx + 1);
+                acc2 += *wave_cut.get_unchecked(idx + 2) * *sinc.get_unchecked(idx + 2);
+                acc3 += *wave_cut.get_unchecked(idx + 3) * *sinc.get_unchecked(idx + 3);
+                acc4 += *wave_cut.get_unchecked(idx + 4) * *sinc.get_unchecked(idx + 4);
+                acc5 += *wave_cut.get_unchecked(idx + 5) * *sinc.get_unchecked(idx + 5);
+                acc6 += *wave_cut.get_unchecked(idx + 6) * *sinc.get_unchecked(idx + 6);
+                acc7 += *wave_cut.get_unchecked(idx + 7) * *sinc.get_unchecked(idx + 7);
                 idx += 8;
             }
             acc0 + acc1 + acc2 + acc3 + acc4 + acc5 + acc6 + acc7
@@ -750,7 +750,7 @@ mod tests {
             oversampling_factor: 16,
             window: WindowFunction::BlackmanHarris2,
         };
-        let resampler = SincFixedIn::<f64>::new(1.2, params, 1024, 2);
+        let _resampler = SincFixedIn::<f64>::new(1.2, params, 1024, 2);
         let yvals = [0.0f64, 2.0f64, 4.0f64, 6.0f64];
         let interp = interp_cubic(0.5f64, &yvals);
         assert_eq!(interp, 3.0f64);
@@ -765,7 +765,7 @@ mod tests {
             oversampling_factor: 16,
             window: WindowFunction::BlackmanHarris2,
         };
-        let resampler = SincFixedIn::<f32>::new(1.2, params, 1024, 2);
+        let _resampler = SincFixedIn::<f32>::new(1.2, params, 1024, 2);
         let yvals = [1.0f32, 5.0f32];
         let interp = interp_lin(0.25f32, &yvals);
         assert_eq!(interp, 2.0f32);
@@ -780,7 +780,7 @@ mod tests {
             oversampling_factor: 16,
             window: WindowFunction::BlackmanHarris2,
         };
-        let resampler = SincFixedIn::<f32>::new(1.2, params, 1024, 2);
+        let _resampler = SincFixedIn::<f32>::new(1.2, params, 1024, 2);
         let yvals = [0.0f32, 2.0f32, 4.0f32, 6.0f32];
         let interp = interp_cubic(0.5f32, &yvals);
         assert_eq!(interp, 3.0f32);
@@ -795,7 +795,7 @@ mod tests {
             oversampling_factor: 16,
             window: WindowFunction::BlackmanHarris2,
         };
-        let resampler = SincFixedIn::<f64>::new(1.2, params, 1024, 2);
+        let _resampler = SincFixedIn::<f64>::new(1.2, params, 1024, 2);
         let yvals = [1.0f64, 5.0f64];
         let interp = interp_lin(0.25f64, &yvals);
         assert_eq!(interp, 2.0f64);

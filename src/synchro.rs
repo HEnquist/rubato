@@ -107,18 +107,19 @@ where
         fft.process(&mut filter_t, &mut filter_f).unwrap();
         let scratch_fw = fft.make_scratch_vec();
         let scratch_inv = ifft.make_scratch_vec();
+
         FftResampler {
             fft_size_in,
             fft_size_out,
             filter_f,
             fft,
             ifft,
+            scratch_fw,
+            scratch_inv,
             input_buf,
             input_f,
             output_f,
             output_buf,
-            scratch_fw,
-            scratch_inv,
         }
     }
 

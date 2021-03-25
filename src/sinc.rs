@@ -27,15 +27,15 @@ where
     let mut y = Vec::with_capacity(totpoints);
     let window = make_window::<T>(totpoints, windowfunc);
     let mut sum = T::zero();
-    for x in 0..totpoints {
-        let val = window[x]
+    for (x, w) in window.iter().enumerate().take(totpoints) {
+        let val = *w
             * sinc(
                 (T::coerce(x) - T::coerce(totpoints / 2)) * T::coerce(f_cutoff) / T::coerce(factor),
             );
-        sum = sum + val;
+        sum += val;
         y.push(val);
     }
-    sum = sum / T::coerce(factor);
+    sum /= T::coerce(factor);
     debug!(
         "Generate sincs, length: {}, oversampling: {}, normalized by: {:?}",
         npoints, factor, sum
