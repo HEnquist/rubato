@@ -12,12 +12,13 @@ use core::arch::x86_64::{
     _mm256_fmadd_ps, _mm256_loadu_ps, _mm256_setzero_ps, _mm_add_ps, _mm_hadd_ps,
 };
 use crate::asynchro::SincInterpolator;
+use crate::Sample;
 
 /// Collection of cpu features required for this interpolator.
 static FEATURES: &[CpuFeature] = &[CpuFeature::Avx, CpuFeature::Fma];
 
 /// Trait governing what can be done with an AvxSample.
-pub trait AvxSample: Sized + num_traits::Float {
+pub trait AvxSample: Sized {
     type Sinc;
 
     unsafe fn pack_sincs(sincs: Vec<Vec<Self>>) -> Vec<Vec<Self::Sinc>>;
@@ -144,7 +145,7 @@ impl<T> SincInterpolator<T> for AvxInterpolator<T> where T: AvxSample {
     }
 }
 
-impl<T> AvxInterpolator<T> where T: AvxSample {
+impl<T> AvxInterpolator<T> where T: Sample {
     /// Create a new AvxInterpolator
     ///
     /// Parameters are:
@@ -164,7 +165,7 @@ impl<T> AvxInterpolator<T> where T: AvxSample {
 
         assert!(sinc_len % 8 == 0, "Sinc length must be a multiple of 8.");
         let sincs = make_sincs(sinc_len, oversampling_factor, f_cutoff, window);
-        let sincs = unsafe { T::pack_sincs(sincs) };
+        let sincs = unsafe { <T as AvxSample>::pack_sincs(sincs) };
 
         Ok(Self {
             sincs,

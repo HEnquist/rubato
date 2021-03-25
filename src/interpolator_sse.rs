@@ -5,12 +5,13 @@ use core::arch::x86_64::{_mm_add_pd, _mm_hadd_pd, _mm_loadu_pd, _mm_mul_pd, _mm_
 use core::arch::x86_64::{_mm_add_ps, _mm_hadd_ps, _mm_loadu_ps, _mm_mul_ps, _mm_setzero_ps};
 use crate::asynchro::SincInterpolator;
 use crate::error::{MissingCpuFeatures, CpuFeature};
+use crate::Sample;
 
 /// Collection of cpu features required for this interpolator.
 static FEATURES: &[CpuFeature] = &[CpuFeature::Sse3];
 
 /// Trait governing what can be done with an SseSample.
-pub trait SseSample: Sized + num_traits::Float {
+pub trait SseSample: Sized {
     type Sinc;
 
     unsafe fn pack_sincs(sincs: Vec<Vec<Self>>) -> Vec<Vec<Self::Sinc>>;
@@ -153,7 +154,7 @@ impl<T> SincInterpolator<T> for SseInterpolator<T> where T: SseSample {
     }
 }
 
-impl<T> SseInterpolator<T> where T: SseSample {
+impl<T> SseInterpolator<T> where T: Sample {
     /// Create a new SseInterpolator
     ///
     /// Parameters are:
@@ -173,7 +174,7 @@ impl<T> SseInterpolator<T> where T: SseSample {
 
         assert!(sinc_len % 8 == 0, "Sinc length must be a multiple of 8.");
         let sincs = make_sincs(sinc_len, oversampling_factor, f_cutoff, window);
-        let sincs = unsafe { T::pack_sincs(sincs) };
+        let sincs = unsafe { <T as SseSample>::pack_sincs(sincs) };
 
         Ok(Self {
             sincs,

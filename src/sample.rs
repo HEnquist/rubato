@@ -10,7 +10,7 @@ where
     Self: Copy
         + CoerceFrom<usize>
         + CoerceFrom<f64>
-        + num_traits::Float
+        + CoerceFrom<f32>
         + realfft::FftNum
         + std::ops::Mul
         + std::ops::Div
@@ -24,15 +24,18 @@ where
         + AvxSample
         + SseSample
         + NeonSample,
-    num_complex::Complex<Self>: for<'a> std::ops::MulAssign<&'a num_complex::Complex<Self>>,
 {
-    /// The midpoint of the sample.
-    const MID: Self;
-    const ONE: Self;
-    const HALF: Self;
-    const SIX: Self;
-    const THREE: Self;
+    const PI: Self;
 
+    /// Calculate the sine of `self`.
+    fn sin(self) -> Self;
+
+    /// Calculate the cosine of `self`.
+    fn cos(self) -> Self;
+
+    /// Coerce `value` into the current type.
+    ///
+    /// Coercions are governed through the [CoerceFrom] trait.
     fn coerce<T>(value: T) -> Self
     where
         Self: CoerceFrom<T>,
@@ -42,26 +45,36 @@ where
 }
 
 impl Sample for f32 {
-    const MID: f32 = 0.0;
-    const ONE: f32 = 1.0;
-    const HALF: f32 = 0.5;
-    const SIX: f32 = 6.0;
-    const THREE: f32 = 3.0;
+    const PI: Self = std::f32::consts::PI;
+
+    fn sin(self) -> Self {
+        f32::sin(self)
+    }
+
+    fn cos(self) -> Self {
+        f32::cos(self)
+    }
 }
 
 impl Sample for f64 {
-    const MID: f64 = 0.0;
-    const ONE: f64 = 1.0;
-    const HALF: f64 = 0.5;
-    const SIX: f64 = 6.0;
-    const THREE: f64 = 3.0;
+    const PI: Self = std::f64::consts::PI;
+
+    fn sin(self) -> Self {
+        f64::sin(self)
+    }
+
+    fn cos(self) -> Self {
+        f64::cos(self)
+    }
 }
 
 /// The trait used to coerce a value infallibly from one type to another.
 ///
 /// This is similar to doing `value as T` where `T` is a floating point type.
-/// So some loss of precision can happen.
+/// Loss of precision may happen during coercions if the coerced from value
+/// doesn't fit fully within the target type.
 pub trait CoerceFrom<T> {
+    /// Perform a coercion from `value` into the current type.
     fn coerce_from(value: T) -> Self;
 }
 
@@ -85,6 +98,18 @@ impl CoerceFrom<f64> for f32 {
 
 impl CoerceFrom<f64> for f64 {
     fn coerce_from(value: f64) -> Self {
+        value as f64
+    }
+}
+
+impl CoerceFrom<f32> for f32 {
+    fn coerce_from(value: f32) -> Self {
+        value as f32
+    }
+}
+
+impl CoerceFrom<f32> for f64 {
+    fn coerce_from(value: f32) -> Self {
         value as f64
     }
 }

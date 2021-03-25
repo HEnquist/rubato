@@ -91,16 +91,16 @@ where
             fft_size_in, fft_size_out, cutoff
         );
         let sinc = make_sincs::<T>(fft_size_in, 1, cutoff, WindowFunction::BlackmanHarris2);
-        let mut filter_t: Vec<T> = vec![T::MID; 2 * fft_size_in];
+        let mut filter_t: Vec<T> = vec![T::zero(); 2 * fft_size_in];
         let mut filter_f: Vec<Complex<T>> = vec![Complex::zero(); fft_size_in + 1];
         for n in 0..fft_size_in {
             filter_t[n] = sinc[0][n] / T::coerce(2 * fft_size_in);
         }
 
         let input_f: Vec<Complex<T>> = vec![Complex::zero(); fft_size_in + 1];
-        let input_buf: Vec<T> = vec![T::MID; 2 * fft_size_in];
+        let input_buf: Vec<T> = vec![T::zero(); 2 * fft_size_in];
         let output_f: Vec<Complex<T>> = vec![Complex::zero(); fft_size_out + 1];
-        let output_buf: Vec<T> = vec![T::MID; 2 * fft_size_out];
+        let output_buf: Vec<T> = vec![T::zero(); 2 * fft_size_out];
         let mut planner = RealFftPlanner::<T>::new();
         let fft = planner.plan_fft_forward(2 * fft_size_in);
         let ifft = planner.plan_fft_inverse(2 * fft_size_out);
@@ -132,7 +132,7 @@ where
             .skip(self.fft_size_in)
             .take(self.fft_size_in)
         {
-            *item = T::MID;
+            *item = T::zero();
         }
 
         // FFT and store result in history, update index
@@ -200,7 +200,7 @@ where
 
         let resampler = FftResampler::<T>::new(fft_size_in, fft_size_out);
 
-        let overlaps: Vec<Vec<T>> = vec![vec![T::MID; fft_size_out]; nbr_channels];
+        let overlaps: Vec<Vec<T>> = vec![vec![T::zero(); fft_size_out]; nbr_channels];
 
         FftFixedInOut {
             nbr_channels,
@@ -251,7 +251,7 @@ where
         }
         let mut wave_out = vec![Vec::new(); self.nbr_channels];
         for chan in used_channels.iter() {
-            wave_out[*chan] = vec![T::MID; self.chunk_size_out];
+            wave_out[*chan] = vec![T::zero(); self.chunk_size_out];
         }
 
         for n in used_channels.iter() {
@@ -295,9 +295,9 @@ where
             fs_in, fs_out, chunk_size_out, nbr_channels, fft_size_in, fft_size_out
         );
 
-        let overlaps: Vec<Vec<T>> = vec![vec![T::MID; fft_size_out]; nbr_channels];
+        let overlaps: Vec<Vec<T>> = vec![vec![T::zero(); fft_size_out]; nbr_channels];
         let output_buffers: Vec<Vec<T>> =
-            vec![vec![T::MID; chunk_size_out + fft_size_out]; nbr_channels];
+            vec![vec![T::zero(); chunk_size_out + fft_size_out]; nbr_channels];
 
         let saved_frames = 0;
         let chunks_needed = (chunk_size_out as f32 / fft_size_out as f32).ceil() as usize;
@@ -429,9 +429,9 @@ where
             fs_in, fs_out, chunk_size_in, nbr_channels, fft_size_in, fft_size_out
         );
 
-        let overlaps: Vec<Vec<T>> = vec![vec![T::MID; fft_size_out]; nbr_channels];
+        let overlaps: Vec<Vec<T>> = vec![vec![T::zero(); fft_size_out]; nbr_channels];
         let input_buffers: Vec<Vec<T>> =
-            vec![vec![T::MID; chunk_size_in + fft_size_out]; nbr_channels];
+            vec![vec![T::zero(); chunk_size_in + fft_size_out]; nbr_channels];
 
         let saved_frames = 0;
 
@@ -489,7 +489,7 @@ where
 
         let mut input_temp = vec![Vec::new(); self.nbr_channels];
         for chan in used_channels.iter() {
-            input_temp[*chan] = vec![T::MID; self.saved_frames + self.chunk_size_in];
+            input_temp[*chan] = vec![T::zero(); self.saved_frames + self.chunk_size_in];
         }
 
         // copy new samples to input buffer
@@ -518,7 +518,7 @@ where
             (self.saved_frames as f32 / self.fft_size_in as f32).floor() as usize;
         let mut wave_out = vec![Vec::new(); self.nbr_channels];
         for chan in used_channels.iter() {
-            wave_out[*chan] = vec![T::MID; nbr_chunks_ready * self.fft_size_out];
+            wave_out[*chan] = vec![T::zero(); nbr_chunks_ready * self.fft_size_out];
         }
         for n in used_channels.iter() {
             for (in_chunk, out_chunk) in input_temp[*n]

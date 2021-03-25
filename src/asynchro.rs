@@ -1,5 +1,6 @@
 use crate::windows::WindowFunction;
 
+use crate::error::{ResampleError, ResampleResult};
 use crate::interpolation::*;
 #[cfg(all(target_arch = "x86_64", feature = "avx"))]
 use crate::interpolator_avx::AvxInterpolator;
@@ -8,12 +9,8 @@ use crate::interpolator_neon::NeonInterpolator;
 #[cfg(target_arch = "x86_64")]
 use crate::interpolator_sse::SseInterpolator;
 use crate::sinc::make_sincs;
-use crate::{InterpolationParameters, InterpolationType};
-
-use num_traits::Float;
-
-use crate::error::{ResampleError, ResampleResult};
 use crate::{AsyncResampler, Resampler, Sample};
+use crate::{InterpolationParameters, InterpolationType};
 
 /// Functions for making the scalar product with a sinc
 pub trait SincInterpolator<T> {
@@ -39,7 +36,10 @@ pub struct ScalarInterpolator<T> {
     nbr_sincs: usize,
 }
 
-impl<T: Float> SincInterpolator<T> for ScalarInterpolator<T> {
+impl<T> SincInterpolator<T> for ScalarInterpolator<T>
+where
+    T: Sample,
+{
     /// Calculate the scalar produt of an input wave and the selected sinc filter
     fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T {
         let wave_cut = &wave[index..(index + self.sincs[subindex].len())];
@@ -78,7 +78,10 @@ impl<T: Float> SincInterpolator<T> for ScalarInterpolator<T> {
     }
 }
 
-impl<T: Float> ScalarInterpolator<T> {
+impl<T> ScalarInterpolator<T>
+where
+    T: Sample,
+{
     /// Create a new ScalarInterpolator
     ///
     /// Parameters are:
@@ -189,10 +192,11 @@ where
     T: Sample,
 {
     let a0 = yvals[1];
-    let a1 = -(T::ONE / T::THREE) * yvals[0] - T::HALF * yvals[1] + yvals[2]
-        - (T::ONE / T::SIX) * yvals[3];
-    let a2 = T::HALF * (yvals[0] + yvals[2]) - yvals[1];
-    let a3 = T::HALF * (yvals[1] - yvals[2]) + (T::ONE / T::SIX) * (yvals[3] - yvals[0]);
+    let a1 = -(T::one() / T::coerce(3.0)) * yvals[0] - T::coerce(0.5) * yvals[1] + yvals[2]
+        - (T::one() / T::coerce(6.0)) * yvals[3];
+    let a2 = T::coerce(0.5) * (yvals[0] + yvals[2]) - yvals[1];
+    let a3 = T::coerce(0.5) * (yvals[1] - yvals[2])
+        + (T::one() / T::coerce(6.0)) * (yvals[3] - yvals[0]);
     let x2 = x * x;
     let x3 = x2 * x;
     a0 + a1 * x + a2 * x2 + a3 * x3
@@ -203,7 +207,7 @@ fn interp_lin<T>(x: T, yvals: &[T; 2]) -> T
 where
     T: Sample,
 {
-    (T::ONE - x) * yvals[0] + x * yvals[1]
+    (T::one() - x) * yvals[0] + x * yvals[1]
 }
 
 impl<T> SincFixedIn<T>
@@ -260,7 +264,7 @@ where
         chunk_size: usize,
         nbr_channels: usize,
     ) -> Self {
-        let buffer = vec![vec![T::MID; chunk_size + 2 * interpolator.len()]; nbr_channels];
+        let buffer = vec![vec![T::zero(); chunk_size + 2 * interpolator.len()]; nbr_channels];
 
         SincFixedIn {
             nbr_channels,
@@ -323,7 +327,7 @@ where
                 self.buffer[*chan][idx + 2 * sinc_len] = *sample;
             }
             wave_out[*chan] =
-                vec![T::MID; (self.chunk_size as f64 * self.resample_ratio + 10.0) as usize];
+                vec![T::zero(); (self.chunk_size as f64 * self.resample_ratio + 10.0) as usize];
         }
 
         let mut idx = self.last_index;
@@ -333,7 +337,7 @@ where
 
         match self.interpolation {
             InterpolationType::Cubic => {
-                let mut points = [T::MID; 4];
+                let mut points = [T::zero(); 4];
                 let mut nearest = [(0isize, 0isize); 4];
                 while idx < end_idx as f64 {
                     idx += t_ratio;
@@ -356,7 +360,7 @@ where
                 }
             }
             InterpolationType::Linear => {
-                let mut points = [T::MID; 2];
+                let mut points = [T::zero(); 2];
                 let mut nearest = [(0isize, 0isize); 2];
                 while idx < end_idx as f64 {
                     idx += t_ratio;
@@ -499,7 +503,7 @@ where
         let needed_input_size =
             (chunk_size as f64 / resample_ratio).ceil() as usize + 2 + interpolator.len() / 2;
         let buffer =
-            vec![vec![T::MID; 3 * needed_input_size / 2 + 2 * interpolator.len()]; nbr_channels];
+            vec![vec![T::zero(); 3 * needed_input_size / 2 + 2 * interpolator.len()]; nbr_channels];
 
         SincFixedOut {
             nbr_channels,
@@ -570,7 +574,7 @@ where
             for (idx, sample) in wave_in[*chan].iter().enumerate() {
                 self.buffer[*chan][idx + 2 * sinc_len] = *sample;
             }
-            wave_out[*chan] = vec![T::MID; self.chunk_size];
+            wave_out[*chan] = vec![T::zero(); self.chunk_size];
         }
 
         let mut idx = self.last_index;
@@ -578,7 +582,7 @@ where
 
         match self.interpolation {
             InterpolationType::Cubic => {
-                let mut points = [T::MID; 4];
+                let mut points = [T::zero(); 4];
                 let mut nearest = [(0isize, 0isize); 4];
                 for n in 0..self.chunk_size {
                     idx += t_ratio;
@@ -600,7 +604,7 @@ where
                 }
             }
             InterpolationType::Linear => {
-                let mut points = [T::MID; 2];
+                let mut points = [T::zero(); 2];
                 let mut nearest = [(0isize, 0isize); 2];
                 for n in 0..self.chunk_size {
                     idx += t_ratio;

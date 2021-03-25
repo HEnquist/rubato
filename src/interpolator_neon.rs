@@ -6,12 +6,13 @@ use core::arch::aarch64::{vaddq_f32, vmulq_f32};
 use core::arch::aarch64::{vaddq_f64, vmulq_f64};
 use packed_simd_2::{f32x4, f64x2};
 use crate::error::{MissingCpuFeatures, CpuFeature};
+use crate::Sample;
 
 /// Collection of cpu features required for this interpolator.
 static FEATURES: &[CpuFeature] = &[CpuFeature::Neon];
 
 /// Trait governing what can be done with an NeonSample.
-pub trait NeonSample: Sized + num_traits::Float {
+pub trait NeonSample: Sized {
     type Sinc;
 
     unsafe fn pack_sincs(sincs: Vec<Vec<Self>>) -> Vec<Vec<Self::Sinc>>;
@@ -150,7 +151,7 @@ pub struct NeonInterpolator<T> where T: NeonSample {
     nbr_sincs: usize,
 }
 
-impl<T> SincInterpolator<T> for NeonInterpolator<T> where T: NeonSample {
+impl<T> SincInterpolator<T> for NeonInterpolator<T> where T: Sample {
     /// Calculate the scalar produt of an input wave and the selected sinc filter
     fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T {
         assert!((index + self.length) < wave.len());
@@ -167,7 +168,7 @@ impl<T> SincInterpolator<T> for NeonInterpolator<T> where T: NeonSample {
     }
 }
 
-impl<T> NeonInterpolator<T> where T: NeonSample {
+impl<T> NeonInterpolator<T> where T: Sample {
     /// Create a new NeonInterpolator
     ///
     /// Parameters are:
@@ -187,7 +188,7 @@ impl<T> NeonInterpolator<T> where T: NeonSample {
 
         assert!(sinc_len % 8 == 0, "Sinc length must be a multiple of 8.");
         let sincs = make_sincs(sinc_len, oversampling_factor, f_cutoff, window);
-        let sincs = unsafe { T::pack_sincs(sincs) };
+        let sincs = unsafe { <T as NeonSample>::pack_sincs(sincs) };
 
         Ok(Self {
             sinc,

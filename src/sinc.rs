@@ -1,42 +1,44 @@
 use crate::windows::{make_window, WindowFunction};
-use num_traits::Float;
+use crate::Sample;
 
 /// Helper function: sinc(x) = sin(pi*x)/(pi*x)
-pub fn sinc<T: Float>(value: T) -> T {
-    let pi = T::from(std::f64::consts::PI).unwrap();
+pub fn sinc<T>(value: T) -> T
+where
+    T: Sample,
+{
     if value == T::zero() {
-        T::from(1.0).unwrap()
+        T::one()
     } else {
-        (T::from(value).unwrap() * pi).sin() / (T::from(value).unwrap() * pi)
+        (value * T::PI).sin() / (value * T::PI)
     }
 }
 
 /// Helper function. Make a set of windowed sincs.  
-pub fn make_sincs<T: Float>(
+pub fn make_sincs<T>(
     npoints: usize,
     factor: usize,
     f_cutoff: f32,
     windowfunc: WindowFunction,
-) -> Vec<Vec<T>> {
-    let totpoints = (npoints * factor) as isize;
-    let mut y = Vec::with_capacity(totpoints as usize);
-    let window = make_window::<T>(totpoints as usize, windowfunc);
+) -> Vec<Vec<T>>
+where
+    T: Sample,
+{
+    let totpoints = npoints * factor;
+    let mut y = Vec::with_capacity(totpoints);
+    let window = make_window::<T>(totpoints, windowfunc);
     let mut sum = T::zero();
     for x in 0..totpoints {
-        let val = window[x as usize]
+        let val = window[x]
             * sinc(
-                T::from(x - totpoints / 2).unwrap() * T::from(f_cutoff).unwrap()
-                    / T::from(factor).unwrap(),
+                (T::coerce(x) - T::coerce(totpoints / 2)) * T::coerce(f_cutoff) / T::coerce(factor),
             );
         sum = sum + val;
         y.push(val);
     }
-    sum = sum / T::from(factor).unwrap();
+    sum = sum / T::coerce(factor);
     debug!(
         "Generate sincs, length: {}, oversampling: {}, normalized by: {:?}",
-        npoints,
-        factor,
-        sum.to_f64()
+        npoints, factor, sum
     );
     let mut sincs = vec![vec![T::zero(); npoints]; factor];
     for p in 0..npoints {
