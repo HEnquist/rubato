@@ -3,7 +3,7 @@ use std::fmt;
 
 /// An identifier for a cpu feature.
 #[allow(dead_code)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CpuFeature {
     /// x86 sse3 cpu feature.
     Sse3,
@@ -65,6 +65,8 @@ pub enum ResampleError {
     /// Error raised when Resample::set_resample_ratio is called with a ratio
     /// that deviates for more than 10% of the original.
     BadRatioUpdate,
+    /// Error raised when trying to adjust a synchronous resampler.
+    SyncNotAdjustable,
     /// Error raised when the number of channels doesn't match expected.
     WrongNumberOfChannels { expected: usize, actual: usize },
     /// Error raised when the number of frames in a single channel doesn't match
@@ -81,6 +83,9 @@ impl fmt::Display for ResampleError {
         match self {
             Self::BadRatioUpdate => {
                 write!(f, "New resample ratio is too far off from original")
+            }
+            Self::SyncNotAdjustable { .. } => {
+                write!(f, "Not possible to adjust a synchronous resampler")
             }
             Self::WrongNumberOfChannels { expected, actual } => {
                 write!(

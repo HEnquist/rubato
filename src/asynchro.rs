@@ -1,5 +1,3 @@
-use crate::windows::WindowFunction;
-
 use crate::error::{ResampleError, ResampleResult};
 use crate::interpolation::*;
 #[cfg(all(target_arch = "x86_64", feature = "avx"))]
@@ -9,8 +7,9 @@ use crate::interpolator_neon::NeonInterpolator;
 #[cfg(target_arch = "x86_64")]
 use crate::interpolator_sse::SseInterpolator;
 use crate::sinc::make_sincs;
-use crate::{AsyncResampler, Resampler, Sample};
+use crate::windows::WindowFunction;
 use crate::{InterpolationParameters, InterpolationType};
+use crate::{Resampler, Sample};
 
 /// Functions for making the scalar product with a sinc
 pub trait SincInterpolator<T> {
@@ -422,12 +421,7 @@ where
     fn nbr_frames_needed(&self) -> usize {
         self.chunk_size
     }
-}
 
-impl<T> AsyncResampler<T> for SincFixedIn<T>
-where
-    T: Sample,
-{
     /// Update the resample ratio. New value must be within +-10% of the original one
     fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()> {
         trace!("Change resample ratio to {}", new_ratio);
@@ -662,12 +656,7 @@ where
         );
         Ok(wave_out)
     }
-}
 
-impl<T> AsyncResampler<T> for SincFixedOut<T>
-where
-    T: Sample,
-{
     /// Update the resample ratio. New value must be within +-10% of the original one
     fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()> {
         trace!("Change resample ratio to {}", new_ratio);

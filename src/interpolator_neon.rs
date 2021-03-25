@@ -203,10 +203,9 @@ impl<T> NeonInterpolator<T> where T: Sample {
         let sincs = unsafe { <T as NeonSample>::pack_sincs(sincs) };
 
         Ok(Self {
-            sinc,
+            sincs,
             length: sinc_len,
             nbr_sincs: oversampling_factor,
-            phantom: PhantomData,
         })
     }
 }

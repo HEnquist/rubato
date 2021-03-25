@@ -200,9 +200,7 @@ pub trait Resampler<T> {
 
     /// Query for the number of frames needed for the next call to "process".
     fn nbr_frames_needed(&self) -> usize;
-}
 
-pub trait AsyncResampler<T>: Resampler<T> {
     /// Update the resample ratio.
     fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()>;
 

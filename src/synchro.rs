@@ -260,6 +260,18 @@ where
         }
         Ok(wave_out)
     }
+
+    /// Update the resample ratio. This is not supported by this resampler and
+    /// always returns an error.
+    fn set_resample_ratio(&mut self, _new_ratio: f64) -> ResampleResult<()> {
+        Err(ResampleError::SyncNotAdjustable)
+    }
+
+    /// Update the resample ratio relative to the original one. This is not
+    /// supported by this resampler and always returns an error.
+    fn set_resample_ratio_relative(&mut self, _rel_ratio: f64) -> ResampleResult<()> {
+        Err(ResampleError::SyncNotAdjustable)
+    }
 }
 
 impl<T> FftFixedOut<T>
@@ -394,6 +406,18 @@ where
         let chunks_needed = (frames_needed_out as f32 / self.fft_size_out as f32).ceil() as usize;
         self.frames_needed = chunks_needed * self.fft_size_in;
         Ok(wave_out)
+    }
+
+    /// Update the resample ratio. This is not supported by this resampler and
+    /// always returns an error.
+    fn set_resample_ratio(&mut self, _new_ratio: f64) -> ResampleResult<()> {
+        Err(ResampleError::SyncNotAdjustable)
+    }
+
+    /// Update the resample ratio relative to the original one. This is not
+    /// supported by this resampler and always returns an error.
+    fn set_resample_ratio_relative(&mut self, _rel_ratio: f64) -> ResampleResult<()> {
+        Err(ResampleError::SyncNotAdjustable)
     }
 }
 
@@ -549,6 +573,18 @@ where
         }
         self.saved_frames = extra;
         Ok(wave_out)
+    }
+
+    /// Update the resample ratio. This is not supported by this resampler and
+    /// always returns an error.
+    fn set_resample_ratio(&mut self, _new_ratio: f64) -> ResampleResult<()> {
+        Err(ResampleError::SyncNotAdjustable)
+    }
+
+    /// Update the resample ratio relative to the original one. This is not
+    /// supported by this resampler and always returns an error.
+    fn set_resample_ratio_relative(&mut self, _rel_ratio: f64) -> ResampleResult<()> {
+        Err(ResampleError::SyncNotAdjustable)
     }
 }
 

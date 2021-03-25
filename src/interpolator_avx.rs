@@ -193,6 +193,7 @@ mod tests {
     use crate::interpolator_avx::AvxInterpolator;
     use crate::sinc::make_sincs;
     use crate::WindowFunction;
+    use crate::error::MissingCpuFeatures;
     use num_traits::Float;
     use rand::Rng;
 
@@ -219,7 +220,9 @@ mod tests {
 
         let interpolator = match AvxInterpolator::<f64>::new(sinc_len, oversampling_factor, f_cutoff, window) {
             Ok(interpolator) => interpolator,
-            Err(..) => return,
+            // expected in case test is run on a platform without all the necessary CPU features.
+            Err(MissingCpuFeatures(f)) if f == crate::interpolator_avx::FEATURES => return,
+            Err(e) => panic!("{}", e),
         };
 
         let value = interpolator.get_sinc_interpolated(&wave, 333, 123);
@@ -242,7 +245,9 @@ mod tests {
 
         let interpolator = match AvxInterpolator::<f32>::new(sinc_len, oversampling_factor, f_cutoff, window) {
             Ok(interpolator) => interpolator,
-            Err(..) => return,
+            // expected in case test is run on a platform without all the necessary CPU features.
+            Err(MissingCpuFeatures(f)) if f == crate::interpolator_avx::FEATURES => return,
+            Err(e) => panic!("{}", e),
         };
 
         let value = interpolator.get_sinc_interpolated(&wave, 333, 123);
