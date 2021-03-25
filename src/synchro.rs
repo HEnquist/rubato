@@ -1,4 +1,3 @@
-use crate::error::Result;
 use crate::sinc::make_sincs;
 use crate::windows::WindowFunction;
 use num_complex::Complex;
@@ -6,7 +5,7 @@ use num_integer as integer;
 use num_traits::Zero;
 use std::sync::Arc;
 
-use crate::error::Error;
+use crate::error::{ResampleError, ResampleResult};
 use crate::Resampler;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 
@@ -245,14 +244,14 @@ macro_rules! resampler_FftFixedinout {
             }
 
             /// Update the resample ratio. This is not supported by this resampler and always returns an error.
-            fn set_resample_ratio(&mut self, _new_ratio: f64) -> Result<()> {
-                Err(Error::SyncNotAdjustable)
+            fn set_resample_ratio(&mut self, _new_ratio: f64) -> ResampleResult<()> {
+                Err(ResampleError::SyncNotAdjustable)
             }
 
             /// Update the resample ratio relative to the original one.
             /// This is not supported by this resampler and always returns an error.
-            fn set_resample_ratio_relative(&mut self, _rel_ratio: f64) -> Result<()> {
-                Err(Error::SyncNotAdjustable)
+            fn set_resample_ratio_relative(&mut self, _rel_ratio: f64) -> ResampleResult<()> {
+                Err(ResampleError::SyncNotAdjustable)
             }
 
             /// Resample a chunk of audio. The input and output lengths are fixed.
@@ -262,9 +261,9 @@ macro_rules! resampler_FftFixedinout {
             ///
             /// The function returns an error if the size of the input data is not equal
             /// to the number of channels and input size defined when creating the instance.
-            fn process(&mut self, wave_in: &[Vec<$t>]) -> Result<Vec<Vec<$t>>> {
+            fn process(&mut self, wave_in: &[Vec<$t>]) -> ResampleResult<Vec<Vec<$t>>> {
                 if wave_in.len() != self.nbr_channels {
-                    return Err(Error::WrongNumberOfChannels {
+                    return Err(ResampleError::WrongNumberOfChannels {
                         expected: self.nbr_channels,
                         actual: wave_in.len(),
                     });
@@ -274,7 +273,7 @@ macro_rules! resampler_FftFixedinout {
                     if !wave.is_empty() {
                         used_channels.push(chan);
                         if wave.len() != self.chunk_size_in {
-                            return Err(Error::WrongNumberOfFrames {
+                            return Err(ResampleError::WrongNumberOfFrames {
                                 channel: chan,
                                 expected: self.chunk_size_in,
                                 actual: wave.len(),
@@ -370,14 +369,14 @@ macro_rules! resampler_FftFixedout {
             }
 
             /// Update the resample ratio. This is not supported by this resampler and always returns an error.
-            fn set_resample_ratio(&mut self, _new_ratio: f64) -> Result<()> {
-                Err(Error::SyncNotAdjustable)
+            fn set_resample_ratio(&mut self, _new_ratio: f64) -> ResampleResult<()> {
+                Err(ResampleError::SyncNotAdjustable)
             }
 
             /// Update the resample ratio relative to the original one.
             /// This is not supported by this resampler and always returns an error.
-            fn set_resample_ratio_relative(&mut self, _rel_ratio: f64) -> Result<()> {
-                Err(Error::SyncNotAdjustable)
+            fn set_resample_ratio_relative(&mut self, _rel_ratio: f64) -> ResampleResult<()> {
+                Err(ResampleError::SyncNotAdjustable)
             }
 
             /// Resample a chunk of audio. The required input length is provided by
@@ -389,9 +388,9 @@ macro_rules! resampler_FftFixedout {
             /// The function returns an error if the length of the input data is not
             /// equal to the number of channels defined when creating the instance,
             /// and the number of audio frames given by "nbr_frames_needed".
-            fn process(&mut self, wave_in: &[Vec<$t>]) -> Result<Vec<Vec<$t>>> {
+            fn process(&mut self, wave_in: &[Vec<$t>]) -> ResampleResult<Vec<Vec<$t>>> {
                 if wave_in.len() != self.nbr_channels {
-                    return Err(Error::WrongNumberOfChannels {
+                    return Err(ResampleError::WrongNumberOfChannels {
                         expected: self.nbr_channels,
                         actual: wave_in.len(),
                     });
@@ -401,7 +400,7 @@ macro_rules! resampler_FftFixedout {
                     if !wave.is_empty() {
                         used_channels.push(chan);
                         if wave.len() != self.frames_needed {
-                            return Err(Error::WrongNumberOfFrames {
+                            return Err(ResampleError::WrongNumberOfFrames {
                                 channel: chan,
                                 expected: self.frames_needed,
                                 actual: wave.len(),
@@ -521,14 +520,14 @@ macro_rules! resampler_FftFixedin {
             }
 
             /// Update the resample ratio. This is not supported by this resampler and always returns an error.
-            fn set_resample_ratio(&mut self, _new_ratio: f64) -> Result<()> {
-                Err(Error::SyncNotAdjustable)
+            fn set_resample_ratio(&mut self, _new_ratio: f64) -> ResampleResult<()> {
+                Err(ResampleError::SyncNotAdjustable)
             }
 
             /// Update the resample ratio relative to the original one.
             /// This is not supported by this resampler and always returns an error.
-            fn set_resample_ratio_relative(&mut self, _rel_ratio: f64) -> Result<()> {
-                Err(Error::SyncNotAdjustable)
+            fn set_resample_ratio_relative(&mut self, _rel_ratio: f64) -> ResampleResult<()> {
+                Err(ResampleError::SyncNotAdjustable)
             }
 
             /// Resample a chunk of audio. The required input length is provided by
@@ -540,9 +539,9 @@ macro_rules! resampler_FftFixedin {
             /// The function returns an error if the length of the input data is not
             /// equal to the number of channels defined when creating the instance,
             /// and the number of audio frames given by "nbr_frames_needed".
-            fn process(&mut self, wave_in: &[Vec<$t>]) -> Result<Vec<Vec<$t>>> {
+            fn process(&mut self, wave_in: &[Vec<$t>]) -> ResampleResult<Vec<Vec<$t>>> {
                 if wave_in.len() != self.nbr_channels {
-                    return Err(Error::WrongNumberOfChannels {
+                    return Err(ResampleError::WrongNumberOfChannels {
                         expected: self.nbr_channels,
                         actual: wave_in.len(),
                     });
@@ -552,7 +551,7 @@ macro_rules! resampler_FftFixedin {
                     if !wave.is_empty() {
                         used_channels.push(chan);
                         if wave.len() != self.chunk_size_in {
-                            return Err(Error::WrongNumberOfFrames {
+                            return Err(ResampleError::WrongNumberOfFrames {
                                 channel: chan,
                                 expected: self.chunk_size_in,
                                 actual: wave.len(),

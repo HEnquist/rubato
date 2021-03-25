@@ -3,10 +3,10 @@ use std::fmt;
 
 /// The error type used by `rubato`.
 #[derive(Debug)]
-pub enum Error {
+pub enum ResampleError {
     /// Error raised when Resample::set_resample_ratio is called with a ratio
     /// that deviates for more than 10% of the original.
-    BadResampleRatioUpdate,
+    BadRatioUpdate,
     /// Error raised when trying to adjust a synchronous resampler.
     SyncNotAdjustable,
     /// Error raised when the number of channels doesn't match expected.
@@ -20,10 +20,10 @@ pub enum Error {
     },
 }
 
-impl fmt::Display for Error {
+impl fmt::Display for ResampleError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::BadResampleRatioUpdate => {
+            Self::BadRatioUpdate => {
                 write!(f, "New resample ratio is too far off from original")
             }
             Self::SyncNotAdjustable { .. } => {
@@ -51,7 +51,7 @@ impl fmt::Display for Error {
     }
 }
 
-impl error::Error for Error {}
+impl error::Error for ResampleError {}
 
 /// A result alias for the error type used by `rubato`.
-pub type Result<T, E = Error> = ::std::result::Result<T, E>;
+pub type ResampleResult<T> = ::std::result::Result<T, ResampleError>;

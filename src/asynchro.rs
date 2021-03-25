@@ -12,7 +12,7 @@ use crate::{InterpolationParameters, InterpolationType};
 
 use num_traits::Float;
 
-use crate::error::{Error, Result};
+use crate::error::{ResampleError, ResampleResult};
 use crate::Resampler;
 
 /// Functions for making the scalar product with a sinc
@@ -288,9 +288,9 @@ macro_rules! resampler_sincfixedin {
             ///
             /// The function returns an error if the length of the input data is not equal
             /// to the number of channels and chunk size defined when creating the instance.
-            fn process(&mut self, wave_in: &[Vec<$t>]) -> Result<Vec<Vec<$t>>> {
+            fn process(&mut self, wave_in: &[Vec<$t>]) -> ResampleResult<Vec<Vec<$t>>> {
                 if wave_in.len() != self.nbr_channels {
-                    return Err(Error::WrongNumberOfChannels {
+                    return Err(ResampleError::WrongNumberOfChannels {
                         expected: self.nbr_channels,
                         actual: wave_in.len(),
                     });
@@ -300,7 +300,7 @@ macro_rules! resampler_sincfixedin {
                     if !wave.is_empty() {
                         used_channels.push(chan);
                         if wave.len() != self.chunk_size {
-                            return Err(Error::WrongNumberOfFrames {
+                            return Err(ResampleError::WrongNumberOfFrames {
                                 channel: chan,
                                 expected: self.chunk_size,
                                 actual: wave.len(),
@@ -419,7 +419,7 @@ macro_rules! resampler_sincfixedin {
             }
 
             /// Update the resample ratio. New value must be within +-10% of the original one
-            fn set_resample_ratio(&mut self, new_ratio: f64) -> Result<()> {
+            fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()> {
                 trace!("Change resample ratio to {}", new_ratio);
                 if (new_ratio / self.resample_ratio_original > 0.9)
                     && (new_ratio / self.resample_ratio_original < 1.1)
@@ -427,11 +427,11 @@ macro_rules! resampler_sincfixedin {
                     self.resample_ratio = new_ratio;
                     Ok(())
                 } else {
-                    Err(Error::BadResampleRatioUpdate)
+                    Err(ResampleError::BadRatioUpdate)
                 }
             }
             /// Update the resample ratio relative to the original one
-            fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> Result<()> {
+            fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> ResampleResult<()> {
                 let new_ratio = self.resample_ratio_original * rel_ratio;
                 self.set_resample_ratio(new_ratio)
             }
@@ -524,7 +524,7 @@ macro_rules! resampler_sincfixedout {
             }
 
             /// Update the resample ratio. New value must be within +-10% of the original one
-            fn set_resample_ratio(&mut self, new_ratio: f64) -> Result<()> {
+            fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()> {
                 trace!("Change resample ratio to {}", new_ratio);
                 if (new_ratio / self.resample_ratio_original > 0.9)
                     && (new_ratio / self.resample_ratio_original < 1.1)
@@ -537,12 +537,12 @@ macro_rules! resampler_sincfixedout {
                         + 2;
                     Ok(())
                 } else {
-                    Err(Error::BadResampleRatioUpdate)
+                    Err(ResampleError::BadRatioUpdate)
                 }
             }
 
             /// Update the resample ratio relative to the original one
-            fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> Result<()> {
+            fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> ResampleResult<()> {
                 let new_ratio = self.resample_ratio_original * rel_ratio;
                 self.set_resample_ratio(new_ratio)
             }
@@ -556,10 +556,10 @@ macro_rules! resampler_sincfixedout {
             /// The function returns an error if the length of the input data is not
             /// equal to the number of channels defined when creating the instance,
             /// and the number of audio frames given by "nbr_frames_needed".
-            fn process(&mut self, wave_in: &[Vec<$t>]) -> Result<Vec<Vec<$t>>> {
+            fn process(&mut self, wave_in: &[Vec<$t>]) -> ResampleResult<Vec<Vec<$t>>> {
                 //update buffer with new data
                 if wave_in.len() != self.nbr_channels {
-                    return Err(Error::WrongNumberOfChannels {
+                    return Err(ResampleError::WrongNumberOfChannels {
                         expected: self.nbr_channels,
                         actual: wave_in.len(),
                     });
@@ -571,7 +571,7 @@ macro_rules! resampler_sincfixedout {
                     if !wave.is_empty() {
                         used_channels.push(chan);
                         if wave.len() != self.needed_input_size {
-                            return Err(Error::WrongNumberOfFrames {
+                            return Err(ResampleError::WrongNumberOfFrames {
                                 channel: chan,
                                 expected: self.needed_input_size,
                                 actual: wave.len(),

@@ -90,7 +90,7 @@ pub use crate::asynchro::{ScalarInterpolator, SincFixedIn, SincFixedOut};
 pub use crate::synchro::{FftFixedIn, FftFixedInOut, FftFixedOut};
 pub use crate::windows::WindowFunction;
 
-pub use crate::error::{Error, Result};
+pub use crate::error::{ResampleError, ResampleResult};
 
 #[macro_use]
 extern crate log;
@@ -156,13 +156,13 @@ pub enum InterpolationType {
 pub trait Resampler<T> {
     /// Resample a chunk of audio. Input and output data is stored in a vector,
     /// where each element contains a vector with all samples for a single channel.
-    fn process(&mut self, wave_in: &[Vec<T>]) -> Result<Vec<Vec<T>>>;
+    fn process(&mut self, wave_in: &[Vec<T>]) -> ResampleResult<Vec<Vec<T>>>;
 
     /// Update the resample ratio.
-    fn set_resample_ratio(&mut self, new_ratio: f64) -> Result<()>;
+    fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()>;
 
     /// Update the resample ratio relative to the original one.
-    fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> Result<()>;
+    fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> ResampleResult<()>;
 
     /// Query for the number of frames needed for the next call to "process".
     fn nbr_frames_needed(&self) -> usize;
