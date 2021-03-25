@@ -10,85 +10,29 @@ use core::arch::x86_64::{
 use core::arch::x86_64::{
     _mm256_fmadd_ps, _mm256_loadu_ps, _mm256_setzero_ps, _mm_add_ps, _mm_hadd_ps,
 };
-use std::marker::PhantomData;
 
 use crate::asynchro::SincInterpolator;
 
-/// An AVX accelerated interpolator
-pub struct AvxInterpolator<T> {
-    sincs_s: Option<Vec<Vec<__m256>>>,
-    sincs_d: Option<Vec<Vec<__m256d>>>,
-    length: usize,
-    nbr_sincs: usize,
-    phantom: PhantomData<T>,
+/// Trait governing what can be done with an AvxSample.
+pub trait AvxSample: Sized + num_traits::Float {
+    type Sinc;
+
+    unsafe fn pack_sincs(sincs: Vec<Vec<Self>>) -> Vec<Vec<Self::Sinc>>;
+
+    unsafe fn get_sinc_interpolated_unsafe(
+        wave: &[Self],
+        index: usize,
+        subindex: usize,
+        sincs: &Vec<Vec<Self::Sinc>>,
+        length: usize,
+    ) -> Self;
 }
 
-impl SincInterpolator<f32> for AvxInterpolator<f32> {
-    /// Calculate the scalar produt of an input wave and the selected sinc filter
-    fn get_sinc_interpolated(&self, wave: &[f32], index: usize, subindex: usize) -> f32 {
-        assert!((index + self.length) < wave.len());
-        assert!(subindex < self.nbr_sincs);
-        unsafe { self.get_sinc_interpolated_unsafe(wave, index, subindex) }
-    }
-
-    fn len(&self) -> usize {
-        self.length
-    }
-
-    fn nbr_sincs(&self) -> usize {
-        self.nbr_sincs
-    }
-}
-
-impl SincInterpolator<f64> for AvxInterpolator<f64> {
-    /// Calculate the scalar produt of an input wave and the selected sinc filter
-    fn get_sinc_interpolated(&self, wave: &[f64], index: usize, subindex: usize) -> f64 {
-        assert!((index + self.length) < wave.len());
-        assert!(subindex < self.nbr_sincs);
-        unsafe { self.get_sinc_interpolated_unsafe(wave, index, subindex) }
-    }
-
-    fn len(&self) -> usize {
-        self.length
-    }
-
-    fn nbr_sincs(&self) -> usize {
-        self.nbr_sincs
-    }
-}
-
-impl AvxInterpolator<f32> {
-    /// Create a new AvxInterpolator
-    ///
-    /// Parameters are:
-    /// - `sinc_len`: Length of sinc functions.
-    /// - `oversampling_factor`: Number of intermediate sincs (oversampling factor).
-    /// - `f_cutoff`: Relative cutoff frequency.
-    /// - `window`: Window function to use.
-    pub fn new(
-        sinc_len: usize,
-        oversampling_factor: usize,
-        f_cutoff: f32,
-        window: WindowFunction,
-    ) -> Self {
-        assert!(
-            is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma"),
-            "CPU does not have the required AVX and FMA support!"
-        );
-        assert!(sinc_len % 8 == 0, "Sinc length must be a multiple of 8.");
-        let sincs = make_sincs(sinc_len, oversampling_factor, f_cutoff, window);
-        let sincs = unsafe { Self::pack_sincs_single(sincs) };
-        Self {
-            sincs_s: Some(sincs),
-            sincs_d: None,
-            length: sinc_len,
-            nbr_sincs: oversampling_factor,
-            phantom: PhantomData,
-        }
-    }
+impl AvxSample for f32 {
+    type Sinc = __m256;
 
     #[target_feature(enable = "avx", enable = "fma")]
-    unsafe fn pack_sincs_single(sincs: Vec<Vec<f32>>) -> Vec<Vec<__m256>> {
+    unsafe fn pack_sincs(sincs: Vec<Vec<Self>>) -> Vec<Vec<Self::Sinc>> {
         let mut packed_sincs = Vec::new();
         for sinc in sincs.iter() {
             let mut packed = Vec::new();
@@ -103,16 +47,17 @@ impl AvxInterpolator<f32> {
 
     #[target_feature(enable = "avx", enable = "fma")]
     unsafe fn get_sinc_interpolated_unsafe(
-        &self,
         wave: &[f32],
         index: usize,
         subindex: usize,
+        sincs: &Vec<Vec<Self::Sinc>>,
+        length: usize,
     ) -> f32 {
-        let sinc = &self.sincs_s.as_ref().unwrap().get_unchecked(subindex);
-        let wave_cut = &wave[index..(index + self.length)];
+        let sinc = sincs.get_unchecked(subindex);
+        let wave_cut = &wave[index..(index + length)];
         let mut acc = _mm256_setzero_ps();
         let mut w_idx = 0;
-        for s_idx in 0..self.length / 8 {
+        for s_idx in 0..length / 8 {
             let w = _mm256_loadu_ps(wave_cut.get_unchecked(w_idx));
             acc = _mm256_fmadd_ps(w, *sinc.get_unchecked(s_idx), acc);
             w_idx += 8;
@@ -125,38 +70,11 @@ impl AvxInterpolator<f32> {
     }
 }
 
-impl AvxInterpolator<f64> {
-    /// Create a new AvxInterpolator
-    ///
-    /// Parameters are:
-    /// - `sinc_len`: Length of sinc functions.
-    /// - `oversampling_factor`: Number of intermediate sincs (oversampling factor).
-    /// - `f_cutoff`: Relative cutoff frequency.
-    /// - `window`: Window function to use.
-    pub fn new(
-        sinc_len: usize,
-        oversampling_factor: usize,
-        f_cutoff: f32,
-        window: WindowFunction,
-    ) -> Self {
-        assert!(
-            is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma"),
-            "CPU does not have the required AVX and FMA support!"
-        );
-        assert!(sinc_len % 8 == 0, "Sinc length must be a multiple of 8.");
-        let sincs = make_sincs(sinc_len, oversampling_factor, f_cutoff, window);
-        let sincs = unsafe { Self::pack_sincs_double(sincs) };
-        Self {
-            sincs_d: Some(sincs),
-            sincs_s: None,
-            length: sinc_len,
-            nbr_sincs: oversampling_factor,
-            phantom: PhantomData,
-        }
-    }
+impl AvxSample for f64 {
+    type Sinc = __m256d;
 
     #[target_feature(enable = "avx", enable = "fma")]
-    unsafe fn pack_sincs_double(sincs: Vec<Vec<f64>>) -> Vec<Vec<__m256d>> {
+    unsafe fn pack_sincs(sincs: Vec<Vec<f64>>) -> Vec<Vec<Self::Sinc>> {
         let mut packed_sincs = Vec::new();
         for sinc in sincs.iter() {
             let mut packed = Vec::new();
@@ -171,13 +89,14 @@ impl AvxInterpolator<f64> {
 
     #[target_feature(enable = "avx", enable = "fma")]
     unsafe fn get_sinc_interpolated_unsafe(
-        &self,
         wave: &[f64],
         index: usize,
         subindex: usize,
+        sincs: &Vec<Vec<Self::Sinc>>,
+        length: usize,
     ) -> f64 {
-        let sinc = &self.sincs_d.as_ref().unwrap().get_unchecked(subindex);
-        let wave_cut = &wave[index..(index + self.length)];
+        let sinc = sincs.get_unchecked(subindex);
+        let wave_cut = &wave[index..(index + length)];
         let mut acc0 = _mm256_setzero_pd();
         let mut acc1 = _mm256_setzero_pd();
         let mut w_idx = 0;
@@ -195,6 +114,59 @@ impl AvxInterpolator<f64> {
         let acc = _mm_add_pd(acc_high, _mm256_castpd256_pd128(acc_all));
         let array = std::mem::transmute::<__m128d, [f64; 2]>(acc);
         array[0] + array[1]
+    }
+}
+
+/// An AVX accelerated interpolator
+pub struct AvxInterpolator<T> where T: AvxSample {
+    sincs: Vec<Vec<T::Sinc>>,
+    length: usize,
+    nbr_sincs: usize,
+}
+
+impl<T> SincInterpolator<T> for AvxInterpolator<T> where T: AvxSample {
+    /// Calculate the scalar produt of an input wave and the selected sinc filter
+    fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T {
+        assert!((index + self.length) < wave.len());
+        assert!(subindex < self.nbr_sincs);
+        unsafe { T::get_sinc_interpolated_unsafe(wave, index, subindex, &self.sincs, self.length) }
+    }
+
+    fn len(&self) -> usize {
+        self.length
+    }
+
+    fn nbr_sincs(&self) -> usize {
+        self.nbr_sincs
+    }
+}
+
+impl<T> AvxInterpolator<T> where T: AvxSample {
+    /// Create a new AvxInterpolator
+    ///
+    /// Parameters are:
+    /// - `sinc_len`: Length of sinc functions.
+    /// - `oversampling_factor`: Number of intermediate sincs (oversampling factor).
+    /// - `f_cutoff`: Relative cutoff frequency.
+    /// - `window`: Window function to use.
+    pub fn new(
+        sinc_len: usize,
+        oversampling_factor: usize,
+        f_cutoff: f32,
+        window: WindowFunction,
+    ) -> Self {
+        assert!(
+            is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma"),
+            "CPU does not have the required AVX and FMA support!"
+        );
+        assert!(sinc_len % 8 == 0, "Sinc length must be a multiple of 8.");
+        let sincs = make_sincs(sinc_len, oversampling_factor, f_cutoff, window);
+        let sincs = unsafe { T::pack_sincs(sincs) };
+        Self {
+            sincs,
+            length: sinc_len,
+            nbr_sincs: oversampling_factor,
+        }
     }
 }
 

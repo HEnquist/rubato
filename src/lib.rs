@@ -77,20 +77,60 @@
 mod asynchro;
 mod error;
 mod interpolation;
-#[cfg(all(target_arch = "x86_64", feature = "avx"))]
-pub mod interpolator_avx;
-#[cfg(all(target_arch = "aarch64", feature = "neon"))]
-pub mod interpolator_neon;
-#[cfg(target_arch = "x86_64")]
-pub mod interpolator_sse;
+mod sample;
 mod sinc;
 mod synchro;
 mod windows;
+
 pub use crate::asynchro::{ScalarInterpolator, SincFixedIn, SincFixedOut};
+pub use crate::error::{ResampleError, ResampleResult};
+pub use crate::sample::Sample;
 pub use crate::synchro::{FftFixedIn, FftFixedInOut, FftFixedOut};
 pub use crate::windows::WindowFunction;
 
-pub use crate::error::{ResampleError, ResampleResult};
+/// Helper macro to define a dummy implementation of the sample trait if a
+/// feature is not supported.
+macro_rules! interpolator {
+    (
+    #[cfg($($cond:tt)*)]
+    mod $mod:ident;
+    trait $trait:ident;
+    ) => {
+        #[cfg($($cond)*)]
+        pub mod $mod;
+
+        #[cfg($($cond)*)]
+        use self::$mod::$trait;
+
+        /// Dummy trait when not supported.
+        #[cfg(not($($cond)*))]
+        pub trait $trait {
+        }
+
+        /// Dummy impl of trait when not supported.
+        #[cfg(not($($cond)*))]
+        impl<T> $trait for T where T: Sample {
+        }
+    }
+}
+
+interpolator! {
+    #[cfg(all(target_arch = "x86_64", feature = "avx"))]
+    mod interpolator_avx;
+    trait AvxSample;
+}
+
+interpolator! {
+    #[cfg(target_arch = "x86_64")]
+    mod interpolator_sse;
+    trait SseSample;
+}
+
+interpolator! {
+    #[cfg(all(target_arch = "aarch64", feature = "neon"))]
+    mod interpolator_neon;
+    trait NeonSample;
+}
 
 #[macro_use]
 extern crate log;
@@ -158,12 +198,14 @@ pub trait Resampler<T> {
     /// where each element contains a vector with all samples for a single channel.
     fn process(&mut self, wave_in: &[Vec<T>]) -> ResampleResult<Vec<Vec<T>>>;
 
+    /// Query for the number of frames needed for the next call to "process".
+    fn nbr_frames_needed(&self) -> usize;
+}
+
+pub trait AsyncResampler<T>: Resampler<T> {
     /// Update the resample ratio.
     fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()>;
 
     /// Update the resample ratio relative to the original one.
     fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> ResampleResult<()>;
-
-    /// Query for the number of frames needed for the next call to "process".
-    fn nbr_frames_needed(&self) -> usize;
 }
