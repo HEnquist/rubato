@@ -93,8 +93,8 @@ where
         let sinc = make_sincs::<T>(fft_size_in, 1, cutoff, WindowFunction::BlackmanHarris2);
         let mut filter_t: Vec<T> = vec![T::zero(); 2 * fft_size_in];
         let mut filter_f: Vec<Complex<T>> = vec![Complex::zero(); fft_size_in + 1];
-        for n in 0..fft_size_in {
-            filter_t[n] = sinc[0][n] / T::coerce(2 * fft_size_in);
+        for (n, f) in filter_t.iter_mut().enumerate().take(fft_size_in) {
+            *f = sinc[0][n] / T::coerce(2 * fft_size_in);
         }
 
         let input_f: Vec<Complex<T>> = vec![Complex::zero(); fft_size_in + 1];

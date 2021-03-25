@@ -14,13 +14,25 @@ static FEATURES: &[CpuFeature] = &[CpuFeature::Sse3];
 pub trait SseSample: Sized {
     type Sinc;
 
+    /// Pack sincs into a vector.
+    /// 
+    /// # Safety
+    /// 
+    /// This is unsafe because it uses target_enable dispatching. There are no
+    /// special requirements from the caller.
     unsafe fn pack_sincs(sincs: Vec<Vec<Self>>) -> Vec<Vec<Self::Sinc>>;
 
+    /// Interpolate a sinc sample.
+    /// 
+    /// # Safety
+    /// 
+    /// The caller must ensure that the various indexes are not out of bounds
+    /// in the collection of sincs.
     unsafe fn get_sinc_interpolated_unsafe(
         wave: &[Self],
         index: usize,
         subindex: usize,
-        sincs: &Vec<Vec<Self::Sinc>>,
+        sincs: &[Vec<Self::Sinc>],
         length: usize,
     ) -> Self;
 }
@@ -47,7 +59,7 @@ impl SseSample for f32 {
         wave: &[f32],
         index: usize,
         subindex: usize,
-        sincs: &Vec<Vec<Self::Sinc>>,
+        sincs: &[Vec<Self::Sinc>],
         length: usize,
     ) -> f32 {
         let sinc = sincs.get_unchecked(subindex);
@@ -95,7 +107,7 @@ impl SseSample for f64 {
         wave: &[f64],
         index: usize,
         subindex: usize,
-        sincs: &Vec<Vec<Self::Sinc>>,
+        sincs: &[Vec<Self::Sinc>],
         length: usize,
     ) -> f64 {
         let sinc = sincs.get_unchecked(subindex);
