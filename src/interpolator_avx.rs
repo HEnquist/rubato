@@ -204,8 +204,12 @@ mod tests {
         let oversampling_factor = 256;
         let window = WindowFunction::BlackmanHarris2;
         let sincs = make_sincs::<f64>(sinc_len, oversampling_factor, f_cutoff, window);
-        let interpolator =
-            AvxInterpolator::<f64>::new(sinc_len, oversampling_factor, f_cutoff, window).unwrap();
+
+        let interpolator = match AvxInterpolator::<f64>::new(sinc_len, oversampling_factor, f_cutoff, window) {
+            Ok(interpolator) => interpolator,
+            Err(..) => return,
+        };
+
         let value = interpolator.get_sinc_interpolated(&wave, 333, 123);
         let check = get_sinc_interpolated(&wave, 333, &sincs[123]);
         assert!((value - check).abs() < 1.0e-9);
@@ -223,8 +227,12 @@ mod tests {
         let oversampling_factor = 256;
         let window = WindowFunction::BlackmanHarris2;
         let sincs = make_sincs::<f32>(sinc_len, oversampling_factor, f_cutoff, window);
-        let interpolator =
-            AvxInterpolator::<f32>::new(sinc_len, oversampling_factor, f_cutoff, window).unwrap();
+
+        let interpolator = match AvxInterpolator::<f32>::new(sinc_len, oversampling_factor, f_cutoff, window) {
+            Ok(interpolator) => interpolator,
+            Err(..) => return,
+        };
+
         let value = interpolator.get_sinc_interpolated(&wave, 333, 123);
         let check = get_sinc_interpolated(&wave, 333, &sincs[123]);
         assert!((value - check).abs() < 1.0e-6);
