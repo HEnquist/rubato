@@ -5,6 +5,10 @@ use core::arch::aarch64::{float32x4_t, float64x2_t};
 use core::arch::aarch64::{vaddq_f32, vmulq_f32};
 use core::arch::aarch64::{vaddq_f64, vmulq_f64};
 use packed_simd_2::{f32x4, f64x2};
+use crate::error::{MissingCpuFeatures, CpuFeature};
+
+/// Collection of cpu features required for this interpolator.
+static FEATURES: &[CpuFeature] = &[CpuFeature::Neon];
 
 /// Trait governing what can be done with an NeonSample.
 pub trait NeonSample: Sized + num_traits::Float {
@@ -176,20 +180,21 @@ impl<T> NeonInterpolator<T> where T: NeonSample {
         oversampling_factor: usize,
         f_cutoff: f32,
         window: WindowFunction,
-    ) -> Self {
-        assert!(
-            is_aarch64_feature_detected!("neon"),
-            "CPU does not have the required Neon support!"
-        );
+    ) -> Result<Self, MissingCpuFeatures> {
+        if !is_aarch64_feature_detected!("neon") {
+            return Err(MissingCpuFeatures(FEATURES));
+        }
+
         assert!(sinc_len % 8 == 0, "Sinc length must be a multiple of 8.");
         let sincs = make_sincs(sinc_len, oversampling_factor, f_cutoff, window);
         let sincs = unsafe { T::pack_sincs(sincs) };
-        Self {
+
+        Ok(Self {
             sinc,
             length: sinc_len,
             nbr_sincs: oversampling_factor,
             phantom: PhantomData,
-        }
+        })
     }
 }
 
@@ -223,7 +228,7 @@ mod tests {
         let window = WindowFunction::BlackmanHarris2;
         let sincs = make_sincs::<f64>(sinc_len, oversampling_factor, f_cutoff, window);
         let interpolator =
-            NeonInterpolator::<f64>::new(sinc_len, oversampling_factor, f_cutoff, window);
+            NeonInterpolator::<f64>::new(sinc_len, oversampling_factor, f_cutoff, window).unwrap();
         let value = interpolator.get_sinc_interpolated(&wave, 333, 123);
         let check = get_sinc_interpolated(&wave, 333, &sincs[123]);
         assert!((value - check).abs() < 1.0e-9);
@@ -242,7 +247,7 @@ mod tests {
         let window = WindowFunction::BlackmanHarris2;
         let sincs = make_sincs::<f32>(sinc_len, oversampling_factor, f_cutoff, window);
         let interpolator =
-            NeonInterpolator::<f32>::new(sinc_len, oversampling_factor, f_cutoff, window);
+            NeonInterpolator::<f32>::new(sinc_len, oversampling_factor, f_cutoff, window).unwrap();
         let value = interpolator.get_sinc_interpolated(&wave, 333, 123);
         let check = get_sinc_interpolated(&wave, 333, &sincs[123]);
         assert!((value - check).abs() < 1.0e-6);

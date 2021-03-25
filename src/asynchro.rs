@@ -152,33 +152,28 @@ where
     } else {
         f_cutoff * resample_ratio as f32
     };
+
     #[cfg(all(target_arch = "x86_64", feature = "avx"))]
-    if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") {
-        return Box::new(AvxInterpolator::<T>::new(
-            sinc_len,
-            oversampling_factor,
-            f_cutoff,
-            window,
-        ));
+    if let Ok(interpolator) =
+        AvxInterpolator::<T>::new(sinc_len, oversampling_factor, f_cutoff, window)
+    {
+        return Box::new(interpolator);
     }
+
     #[cfg(target_arch = "x86_64")]
-    if is_x86_feature_detected!("sse3") {
-        return Box::new(SseInterpolator::<T>::new(
-            sinc_len,
-            oversampling_factor,
-            f_cutoff,
-            window,
-        ));
+    if let Ok(interpolator) =
+        SseInterpolator::<T>::new(sinc_len, oversampling_factor, f_cutoff, window)
+    {
+        return Box::new(interpolator);
     }
+
     #[cfg(all(target_arch = "aarch64", feature = "neon"))]
-    if is_aarch64_feature_detected!("neon") {
-        return Box::new(NeonInterpolator::<T>::new(
-            sinc_len,
-            oversampling_factor,
-            f_cutoff,
-            window,
-        ));
+    if let Ok(interpolator) =
+        NeonInterpolator::<T>::new(sinc_len, oversampling_factor, f_cutoff, window)
+    {
+        return Box::new(interpolator);
     }
+
     Box::new(ScalarInterpolator::<T>::new(
         sinc_len,
         oversampling_factor,
