@@ -2,31 +2,62 @@ use std::error;
 use std::fmt;
 
 /// An identifier for a cpu feature.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CpuFeature {
     /// x86 sse3 cpu feature.
+    #[cfg(target_arch = "x86_64")]
     Sse3,
     /// x86_64 avx cpu feature.
+    #[cfg(target_arch = "x86_64")]
     Avx,
     /// the fma cpu feature.
+    #[cfg(target_arch = "x86_64")]
     Fma,
     /// aarc64 neon cpu feature.
+    #[cfg(target_arch = "aarch64")]
     Neon,
+}
+
+impl CpuFeature {
+    /// Test if the given CPU feature is detected.
+    pub fn is_detected(&self) -> bool {
+        match self {
+            #[cfg(target_arch = "x86_64")]
+            CpuFeature::Sse3 => {
+                is_x86_feature_detected!("sse3")
+            }
+            #[cfg(target_arch = "x86_64")]
+            CpuFeature::Avx => {
+                is_x86_feature_detected!("avx")
+            }
+            #[cfg(target_arch = "x86_64")]
+            CpuFeature::Fma => {
+                is_x86_feature_detected!("fma")
+            }
+            #[cfg(target_arch = "aarch64")]
+            CpuFeature::Neon => {
+                is_aarch64_feature_detected!("neon")
+            }
+        }
+    }
 }
 
 impl fmt::Display for CpuFeature {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            #[cfg(target_arch = "x86_64")]
             CpuFeature::Sse3 => {
                 write!(f, "sse3")
             }
+            #[cfg(target_arch = "x86_64")]
             CpuFeature::Avx => {
                 write!(f, "avx")
             }
+            #[cfg(target_arch = "x86_64")]
             CpuFeature::Fma => {
                 write!(f, "fmx")
             }
+            #[cfg(target_arch = "aarch64")]
             CpuFeature::Neon => {
                 write!(f, "neon")
             }
@@ -36,28 +67,15 @@ impl fmt::Display for CpuFeature {
 
 /// Error raised when trying to use a CPU feature which is not supported.
 #[derive(Debug, Clone, Copy)]
-pub struct MissingCpuFeatures(pub(crate) &'static [CpuFeature]);
+pub struct MissingCpuFeature(pub(crate) CpuFeature);
 
-impl fmt::Display for MissingCpuFeatures {
+impl fmt::Display for MissingCpuFeature {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Missing cpu features: ")?;
-
-        let mut it = self.0.iter();
-        let last = it.next_back();
-
-        for feature in it {
-            write!(f, "{}, ", feature)?;
-        }
-
-        if let Some(feature) = last {
-            write!(f, "{}", feature)?;
-        }
-
-        Ok(())
+        write!(f, "Missing CPU feature `{}`", self.0)
     }
 }
 
-impl error::Error for MissingCpuFeatures {}
+impl error::Error for MissingCpuFeature {}
 
 /// The error type used by `rubato`.
 #[derive(Debug)]

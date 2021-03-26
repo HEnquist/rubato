@@ -4,7 +4,7 @@ use core::arch::x86_64::{__m128, __m128d};
 use core::arch::x86_64::{_mm_add_pd, _mm_hadd_pd, _mm_loadu_pd, _mm_mul_pd, _mm_setzero_pd};
 use core::arch::x86_64::{_mm_add_ps, _mm_hadd_ps, _mm_loadu_ps, _mm_mul_ps, _mm_setzero_ps};
 use crate::asynchro::SincInterpolator;
-use crate::error::{MissingCpuFeatures, CpuFeature};
+use crate::error::{MissingCpuFeature, CpuFeature};
 use crate::Sample;
 
 /// Collection of cpu features required for this interpolator.
@@ -179,9 +179,9 @@ impl<T> SseInterpolator<T> where T: Sample {
         oversampling_factor: usize,
         f_cutoff: f32,
         window: WindowFunction,
-    ) -> Result<Self, MissingCpuFeatures> {
-        if !is_x86_feature_detected!("sse3") {
-            return Err(MissingCpuFeatures(FEATURES));
+    ) -> Result<Self, MissingCpuFeature> {
+        if let Some(feature) = FEATURES.iter().find(|f| !f.is_detected()) {
+            return Err(MissingCpuFeature(*feature));
         }
 
         assert!(sinc_len % 8 == 0, "Sinc length must be a multiple of 8.");

@@ -5,7 +5,7 @@ use core::arch::aarch64::{float32x4_t, float64x2_t};
 use core::arch::aarch64::{vaddq_f32, vmulq_f32};
 use core::arch::aarch64::{vaddq_f64, vmulq_f64};
 use packed_simd_2::{f32x4, f64x2};
-use crate::error::{MissingCpuFeatures, CpuFeature};
+use crate::error::{MissingCpuFeature, CpuFeature};
 use crate::Sample;
 
 /// Collection of cpu features required for this interpolator.
@@ -193,9 +193,9 @@ impl<T> NeonInterpolator<T> where T: Sample {
         oversampling_factor: usize,
         f_cutoff: f32,
         window: WindowFunction,
-    ) -> Result<Self, MissingCpuFeatures> {
-        if !is_aarch64_feature_detected!("neon") {
-            return Err(MissingCpuFeatures(FEATURES));
+    ) -> Result<Self, MissingCpuFeature> {
+        if let Some(feature) = FEATURES.iter().find(|f| !f.is_detected()) {
+            return Err(MissingCpuFeature(*feature));
         }
 
         assert!(sinc_len % 8 == 0, "Sinc length must be a multiple of 8.");

@@ -83,7 +83,7 @@ mod synchro;
 mod windows;
 
 pub use crate::asynchro::{ScalarInterpolator, SincFixedIn, SincFixedOut};
-pub use crate::error::{CpuFeature, MissingCpuFeatures, ResampleError, ResampleResult};
+pub use crate::error::{CpuFeature, MissingCpuFeature, ResampleError, ResampleResult};
 pub use crate::sample::Sample;
 pub use crate::synchro::{FftFixedIn, FftFixedInOut, FftFixedOut};
 pub use crate::windows::WindowFunction;

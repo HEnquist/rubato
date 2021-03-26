@@ -1,6 +1,6 @@
 use crate::sinc::make_sincs;
 use crate::windows::WindowFunction;
-use crate::error::{MissingCpuFeatures, CpuFeature};
+use crate::error::{MissingCpuFeature, CpuFeature};
 use core::arch::x86_64::{
     __m128, __m128d, __m256, __m256d, _mm256_castpd256_pd128, _mm256_castps256_ps128,
     _mm256_extractf128_pd, _mm256_extractf128_ps,
@@ -170,9 +170,9 @@ impl<T> AvxInterpolator<T> where T: Sample {
         oversampling_factor: usize,
         f_cutoff: f32,
         window: WindowFunction,
-    ) -> Result<Self, MissingCpuFeatures> {
-        if !(is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma")) {
-            return Err(MissingCpuFeatures(FEATURES));
+    ) -> Result<Self, MissingCpuFeature> {
+        if let Some(feature) = FEATURES.iter().find(|f| !f.is_detected()) {
+            return Err(MissingCpuFeature(*feature));
         }
 
         assert!(sinc_len % 8 == 0, "Sinc length must be a multiple of 8.");
