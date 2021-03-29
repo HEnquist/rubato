@@ -1,4 +1,4 @@
-use num_traits::Float;
+use crate::Sample;
 
 /// Different window functions that can be used to window the sinc function.
 #[derive(Debug, Clone, Copy)]
@@ -18,19 +18,22 @@ pub enum WindowFunction {
 }
 
 /// Helper function. Standard Blackman-Harris window
-pub fn blackman_harris<T: Float>(npoints: usize) -> Vec<T> {
+pub fn blackman_harris<T>(npoints: usize) -> Vec<T>
+where
+    T: Sample,
+{
     trace!("Making a BlackmanHarris windows with {} points", npoints);
     let mut window = vec![T::zero(); npoints];
-    let pi2 = T::from(2.0 * std::f64::consts::PI).unwrap();
-    let pi4 = T::from(4.0 * std::f64::consts::PI).unwrap();
-    let pi6 = T::from(6.0 * std::f64::consts::PI).unwrap();
-    let np_f = T::from(npoints).unwrap();
-    let a = T::from(0.35875).unwrap();
-    let b = T::from(0.48829).unwrap();
-    let c = T::from(0.14128).unwrap();
-    let d = T::from(0.01168).unwrap();
+    let pi2 = T::coerce(2.0) * T::PI;
+    let pi4 = T::coerce(4.0) * T::PI;
+    let pi6 = T::coerce(6.0) * T::PI;
+    let np_f = T::coerce(npoints);
+    let a = T::coerce(0.35875);
+    let b = T::coerce(0.48829);
+    let c = T::coerce(0.14128);
+    let d = T::coerce(0.01168);
     for (x, item) in window.iter_mut().enumerate() {
-        let x_float = T::from(x).unwrap();
+        let x_float = T::coerce(x);
         *item = a - b * (pi2 * x_float / np_f).cos() + c * (pi4 * x_float / np_f).cos()
             - d * (pi6 * x_float / np_f).cos();
     }
@@ -38,38 +41,47 @@ pub fn blackman_harris<T: Float>(npoints: usize) -> Vec<T> {
 }
 
 /// Helper function. Standard Blackman window
-pub fn blackman<T: Float>(npoints: usize) -> Vec<T> {
+pub fn blackman<T>(npoints: usize) -> Vec<T>
+where
+    T: Sample,
+{
     trace!("Making a Blackman windows with {} points", npoints);
     let mut window = vec![T::zero(); npoints];
-    let pi2 = T::from(2.0 * std::f64::consts::PI).unwrap();
-    let pi4 = T::from(4.0 * std::f64::consts::PI).unwrap();
-    let np_f = T::from(npoints).unwrap();
-    let a = T::from(0.42).unwrap();
-    let b = T::from(0.5).unwrap();
-    let c = T::from(0.08).unwrap();
+    let pi2 = T::coerce(2.0) * T::PI;
+    let pi4 = T::coerce(4.0) * T::PI;
+    let np_f = T::coerce(npoints);
+    let a = T::coerce(0.42);
+    let b = T::coerce(0.5);
+    let c = T::coerce(0.08);
     for (x, item) in window.iter_mut().enumerate() {
-        let x_float = T::from(x).unwrap();
+        let x_float = T::coerce(x);
         *item = a - b * (pi2 * x_float / np_f).cos() + c * (pi4 * x_float / np_f).cos();
     }
     window
 }
 
 /// Standard Hann window
-pub fn hann<T: Float>(npoints: usize) -> Vec<T> {
+pub fn hann<T>(npoints: usize) -> Vec<T>
+where
+    T: Sample,
+{
     trace!("Making a Hann windows with {} points", npoints);
     let mut window = vec![T::zero(); npoints];
-    let pi2 = T::from(2.0 * std::f64::consts::PI).unwrap();
-    let np_f = T::from(npoints).unwrap();
-    let a = T::from(0.5).unwrap();
+    let pi2 = T::coerce(2.0) * T::PI;
+    let np_f = T::coerce(npoints);
+    let a = T::coerce(0.5);
     for (x, item) in window.iter_mut().enumerate() {
-        let x_float = T::from(x).unwrap();
+        let x_float = T::coerce(x);
         *item = a - a * (pi2 * x_float / np_f).cos();
     }
     window
 }
 
 /// Make the selected window function
-pub fn make_window<T: Float>(npoints: usize, windowfunc: WindowFunction) -> Vec<T> {
+pub fn make_window<T>(npoints: usize, windowfunc: WindowFunction) -> Vec<T>
+where
+    T: Sample,
+{
     let mut window = match windowfunc {
         WindowFunction::BlackmanHarris | WindowFunction::BlackmanHarris2 => {
             blackman_harris::<T>(npoints)

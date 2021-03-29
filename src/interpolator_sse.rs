@@ -1,95 +1,53 @@
 use crate::windows::WindowFunction;
-
 use crate::sinc::make_sincs;
 use core::arch::x86_64::{__m128, __m128d};
 use core::arch::x86_64::{_mm_add_pd, _mm_hadd_pd, _mm_loadu_pd, _mm_mul_pd, _mm_setzero_pd};
 use core::arch::x86_64::{_mm_add_ps, _mm_hadd_ps, _mm_loadu_ps, _mm_mul_ps, _mm_setzero_ps};
-use std::marker::PhantomData;
-
 use crate::asynchro::SincInterpolator;
+use crate::error::{MissingCpuFeature, CpuFeature};
+use crate::Sample;
 
-/// A SSE accelerated interpolator
-pub struct SseInterpolator<T> {
-    sincs_s: Option<Vec<Vec<__m128>>>,
-    sincs_d: Option<Vec<Vec<__m128d>>>,
-    length: usize,
-    nbr_sincs: usize,
-    phantom: PhantomData<T>,
+/// Collection of cpu features required for this interpolator.
+static FEATURES: &[CpuFeature] = &[CpuFeature::Sse3];
+
+/// Trait governing what can be done with an SseSample.
+pub trait SseSample: Sized {
+    type Sinc;
+
+    /// Pack sincs into a vector.
+    /// 
+    /// # Safety
+    /// 
+    /// This is unsafe because it uses target_enable dispatching. There are no
+    /// special requirements from the caller.
+    unsafe fn pack_sincs(sincs: Vec<Vec<Self>>) -> Vec<Vec<Self::Sinc>>;
+
+    /// Interpolate a sinc sample.
+    /// 
+    /// # Safety
+    /// 
+    /// The caller must ensure that the various indexes are not out of bounds
+    /// in the collection of sincs.
+    unsafe fn get_sinc_interpolated_unsafe(
+        wave: &[Self],
+        index: usize,
+        subindex: usize,
+        sincs: &[Vec<Self::Sinc>],
+        length: usize,
+    ) -> Self;
 }
 
-impl SincInterpolator<f32> for SseInterpolator<f32> {
-    /// Calculate the scalar produt of an input wave and the selected sinc filter
-    fn get_sinc_interpolated(&self, wave: &[f32], index: usize, subindex: usize) -> f32 {
-        assert!((index + self.length) < wave.len());
-        assert!(subindex < self.nbr_sincs);
-        unsafe { self.get_sinc_interpolated_unsafe(wave, index, subindex) }
-    }
+impl SseSample for f32 {
+    type Sinc = __m128;
 
-    fn len(&self) -> usize {
-        self.length
-    }
-
-    fn nbr_sincs(&self) -> usize {
-        self.nbr_sincs
-    }
-}
-
-impl SincInterpolator<f64> for SseInterpolator<f64> {
-    /// Calculate the scalar produt of an input wave and the selected sinc filter
-    fn get_sinc_interpolated(&self, wave: &[f64], index: usize, subindex: usize) -> f64 {
-        assert!((index + self.length) < wave.len());
-        assert!(subindex < self.nbr_sincs);
-        unsafe { self.get_sinc_interpolated_unsafe(wave, index, subindex) }
-    }
-
-    fn len(&self) -> usize {
-        self.length
-    }
-
-    fn nbr_sincs(&self) -> usize {
-        self.nbr_sincs
-    }
-}
-
-impl SseInterpolator<f32> {
-    /// Create a new SseInterpolator
-    ///
-    /// Parameters are:
-    /// - `sinc_len`: Length of sinc functions.
-    /// - `oversampling_factor`: Number of intermediate sincs (oversampling factor).
-    /// - `f_cutoff`: Relative cutoff frequency.
-    /// - `window`: Window function to use.
-    pub fn new(
-        sinc_len: usize,
-        oversampling_factor: usize,
-        f_cutoff: f32,
-        window: WindowFunction,
-    ) -> Self {
-        assert!(
-            is_x86_feature_detected!("sse3"),
-            "CPU does not have the required SSE3 support!"
-        );
-        assert!(sinc_len % 8 == 0, "Sinc length must be a multiple of 8.");
-        let sincs = make_sincs(sinc_len, oversampling_factor, f_cutoff, window);
-        let sincs = Self::pack_sincs_single(sincs);
-        Self {
-            sincs_s: Some(sincs),
-            sincs_d: None,
-            length: sinc_len,
-            nbr_sincs: oversampling_factor,
-            phantom: PhantomData,
-        }
-    }
-
-    fn pack_sincs_single(sincs: Vec<Vec<f32>>) -> Vec<Vec<__m128>> {
+    #[target_feature(enable = "sse3")]
+    unsafe fn pack_sincs(sincs: Vec<Vec<Self>>) -> Vec<Vec<Self::Sinc>> {
         let mut packed_sincs = Vec::new();
         for sinc in sincs.iter() {
             let mut packed = Vec::new();
             for elements in sinc.chunks(4) {
-                unsafe {
-                    let packed_elems = _mm_loadu_ps(&elements[0]);
-                    packed.push(packed_elems);
-                }
+                let packed_elems = _mm_loadu_ps(&elements[0]);
+                packed.push(packed_elems);
             }
             packed_sincs.push(packed);
         }
@@ -98,13 +56,14 @@ impl SseInterpolator<f32> {
 
     #[target_feature(enable = "sse3")]
     unsafe fn get_sinc_interpolated_unsafe(
-        &self,
         wave: &[f32],
         index: usize,
         subindex: usize,
+        sincs: &[Vec<Self::Sinc>],
+        length: usize,
     ) -> f32 {
-        let sinc = &self.sincs_s.as_ref().unwrap().get_unchecked(subindex);
-        let wave_cut = &wave[index..(index + self.length)];
+        let sinc = sincs.get_unchecked(subindex);
+        let wave_cut = &wave[index..(index + length)];
         let mut acc0 = _mm_setzero_ps();
         let mut acc1 = _mm_setzero_ps();
         let mut w_idx = 0;
@@ -126,45 +85,17 @@ impl SseInterpolator<f32> {
     }
 }
 
-impl SseInterpolator<f64> {
-    /// Create a new SseInterpolator
-    ///
-    /// Parameters are:
-    /// - `sinc_len`: Length of sinc functions.
-    /// - `oversampling_factor`: Number of intermediate sincs (oversampling factor).
-    /// - `f_cutoff`: Relative cutoff frequency.
-    /// - `window`: Window function to use.
-    pub fn new(
-        sinc_len: usize,
-        oversampling_factor: usize,
-        f_cutoff: f32,
-        window: WindowFunction,
-    ) -> Self {
-        assert!(
-            is_x86_feature_detected!("sse3"),
-            "CPU does not have the required SSE3 support!"
-        );
-        assert!(sinc_len % 8 == 0, "Sinc length must be a multiple of 8.");
-        let sincs = make_sincs(sinc_len, oversampling_factor, f_cutoff, window);
-        let sincs = Self::pack_sincs_double(sincs);
-        Self {
-            sincs_d: Some(sincs),
-            sincs_s: None,
-            length: sinc_len,
-            nbr_sincs: oversampling_factor,
-            phantom: PhantomData,
-        }
-    }
+impl SseSample for f64 {
+    type Sinc = __m128d;
 
-    fn pack_sincs_double(sincs: Vec<Vec<f64>>) -> Vec<Vec<__m128d>> {
+    #[target_feature(enable = "sse3")]
+    unsafe fn pack_sincs(sincs: Vec<Vec<f64>>) -> Vec<Vec<Self::Sinc>> {
         let mut packed_sincs = Vec::new();
         for sinc in sincs.iter() {
             let mut packed = Vec::new();
             for elements in sinc.chunks(2) {
-                unsafe {
-                    let packed_elems = _mm_loadu_pd(&elements[0]);
-                    packed.push(packed_elems);
-                }
+                let packed_elems = _mm_loadu_pd(&elements[0]);
+                packed.push(packed_elems);
             }
             packed_sincs.push(packed);
         }
@@ -173,13 +104,14 @@ impl SseInterpolator<f64> {
 
     #[target_feature(enable = "sse3")]
     unsafe fn get_sinc_interpolated_unsafe(
-        &self,
         wave: &[f64],
         index: usize,
         subindex: usize,
+        sincs: &[Vec<Self::Sinc>],
+        length: usize,
     ) -> f64 {
-        let sinc = &self.sincs_d.as_ref().unwrap().get_unchecked(subindex);
-        let wave_cut = &wave[index..(index + self.length)];
+        let sinc = sincs.get_unchecked(subindex);
+        let wave_cut = &wave[index..(index + length)];
         let mut acc0 = _mm_setzero_pd();
         let mut acc1 = _mm_setzero_pd();
         let mut acc2 = _mm_setzero_pd();
@@ -207,6 +139,60 @@ impl SseInterpolator<f64> {
         packedsum0 = _mm_hadd_pd(packedsum0, packedsum1);
         let array = std::mem::transmute::<__m128d, [f64; 2]>(packedsum0);
         array[0] + array[1]
+    }
+}
+
+/// A SSE accelerated interpolator
+pub struct SseInterpolator<T> where T: SseSample {
+    sincs: Vec<Vec<T::Sinc>>,
+    length: usize,
+    nbr_sincs: usize,
+}
+
+impl<T> SincInterpolator<T> for SseInterpolator<T> where T: SseSample {
+    /// Calculate the scalar produt of an input wave and the selected sinc filter
+    fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T {
+        assert!((index + self.length) < wave.len());
+        assert!(subindex < self.nbr_sincs);
+        unsafe { T::get_sinc_interpolated_unsafe(wave, index, subindex, &self.sincs, self.length) }
+    }
+
+    fn len(&self) -> usize {
+        self.length
+    }
+
+    fn nbr_sincs(&self) -> usize {
+        self.nbr_sincs
+    }
+}
+
+impl<T> SseInterpolator<T> where T: Sample {
+    /// Create a new SseInterpolator
+    ///
+    /// Parameters are:
+    /// - `sinc_len`: Length of sinc functions.
+    /// - `oversampling_factor`: Number of intermediate sincs (oversampling factor).
+    /// - `f_cutoff`: Relative cutoff frequency.
+    /// - `window`: Window function to use.
+    pub fn new(
+        sinc_len: usize,
+        oversampling_factor: usize,
+        f_cutoff: f32,
+        window: WindowFunction,
+    ) -> Result<Self, MissingCpuFeature> {
+        if let Some(feature) = FEATURES.iter().find(|f| !f.is_detected()) {
+            return Err(MissingCpuFeature(*feature));
+        }
+
+        assert!(sinc_len % 8 == 0, "Sinc length must be a multiple of 8.");
+        let sincs = make_sincs(sinc_len, oversampling_factor, f_cutoff, window);
+        let sincs = unsafe { <T as SseSample>::pack_sincs(sincs) };
+
+        Ok(Self {
+            sincs,
+            length: sinc_len,
+            nbr_sincs: oversampling_factor,
+        })
     }
 }
 
@@ -240,7 +226,7 @@ mod tests {
         let window = WindowFunction::BlackmanHarris2;
         let sincs = make_sincs::<f64>(sinc_len, oversampling_factor, f_cutoff, window);
         let interpolator =
-            SseInterpolator::<f64>::new(sinc_len, oversampling_factor, f_cutoff, window);
+            SseInterpolator::<f64>::new(sinc_len, oversampling_factor, f_cutoff, window).unwrap();
         let value = interpolator.get_sinc_interpolated(&wave, 333, 123);
         let check = get_sinc_interpolated(&wave, 333, &sincs[123]);
         assert!((value - check).abs() < 1.0e-9);
@@ -259,7 +245,7 @@ mod tests {
         let window = WindowFunction::BlackmanHarris2;
         let sincs = make_sincs::<f32>(sinc_len, oversampling_factor, f_cutoff, window);
         let interpolator =
-            SseInterpolator::<f32>::new(sinc_len, oversampling_factor, f_cutoff, window);
+            SseInterpolator::<f32>::new(sinc_len, oversampling_factor, f_cutoff, window).unwrap();
         let value = interpolator.get_sinc_interpolated(&wave, 333, 123);
         let check = get_sinc_interpolated(&wave, 333, &sincs[123]);
         assert!((value - check).abs() < 1.0e-6);

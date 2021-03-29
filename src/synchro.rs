@@ -3,13 +3,10 @@ use crate::windows::WindowFunction;
 use num_complex::Complex;
 use num_integer as integer;
 use num_traits::Zero;
-use std::error;
 use std::sync::Arc;
 
-type Res<T> = Result<T, Box<dyn error::Error>>;
-
-use crate::Resampler;
-use crate::ResamplerError;
+use crate::error::{ResampleError, ResampleResult};
+use crate::{Resampler, Sample};
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 
 /// A helper for resampling a single chunk of data.
@@ -77,578 +74,520 @@ pub struct FftFixedInOut<T> {
     resampler: FftResampler<T>,
 }
 
-macro_rules! impl_resampler {
-    ($ft:ty, $rt:ty) => {
-        impl $rt {
-            //
-            pub fn new(fft_size_in: usize, fft_size_out: usize) -> Self {
-                // calculate antialiasing cutoff
-                let cutoff = if fft_size_in > fft_size_out {
-                    0.4f32.powf(16.0 / fft_size_in as f32) * fft_size_out as f32
-                        / fft_size_in as f32
-                } else {
-                    0.4f32.powf(16.0 / fft_size_in as f32)
-                };
-                debug!(
-                    "Create new FftResampler, fft_size_in: {}, fft_size_out: {}, cutoff: {}",
-                    fft_size_in, fft_size_out, cutoff
-                );
-                let sinc =
-                    make_sincs::<$ft>(fft_size_in, 1, cutoff, WindowFunction::BlackmanHarris2);
-                let mut filter_t: Vec<$ft> = vec![0.0; 2 * fft_size_in];
-                let mut filter_f: Vec<Complex<$ft>> = vec![Complex::zero(); fft_size_in + 1];
-                for n in 0..fft_size_in {
-                    filter_t[n] = sinc[0][n] / (2 * fft_size_in) as $ft;
-                }
+impl<T> FftResampler<T>
+where
+    T: Sample,
+{
+    //
+    pub fn new(fft_size_in: usize, fft_size_out: usize) -> Self {
+        // calculate antialiasing cutoff
+        let cutoff = if fft_size_in > fft_size_out {
+            0.4f32.powf(16.0 / fft_size_in as f32) * fft_size_out as f32 / fft_size_in as f32
+        } else {
+            0.4f32.powf(16.0 / fft_size_in as f32)
+        };
+        debug!(
+            "Create new FftResampler, fft_size_in: {}, fft_size_out: {}, cutoff: {}",
+            fft_size_in, fft_size_out, cutoff
+        );
+        let sinc = make_sincs::<T>(fft_size_in, 1, cutoff, WindowFunction::BlackmanHarris2);
+        let mut filter_t: Vec<T> = vec![T::zero(); 2 * fft_size_in];
+        let mut filter_f: Vec<Complex<T>> = vec![Complex::zero(); fft_size_in + 1];
+        for (n, f) in filter_t.iter_mut().enumerate().take(fft_size_in) {
+            *f = sinc[0][n] / T::coerce(2 * fft_size_in);
+        }
 
-                let input_f: Vec<Complex<$ft>> = vec![Complex::zero(); fft_size_in + 1];
-                let input_buf: Vec<$ft> = vec![0.0; 2 * fft_size_in];
-                let output_f: Vec<Complex<$ft>> = vec![Complex::zero(); fft_size_out + 1];
-                let output_buf: Vec<$ft> = vec![0.0; 2 * fft_size_out];
-                let mut planner = RealFftPlanner::<$ft>::new();
-                let fft = planner.plan_fft_forward(2 * fft_size_in);
-                let ifft = planner.plan_fft_inverse(2 * fft_size_out);
-                fft.process(&mut filter_t, &mut filter_f).unwrap();
-                let scratch_fw = fft.make_scratch_vec();
-                let scratch_inv = ifft.make_scratch_vec();
-                FftResampler {
-                    fft_size_in,
-                    fft_size_out,
-                    filter_f,
-                    fft,
-                    ifft,
-                    input_buf,
-                    input_f,
-                    output_f,
-                    output_buf,
-                    scratch_fw,
-                    scratch_inv,
+        let input_f: Vec<Complex<T>> = vec![Complex::zero(); fft_size_in + 1];
+        let input_buf: Vec<T> = vec![T::zero(); 2 * fft_size_in];
+        let output_f: Vec<Complex<T>> = vec![Complex::zero(); fft_size_out + 1];
+        let output_buf: Vec<T> = vec![T::zero(); 2 * fft_size_out];
+        let mut planner = RealFftPlanner::<T>::new();
+        let fft = planner.plan_fft_forward(2 * fft_size_in);
+        let ifft = planner.plan_fft_inverse(2 * fft_size_out);
+        fft.process(&mut filter_t, &mut filter_f).unwrap();
+        let scratch_fw = fft.make_scratch_vec();
+        let scratch_inv = ifft.make_scratch_vec();
+
+        FftResampler {
+            fft_size_in,
+            fft_size_out,
+            filter_f,
+            fft,
+            ifft,
+            scratch_fw,
+            scratch_inv,
+            input_buf,
+            input_f,
+            output_f,
+            output_buf,
+        }
+    }
+
+    /// Resample a small chunk
+    fn resample_unit(&mut self, wave_in: &[T], wave_out: &mut [T], overlap: &mut [T]) {
+        // Copy to input buffer and clear padding area
+        self.input_buf[0..self.fft_size_in].copy_from_slice(wave_in);
+        for item in self
+            .input_buf
+            .iter_mut()
+            .skip(self.fft_size_in)
+            .take(self.fft_size_in)
+        {
+            *item = T::zero();
+        }
+
+        // FFT and store result in history, update index
+        self.fft
+            .process_with_scratch(&mut self.input_buf, &mut self.input_f, &mut self.scratch_fw)
+            .unwrap();
+
+        // multiply with filter FT
+        self.input_f
+            .iter_mut()
+            .take(self.fft_size_in + 1)
+            .zip(self.filter_f.iter())
+            .for_each(|(spec, filt)| *spec *= filt);
+        let new_len = if self.fft_size_in < self.fft_size_out {
+            self.fft_size_in + 1
+        } else {
+            self.fft_size_out
+        };
+
+        // copy to modified spectrum
+        self.output_f[0..new_len].copy_from_slice(&self.input_f[0..new_len]);
+        for val in self.output_f[new_len..].iter_mut() {
+            *val = Complex::zero();
+        }
+        //self.output_f[self.fft_size_out] = self.input_f[self.fft_size_in];
+
+        // IFFT result, store result and overlap
+        self.ifft
+            .process_with_scratch(
+                &mut self.output_f,
+                &mut self.output_buf,
+                &mut self.scratch_inv,
+            )
+            .unwrap();
+        for (n, item) in wave_out.iter_mut().enumerate().take(self.fft_size_out) {
+            *item = self.output_buf[n] + overlap[n];
+        }
+        overlap.copy_from_slice(&self.output_buf[self.fft_size_out..]);
+    }
+}
+
+impl<T> FftFixedInOut<T>
+where
+    T: Sample,
+{
+    /// Create a new FftFixedInOut
+    ///
+    /// Parameters are:
+    /// - `fs_in`: Input sample rate.
+    /// - `fs_out`: Output sample rate.
+    /// - `chunk_size_in`: desired length of input data in frames, actual value may be different.
+    /// - `nbr_channels`: number of channels in input/output.
+    pub fn new(fs_in: usize, fs_out: usize, chunk_size_in: usize, nbr_channels: usize) -> Self {
+        debug!(
+            "Create new FftFixedInOut, fs_in: {}, fs_out: {} chunk_size_in: {}, channels: {}",
+            fs_in, fs_out, chunk_size_in, nbr_channels
+        );
+
+        let gcd = integer::gcd(fs_in, fs_out);
+        let min_chunk_out = fs_out / gcd;
+        let wanted = chunk_size_in;
+        let fft_chunks = (wanted as f32 / min_chunk_out as f32).ceil() as usize;
+        let fft_size_out = fft_chunks * fs_out / gcd;
+        let fft_size_in = fft_chunks * fs_in / gcd;
+
+        let resampler = FftResampler::<T>::new(fft_size_in, fft_size_out);
+
+        let overlaps: Vec<Vec<T>> = vec![vec![T::zero(); fft_size_out]; nbr_channels];
+
+        FftFixedInOut {
+            nbr_channels,
+            chunk_size_in: fft_size_in,
+            chunk_size_out: fft_size_out,
+            fft_size_in,
+            overlaps,
+            resampler,
+        }
+    }
+}
+
+impl<T> Resampler<T> for FftFixedInOut<T>
+where
+    T: Sample,
+{
+    /// Query for the number of frames needed for the next call to "process".
+    fn nbr_frames_needed(&self) -> usize {
+        self.fft_size_in
+    }
+
+    /// Resample a chunk of audio. The input and output lengths are fixed.
+    /// If the waveform for a channel is empty, this channel will be ignored and produce a
+    /// corresponding empty output waveform.
+    /// # Errors
+    ///
+    /// The function returns an error if the size of the input data is not equal
+    /// to the number of channels and input size defined when creating the instance.
+    fn process(&mut self, wave_in: &[Vec<T>]) -> ResampleResult<Vec<Vec<T>>> {
+        if wave_in.len() != self.nbr_channels {
+            return Err(ResampleError::WrongNumberOfChannels {
+                expected: self.nbr_channels,
+                actual: wave_in.len(),
+            });
+        }
+        let mut used_channels = Vec::new();
+        for (chan, wave) in wave_in.iter().enumerate() {
+            if !wave.is_empty() {
+                used_channels.push(chan);
+                if wave.len() != self.chunk_size_in {
+                    return Err(ResampleError::WrongNumberOfFrames {
+                        channel: chan,
+                        expected: self.chunk_size_in,
+                        actual: wave.len(),
+                    });
                 }
             }
+        }
+        let mut wave_out = vec![Vec::new(); self.nbr_channels];
+        for chan in used_channels.iter() {
+            wave_out[*chan] = vec![T::zero(); self.chunk_size_out];
+        }
 
-            /// Resample a small chunk
-            fn resample_unit(
-                &mut self,
-                wave_in: &[$ft],
-                wave_out: &mut [$ft],
-                overlap: &mut [$ft],
+        for n in used_channels.iter() {
+            self.resampler
+                .resample_unit(&wave_in[*n], &mut wave_out[*n], &mut self.overlaps[*n])
+        }
+        Ok(wave_out)
+    }
+
+    /// Update the resample ratio. This is not supported by this resampler and
+    /// always returns an error.
+    fn set_resample_ratio(&mut self, _new_ratio: f64) -> ResampleResult<()> {
+        Err(ResampleError::SyncNotAdjustable)
+    }
+
+    /// Update the resample ratio relative to the original one. This is not
+    /// supported by this resampler and always returns an error.
+    fn set_resample_ratio_relative(&mut self, _rel_ratio: f64) -> ResampleResult<()> {
+        Err(ResampleError::SyncNotAdjustable)
+    }
+}
+
+impl<T> FftFixedOut<T>
+where
+    T: Sample,
+{
+    /// Create a new FftFixedOut
+    ///
+    /// Parameters are:
+    /// - `fs_in`: Input sample rate.
+    /// - `fs_out`: Output sample rate.
+    /// - `chunk_size_out`: length of output data in frames.
+    /// - `sub_chunks`: desired number of subchunks for processing, actual number may be different.
+    /// - `nbr_channels`: number of channels in input/output.
+    pub fn new(
+        fs_in: usize,
+        fs_out: usize,
+        chunk_size_out: usize,
+        sub_chunks: usize,
+        nbr_channels: usize,
+    ) -> Self {
+        let gcd = integer::gcd(fs_in, fs_out);
+        let min_chunk_out = fs_out / gcd;
+        let wanted_subsize = chunk_size_out / sub_chunks;
+        let fft_chunks = (wanted_subsize as f32 / min_chunk_out as f32).ceil() as usize;
+        let fft_size_out = fft_chunks * fs_out / gcd;
+        let fft_size_in = fft_chunks * fs_in / gcd;
+
+        let resampler = FftResampler::<T>::new(fft_size_in, fft_size_out);
+
+        debug!(
+            "Create new FftFixedOut, fs_in: {}, fs_out: {} chunk_size_in: {}, channels: {}, fft_size_in: {}, fft_size_out: {}",
+            fs_in, fs_out, chunk_size_out, nbr_channels, fft_size_in, fft_size_out
+        );
+
+        let overlaps: Vec<Vec<T>> = vec![vec![T::zero(); fft_size_out]; nbr_channels];
+        let output_buffers: Vec<Vec<T>> =
+            vec![vec![T::zero(); chunk_size_out + fft_size_out]; nbr_channels];
+
+        let saved_frames = 0;
+        let chunks_needed = (chunk_size_out as f32 / fft_size_out as f32).ceil() as usize;
+        let frames_needed = chunks_needed * fft_size_in;
+
+        FftFixedOut {
+            nbr_channels,
+            chunk_size_out,
+            fft_size_in,
+            fft_size_out,
+            overlaps,
+            output_buffers,
+            saved_frames,
+            frames_needed,
+            resampler,
+        }
+    }
+}
+
+impl<T> Resampler<T> for FftFixedOut<T>
+where
+    T: Sample,
+{
+    /// Query for the number of frames needed for the next call to "process".
+    fn nbr_frames_needed(&self) -> usize {
+        self.frames_needed
+    }
+
+    /// Resample a chunk of audio. The required input length is provided by
+    /// the "nbr_frames_needed" function, and the output length is fixed.
+    /// If the waveform for a channel is empty, this channel will be ignored and produce a
+    /// corresponding empty output waveform.
+    /// # Errors
+    ///
+    /// The function returns an error if the length of the input data is not
+    /// equal to the number of channels defined when creating the instance,
+    /// and the number of audio frames given by "nbr_frames_needed".
+    fn process(&mut self, wave_in: &[Vec<T>]) -> ResampleResult<Vec<Vec<T>>> {
+        if wave_in.len() != self.nbr_channels {
+            return Err(ResampleError::WrongNumberOfChannels {
+                expected: self.nbr_channels,
+                actual: wave_in.len(),
+            });
+        }
+        let mut used_channels = Vec::new();
+        for (chan, wave) in wave_in.iter().enumerate() {
+            if !wave.is_empty() {
+                used_channels.push(chan);
+                if wave.len() != self.frames_needed {
+                    return Err(ResampleError::WrongNumberOfFrames {
+                        channel: chan,
+                        expected: self.frames_needed,
+                        actual: wave.len(),
+                    });
+                }
+            }
+        }
+
+        let mut wave_out = vec![Vec::new(); self.nbr_channels];
+        for chan in used_channels.iter() {
+            wave_out[*chan] = self.output_buffers[*chan].clone();
+        }
+
+        for n in used_channels.iter() {
+            for (in_chunk, out_chunk) in wave_in[*n]
+                .chunks(self.fft_size_in)
+                .zip(wave_out[*n][self.saved_frames..].chunks_mut(self.fft_size_out))
+            {
+                self.resampler
+                    .resample_unit(in_chunk, out_chunk, &mut self.overlaps[*n]);
+            }
+        }
+        let processed_frames =
+            self.saved_frames + self.fft_size_out * (self.frames_needed / self.fft_size_in);
+
+        // save extra frames for next round
+        self.saved_frames = processed_frames - self.chunk_size_out;
+        if processed_frames > self.chunk_size_out {
+            for n in used_channels.iter() {
+                self.output_buffers[*n][0..self.saved_frames].copy_from_slice(
+                    &wave_out[*n][self.chunk_size_out..(self.chunk_size_out + self.saved_frames)],
+                );
+            }
+        }
+        for n in used_channels.iter() {
+            wave_out[*n].truncate(self.chunk_size_out);
+        }
+        //calculate number of needed frames from next round
+        let frames_needed_out = if self.chunk_size_out > self.saved_frames {
+            self.chunk_size_out - self.saved_frames
+        } else {
+            0
+        };
+        let chunks_needed = (frames_needed_out as f32 / self.fft_size_out as f32).ceil() as usize;
+        self.frames_needed = chunks_needed * self.fft_size_in;
+        Ok(wave_out)
+    }
+
+    /// Update the resample ratio. This is not supported by this resampler and
+    /// always returns an error.
+    fn set_resample_ratio(&mut self, _new_ratio: f64) -> ResampleResult<()> {
+        Err(ResampleError::SyncNotAdjustable)
+    }
+
+    /// Update the resample ratio relative to the original one. This is not
+    /// supported by this resampler and always returns an error.
+    fn set_resample_ratio_relative(&mut self, _rel_ratio: f64) -> ResampleResult<()> {
+        Err(ResampleError::SyncNotAdjustable)
+    }
+}
+
+impl<T> FftFixedIn<T>
+where
+    T: Sample,
+{
+    /// Create a new FftFixedOut
+    ///
+    /// Parameters are:
+    /// - `fs_in`: Input sample rate.
+    /// - `fs_out`: Output sample rate.
+    /// - `chunk_size_out`: length of output data in frames.
+    /// - `sub_chunks`: desired number of subchunks for processing, actual number used may be different.
+    /// - `nbr_channels`: number of channels in input/output.
+    pub fn new(
+        fs_in: usize,
+        fs_out: usize,
+        chunk_size_in: usize,
+        sub_chunks: usize,
+        nbr_channels: usize,
+    ) -> Self {
+        let gcd = integer::gcd(fs_in, fs_out);
+        let min_chunk_in = fs_in / gcd;
+        let wanted_subsize = chunk_size_in / sub_chunks;
+        let fft_chunks = (wanted_subsize as f32 / min_chunk_in as f32).ceil() as usize;
+        let fft_size_out = fft_chunks * fs_out / gcd;
+        let fft_size_in = fft_chunks * fs_in / gcd;
+
+        let resampler = FftResampler::<T>::new(fft_size_in, fft_size_out);
+        debug!(
+            "Create new FftFixedOut, fs_in: {}, fs_out: {} chunk_size_in: {}, channels: {}, fft_size_in: {}, fft_size_out: {}",
+            fs_in, fs_out, chunk_size_in, nbr_channels, fft_size_in, fft_size_out
+        );
+
+        let overlaps: Vec<Vec<T>> = vec![vec![T::zero(); fft_size_out]; nbr_channels];
+        let input_buffers: Vec<Vec<T>> =
+            vec![vec![T::zero(); chunk_size_in + fft_size_out]; nbr_channels];
+
+        let saved_frames = 0;
+
+        FftFixedIn {
+            nbr_channels,
+            chunk_size_in,
+            fft_size_in,
+            fft_size_out,
+            overlaps,
+            input_buffers,
+            saved_frames,
+            resampler,
+        }
+    }
+}
+
+impl<T> Resampler<T> for FftFixedIn<T>
+where
+    T: Sample,
+{
+    /// Query for the number of frames needed for the next call to "process".
+    fn nbr_frames_needed(&self) -> usize {
+        self.chunk_size_in
+    }
+
+    /// Resample a chunk of audio. The required input length is provided by
+    /// the "nbr_frames_needed" function, and the output length is fixed.
+    /// If the waveform for a channel is empty, this channel will be ignored and produce a
+    /// corresponding empty output waveform.
+    /// # Errors
+    ///
+    /// The function returns an error if the length of the input data is not
+    /// equal to the number of channels defined when creating the instance,
+    /// and the number of audio frames given by "nbr_frames_needed".
+    fn process(&mut self, wave_in: &[Vec<T>]) -> ResampleResult<Vec<Vec<T>>> {
+        if wave_in.len() != self.nbr_channels {
+            return Err(ResampleError::WrongNumberOfChannels {
+                expected: self.nbr_channels,
+                actual: wave_in.len(),
+            });
+        }
+        let mut used_channels = Vec::new();
+        for (chan, wave) in wave_in.iter().enumerate() {
+            if !wave.is_empty() {
+                used_channels.push(chan);
+                if wave.len() != self.chunk_size_in {
+                    return Err(ResampleError::WrongNumberOfFrames {
+                        channel: chan,
+                        expected: self.chunk_size_in,
+                        actual: wave.len(),
+                    });
+                }
+            }
+        }
+
+        let mut input_temp = vec![Vec::new(); self.nbr_channels];
+        for chan in used_channels.iter() {
+            input_temp[*chan] = vec![T::zero(); self.saved_frames + self.chunk_size_in];
+        }
+
+        // copy new samples to input buffer
+        for n in used_channels.iter() {
+            for (input, buffer) in self.input_buffers[*n]
+                .iter()
+                .take(self.saved_frames)
+                .zip(input_temp[*n].iter_mut())
+            {
+                *buffer = *input;
+            }
+        }
+        for n in used_channels.iter() {
+            for (input, buffer) in wave_in[*n].iter().zip(
+                input_temp[*n]
+                    .iter_mut()
+                    .skip(self.saved_frames)
+                    .take(self.chunk_size_in),
             ) {
-                // Copy to input buffer and clear padding area
-                self.input_buf[0..self.fft_size_in].copy_from_slice(wave_in);
-                for item in self
-                    .input_buf
-                    .iter_mut()
-                    .skip(self.fft_size_in)
-                    .take(self.fft_size_in)
+                *buffer = *input;
+            }
+        }
+        self.saved_frames += self.chunk_size_in;
+
+        let nbr_chunks_ready =
+            (self.saved_frames as f32 / self.fft_size_in as f32).floor() as usize;
+        let mut wave_out = vec![Vec::new(); self.nbr_channels];
+        for chan in used_channels.iter() {
+            wave_out[*chan] = vec![T::zero(); nbr_chunks_ready * self.fft_size_out];
+        }
+        for n in used_channels.iter() {
+            for (in_chunk, out_chunk) in input_temp[*n]
+                .chunks(self.fft_size_in)
+                .take(nbr_chunks_ready)
+                .zip(wave_out[*n].chunks_mut(self.fft_size_out))
+            {
+                self.resampler
+                    .resample_unit(in_chunk, out_chunk, &mut self.overlaps[*n]);
+            }
+        }
+
+        // save extra frames for next round
+        let frames_in_used = nbr_chunks_ready * self.fft_size_in;
+        let extra = self.saved_frames - frames_in_used;
+
+        if self.saved_frames > frames_in_used {
+            for n in used_channels.iter() {
+                for (input, buffer) in input_temp[*n]
+                    .iter()
+                    .skip(frames_in_used)
+                    .take(extra)
+                    .zip(self.input_buffers[*n].iter_mut())
                 {
-                    *item = 0.0;
-                }
-
-                // FFT and store result in history, update index
-                self.fft
-                    .process_with_scratch(
-                        &mut self.input_buf,
-                        &mut self.input_f,
-                        &mut self.scratch_fw,
-                    )
-                    .unwrap();
-
-                // multiply with filter FT
-                self.input_f
-                    .iter_mut()
-                    .take(self.fft_size_in + 1)
-                    .zip(self.filter_f.iter())
-                    .for_each(|(spec, filt)| *spec *= filt);
-                let new_len = if self.fft_size_in < self.fft_size_out {
-                    self.fft_size_in + 1
-                } else {
-                    self.fft_size_out
-                };
-
-                // copy to modified spectrum
-                self.output_f[0..new_len].copy_from_slice(&self.input_f[0..new_len]);
-                for val in self.output_f[new_len..].iter_mut() {
-                    *val = Complex::zero();
-                }
-                //self.output_f[self.fft_size_out] = self.input_f[self.fft_size_in];
-
-                // IFFT result, store result and overlap
-                self.ifft
-                    .process_with_scratch(
-                        &mut self.output_f,
-                        &mut self.output_buf,
-                        &mut self.scratch_inv,
-                    )
-                    .unwrap();
-                for (n, item) in wave_out.iter_mut().enumerate().take(self.fft_size_out) {
-                    *item = self.output_buf[n] + overlap[n];
-                }
-                overlap.copy_from_slice(&self.output_buf[self.fft_size_out..]);
-            }
-        }
-    };
-}
-impl_resampler!(f32, FftResampler<f32>);
-impl_resampler!(f64, FftResampler<f64>);
-
-macro_rules! impl_fixedinout {
-    ($ft:ty) => {
-        impl FftFixedInOut<$ft> {
-            /// Create a new FftFixedInOut
-            ///
-            /// Parameters are:
-            /// - `fs_in`: Input sample rate.
-            /// - `fs_out`: Output sample rate.
-            /// - `chunk_size_in`: desired length of input data in frames, actual value may be different.
-            /// - `nbr_channels`: number of channels in input/output.
-            pub fn new(
-                fs_in: usize,
-                fs_out: usize,
-                chunk_size_in: usize,
-                nbr_channels: usize,
-            ) -> Self {
-                debug!(
-                    "Create new FftFixedInOut, fs_in: {}, fs_out: {} chunk_size_in: {}, channels: {}",
-                    fs_in, fs_out, chunk_size_in, nbr_channels
-                );
-
-                let gcd = integer::gcd(fs_in, fs_out);
-                let min_chunk_out = fs_out/gcd;
-                let wanted = chunk_size_in;
-                let fft_chunks = (wanted as f32 / min_chunk_out as f32).ceil() as usize;
-                let fft_size_out = fft_chunks * fs_out / gcd;
-                let fft_size_in = fft_chunks * fs_in / gcd;
-
-                let resampler = FftResampler::<$ft>::new(fft_size_in, fft_size_out);
-
-                let overlaps: Vec<Vec<$ft>> = vec![vec![0.0; fft_size_out]; nbr_channels];
-
-                FftFixedInOut {
-                    nbr_channels,
-                    chunk_size_in: fft_size_in,
-                    chunk_size_out: fft_size_out,
-                    fft_size_in,
-                    overlaps,
-                    resampler,
+                    *buffer = *input;
                 }
             }
         }
+        self.saved_frames = extra;
+        Ok(wave_out)
+    }
+
+    /// Update the resample ratio. This is not supported by this resampler and
+    /// always returns an error.
+    fn set_resample_ratio(&mut self, _new_ratio: f64) -> ResampleResult<()> {
+        Err(ResampleError::SyncNotAdjustable)
+    }
+
+    /// Update the resample ratio relative to the original one. This is not
+    /// supported by this resampler and always returns an error.
+    fn set_resample_ratio_relative(&mut self, _rel_ratio: f64) -> ResampleResult<()> {
+        Err(ResampleError::SyncNotAdjustable)
     }
 }
-impl_fixedinout!(f64);
-impl_fixedinout!(f32);
-
-macro_rules! resampler_FftFixedinout {
-    ($t:ty) => {
-        impl Resampler<$t> for FftFixedInOut<$t> {
-            /// Query for the number of frames needed for the next call to "process".
-            fn nbr_frames_needed(&self) -> usize {
-                self.fft_size_in
-            }
-
-            /// Update the resample ratio. This is not supported by this resampler and always returns an error.
-            fn set_resample_ratio(&mut self, _new_ratio: f64) -> Res<()> {
-                Err(Box::new(ResamplerError::new(
-                    "Not possible to adjust a synchronous resampler)",
-                )))
-            }
-
-            /// Update the resample ratio relative to the original one.
-            /// This is not supported by this resampler and always returns an error.
-            fn set_resample_ratio_relative(&mut self, _rel_ratio: f64) -> Res<()> {
-                Err(Box::new(ResamplerError::new(
-                    "Not possible to adjust a synchronous resampler)",
-                )))
-            }
-
-            /// Resample a chunk of audio. The input and output lengths are fixed.
-            /// If the waveform for a channel is empty, this channel will be ignored and produce a
-            /// corresponding empty output waveform.
-            /// # Errors
-            ///
-            /// The function returns an error if the size of the input data is not equal
-            /// to the number of channels and input size defined when creating the instance.
-            fn process(&mut self, wave_in: &[Vec<$t>]) -> Res<Vec<Vec<$t>>> {
-                if wave_in.len() != self.nbr_channels {
-                    return Err(Box::new(ResamplerError::new(
-                        "Wrong number of channels in input",
-                    )));
-                }
-                let mut used_channels = Vec::new();
-                for (chan, wave) in wave_in.iter().enumerate() {
-                    if !wave.is_empty() {
-                        used_channels.push(chan);
-                        if wave.len() != self.chunk_size_in {
-                            return Err(Box::new(ResamplerError::new(
-                                format!(
-                                    "Wrong number of frames in input, expected {}, got {}",
-                                    self.chunk_size_in,
-                                    wave_in[0].len()
-                                )
-                                .as_str(),
-                            )));
-                        }
-                    }
-                }
-                let mut wave_out = vec![Vec::new(); self.nbr_channels];
-                for chan in used_channels.iter() {
-                    wave_out[*chan] = vec![0.0 as $t; self.chunk_size_out];
-                }
-
-                for n in used_channels.iter() {
-                    self.resampler.resample_unit(
-                        &wave_in[*n],
-                        &mut wave_out[*n],
-                        &mut self.overlaps[*n],
-                    )
-                }
-                Ok(wave_out)
-            }
-        }
-    };
-}
-resampler_FftFixedinout!(f32);
-resampler_FftFixedinout!(f64);
-
-macro_rules! impl_fixedout {
-    ($ft:ty) => {
-        impl FftFixedOut<$ft> {
-            /// Create a new FftFixedOut
-            ///
-            /// Parameters are:
-            /// - `fs_in`: Input sample rate.
-            /// - `fs_out`: Output sample rate.
-            /// - `chunk_size_out`: length of output data in frames.
-            /// - `sub_chunks`: desired number of subchunks for processing, actual number may be different.
-            /// - `nbr_channels`: number of channels in input/output.
-            pub fn new(
-                fs_in: usize,
-                fs_out: usize,
-                chunk_size_out: usize,
-                sub_chunks: usize,
-                nbr_channels: usize,
-            ) -> Self {
-
-
-                let gcd = integer::gcd(fs_in, fs_out);
-                let min_chunk_out = fs_out/gcd;
-                let wanted_subsize = chunk_size_out/sub_chunks;
-                let fft_chunks = (wanted_subsize as f32 / min_chunk_out as f32).ceil() as usize;
-                let fft_size_out = fft_chunks * fs_out / gcd;
-                let fft_size_in = fft_chunks * fs_in / gcd;
-
-                let resampler = FftResampler::<$ft>::new(fft_size_in, fft_size_out);
-
-                debug!(
-                    "Create new FftFixedOut, fs_in: {}, fs_out: {} chunk_size_in: {}, channels: {}, fft_size_in: {}, fft_size_out: {}",
-                    fs_in, fs_out, chunk_size_out, nbr_channels, fft_size_in, fft_size_out
-                );
-
-                let overlaps: Vec<Vec<$ft>> = vec![vec![0.0; fft_size_out]; nbr_channels];
-                let output_buffers: Vec<Vec<$ft>> = vec![vec![0.0; chunk_size_out+fft_size_out]; nbr_channels];
-
-                let saved_frames = 0;
-                let chunks_needed = (chunk_size_out as f32 / fft_size_out as f32).ceil() as usize;
-                let frames_needed = chunks_needed*fft_size_in;
-
-                FftFixedOut {
-                    nbr_channels,
-                    chunk_size_out,
-                    fft_size_in,
-                    fft_size_out,
-                    overlaps,
-                    output_buffers,
-                    saved_frames,
-                    frames_needed,
-                    resampler,
-                }
-            }
-        }
-    }
-}
-impl_fixedout!(f64);
-impl_fixedout!(f32);
-
-macro_rules! resampler_FftFixedout {
-    ($t:ty) => {
-        impl Resampler<$t> for FftFixedOut<$t> {
-            /// Query for the number of frames needed for the next call to "process".
-            fn nbr_frames_needed(&self) -> usize {
-                self.frames_needed
-            }
-
-            /// Update the resample ratio. This is not supported by this resampler and always returns an error.
-            fn set_resample_ratio(&mut self, _new_ratio: f64) -> Res<()> {
-                Err(Box::new(ResamplerError::new(
-                    "Not possible to adjust a synchronous resampler)",
-                )))
-            }
-
-            /// Update the resample ratio relative to the original one.
-            /// This is not supported by this resampler and always returns an error.
-            fn set_resample_ratio_relative(&mut self, _rel_ratio: f64) -> Res<()> {
-                Err(Box::new(ResamplerError::new(
-                    "Not possible to adjust a synchronous resampler)",
-                )))
-            }
-
-            /// Resample a chunk of audio. The required input length is provided by
-            /// the "nbr_frames_needed" function, and the output length is fixed.
-            /// If the waveform for a channel is empty, this channel will be ignored and produce a
-            /// corresponding empty output waveform.
-            /// # Errors
-            ///
-            /// The function returns an error if the length of the input data is not
-            /// equal to the number of channels defined when creating the instance,
-            /// and the number of audio frames given by "nbr_frames_needed".
-            fn process(&mut self, wave_in: &[Vec<$t>]) -> Res<Vec<Vec<$t>>> {
-                if wave_in.len() != self.nbr_channels {
-                    return Err(Box::new(ResamplerError::new(
-                        "Wrong number of channels in input",
-                    )));
-                }
-                let mut used_channels = Vec::new();
-                for (chan, wave) in wave_in.iter().enumerate() {
-                    if !wave.is_empty() {
-                        used_channels.push(chan);
-                        if wave.len() != self.frames_needed {
-                            return Err(Box::new(ResamplerError::new(
-                                format!(
-                                    "Wrong number of frames in input, expected {}, got {}",
-                                    self.frames_needed,
-                                    wave.len()
-                                )
-                                .as_str(),
-                            )));
-                        }
-                    }
-                }
-
-                let mut wave_out = vec![Vec::new(); self.nbr_channels];
-                for chan in used_channels.iter() {
-                    wave_out[*chan] = self.output_buffers[*chan].clone();
-                }
-
-                for n in used_channels.iter() {
-                    for (in_chunk, out_chunk) in wave_in[*n]
-                        .chunks(self.fft_size_in)
-                        .zip(wave_out[*n][self.saved_frames..].chunks_mut(self.fft_size_out))
-                    {
-                        self.resampler
-                            .resample_unit(in_chunk, out_chunk, &mut self.overlaps[*n]);
-                    }
-                }
-                let processed_frames =
-                    self.saved_frames + self.fft_size_out * (self.frames_needed / self.fft_size_in);
-
-                // save extra frames for next round
-                self.saved_frames = processed_frames - self.chunk_size_out;
-                if processed_frames > self.chunk_size_out {
-                    for n in used_channels.iter() {
-                        self.output_buffers[*n][0..self.saved_frames].copy_from_slice(
-                            &wave_out[*n]
-                                [self.chunk_size_out..(self.chunk_size_out + self.saved_frames)],
-                        );
-                    }
-                }
-                for n in used_channels.iter() {
-                    wave_out[*n].truncate(self.chunk_size_out);
-                }
-                //calculate number of needed frames from next round
-                let frames_needed_out = if self.chunk_size_out > self.saved_frames {
-                    self.chunk_size_out - self.saved_frames
-                } else {
-                    0
-                };
-                let chunks_needed =
-                    (frames_needed_out as f32 / self.fft_size_out as f32).ceil() as usize;
-                self.frames_needed = chunks_needed * self.fft_size_in;
-                Ok(wave_out)
-            }
-        }
-    };
-}
-resampler_FftFixedout!(f32);
-resampler_FftFixedout!(f64);
-
-macro_rules! impl_fixedin {
-    ($ft:ty) => {
-        impl FftFixedIn<$ft> {
-            /// Create a new FftFixedOut
-            ///
-            /// Parameters are:
-            /// - `fs_in`: Input sample rate.
-            /// - `fs_out`: Output sample rate.
-            /// - `chunk_size_out`: length of output data in frames.
-            /// - `sub_chunks`: desired number of subchunks for processing, actual number used may be different.
-            /// - `nbr_channels`: number of channels in input/output.
-            pub fn new(
-                fs_in: usize,
-                fs_out: usize,
-                chunk_size_in: usize,
-                sub_chunks: usize,
-                nbr_channels: usize,
-            ) -> Self {
-
-
-                let gcd = integer::gcd(fs_in, fs_out);
-                let min_chunk_in = fs_in/gcd;
-                let wanted_subsize = chunk_size_in/sub_chunks;
-                let fft_chunks = (wanted_subsize as f32 / min_chunk_in as f32).ceil() as usize;
-                let fft_size_out = fft_chunks * fs_out / gcd;
-                let fft_size_in = fft_chunks * fs_in / gcd;
-
-                let resampler = FftResampler::<$ft>::new(fft_size_in, fft_size_out);
-                debug!(
-                    "Create new FftFixedOut, fs_in: {}, fs_out: {} chunk_size_in: {}, channels: {}, fft_size_in: {}, fft_size_out: {}",
-                    fs_in, fs_out, chunk_size_in, nbr_channels, fft_size_in, fft_size_out
-                );
-
-                let overlaps: Vec<Vec<$ft>> = vec![vec![0.0; fft_size_out]; nbr_channels];
-                let input_buffers: Vec<Vec<$ft>> = vec![vec![0.0; chunk_size_in+fft_size_out]; nbr_channels];
-
-                let saved_frames = 0;
-
-                FftFixedIn {
-                    nbr_channels,
-                    chunk_size_in,
-                    fft_size_in,
-                    fft_size_out,
-                    overlaps,
-                    input_buffers,
-                    saved_frames,
-                    resampler,
-                }
-            }
-        }
-    }
-}
-impl_fixedin!(f64);
-impl_fixedin!(f32);
-
-macro_rules! resampler_FftFixedin {
-    ($t:ty) => {
-        impl Resampler<$t> for FftFixedIn<$t> {
-            /// Query for the number of frames needed for the next call to "process".
-            fn nbr_frames_needed(&self) -> usize {
-                self.chunk_size_in
-            }
-
-            /// Update the resample ratio. This is not supported by this resampler and always returns an error.
-            fn set_resample_ratio(&mut self, _new_ratio: f64) -> Res<()> {
-                Err(Box::new(ResamplerError::new(
-                    "Not possible to adjust a synchronous resampler)",
-                )))
-            }
-
-            /// Update the resample ratio relative to the original one.
-            /// This is not supported by this resampler and always returns an error.
-            fn set_resample_ratio_relative(&mut self, _rel_ratio: f64) -> Res<()> {
-                Err(Box::new(ResamplerError::new(
-                    "Not possible to adjust a synchronous resampler)",
-                )))
-            }
-
-            /// Resample a chunk of audio. The required input length is provided by
-            /// the "nbr_frames_needed" function, and the output length is fixed.
-            /// If the waveform for a channel is empty, this channel will be ignored and produce a
-            /// corresponding empty output waveform.
-            /// # Errors
-            ///
-            /// The function returns an error if the length of the input data is not
-            /// equal to the number of channels defined when creating the instance,
-            /// and the number of audio frames given by "nbr_frames_needed".
-            fn process(&mut self, wave_in: &[Vec<$t>]) -> Res<Vec<Vec<$t>>> {
-                if wave_in.len() != self.nbr_channels {
-                    return Err(Box::new(ResamplerError::new(
-                        "Wrong number of channels in input",
-                    )));
-                }
-                let mut used_channels = Vec::new();
-                for (chan, wave) in wave_in.iter().enumerate() {
-                    if !wave.is_empty() {
-                        used_channels.push(chan);
-                        if wave.len() != self.chunk_size_in {
-                            return Err(Box::new(ResamplerError::new(
-                                format!(
-                                    "Wrong number of frames in input, expected {}, got {}",
-                                    self.chunk_size_in,
-                                    wave.len()
-                                )
-                                .as_str(),
-                            )));
-                        }
-                    }
-                }
-
-                let mut input_temp = vec![Vec::new(); self.nbr_channels];
-                for chan in used_channels.iter() {
-                    input_temp[*chan] = vec![0.0; self.saved_frames + self.chunk_size_in];
-                }
-
-                // copy new samples to input buffer
-                for n in used_channels.iter() {
-                    for (input, buffer) in self.input_buffers[*n]
-                        .iter()
-                        .take(self.saved_frames)
-                        .zip(input_temp[*n].iter_mut())
-                    {
-                        *buffer = *input;
-                    }
-                }
-                for n in used_channels.iter() {
-                    for (input, buffer) in wave_in[*n].iter().zip(
-                        input_temp[*n]
-                            .iter_mut()
-                            .skip(self.saved_frames)
-                            .take(self.chunk_size_in),
-                    ) {
-                        *buffer = *input;
-                    }
-                }
-                self.saved_frames += self.chunk_size_in;
-
-                let nbr_chunks_ready =
-                    (self.saved_frames as f32 / self.fft_size_in as f32).floor() as usize;
-                let mut wave_out = vec![Vec::new(); self.nbr_channels];
-                for chan in used_channels.iter() {
-                    wave_out[*chan] = vec![0.0; nbr_chunks_ready * self.fft_size_out];
-                }
-                for n in used_channels.iter() {
-                    for (in_chunk, out_chunk) in input_temp[*n]
-                        .chunks(self.fft_size_in)
-                        .take(nbr_chunks_ready)
-                        .zip(wave_out[*n].chunks_mut(self.fft_size_out))
-                    {
-                        self.resampler
-                            .resample_unit(in_chunk, out_chunk, &mut self.overlaps[*n]);
-                    }
-                }
-
-                // save extra frames for next round
-                let frames_in_used = nbr_chunks_ready * self.fft_size_in;
-                let extra = self.saved_frames - frames_in_used;
-
-                if self.saved_frames > frames_in_used {
-                    for n in used_channels.iter() {
-                        for (input, buffer) in input_temp[*n]
-                            .iter()
-                            .skip(frames_in_used)
-                            .take(extra)
-                            .zip(self.input_buffers[*n].iter_mut())
-                        {
-                            *buffer = *input;
-                        }
-                    }
-                }
-                self.saved_frames = extra;
-                Ok(wave_out)
-            }
-        }
-    };
-}
-resampler_FftFixedin!(f32);
-resampler_FftFixedin!(f64);
 
 #[cfg(test)]
 mod tests {

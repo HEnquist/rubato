@@ -30,8 +30,18 @@ fn bench_fftfixedin_32(c: &mut Criterion) {
     });
 }
 
+/// Helper to unwrap the constructed interpolator if appropriate.
+macro_rules! unwrap_helper {
+    (infallible $var:ident) => {
+        $var
+    };
+    ($var:ident) => {
+        $var.unwrap()
+    };
+}
+
 macro_rules! bench_async_resampler {
-    ($ft:ty, $it:ident, $ip:expr, $f:ident, $desc:literal) => {
+    ($ft:ty, $it:ident, $ip:expr, $f:ident, $desc:literal $(, $unwrap:tt)?) => {
         fn $f(c: &mut Criterion) {
             let chunksize = 1024;
             let sinc_len = 256;
@@ -41,12 +51,14 @@ macro_rules! bench_async_resampler {
             let resample_ratio = 192000 as f64 / 44100 as f64;
             let interpolation_type = $ip;
 
-            let interpolator = Box::new($it::<$ft>::new(
+            let interpolator = $it::<$ft>::new(
                 sinc_len,
                 oversampling_factor,
                 f_cutoff,
                 window,
-            ));
+            );
+            let interpolator = unwrap_helper!($($unwrap)* interpolator);
+            let interpolator = Box::new(interpolator);
             let mut resampler = SincFixedIn::<$ft>::new_with_interpolator(
                 resample_ratio,
                 interpolation_type,
@@ -65,42 +77,48 @@ bench_async_resampler!(
     ScalarInterpolator,
     InterpolationType::Cubic,
     bench_scalar_async_cubic_32,
-    "scalar async cubic   32"
+    "scalar async cubic   32",
+    infallible
 );
 bench_async_resampler!(
     f32,
     ScalarInterpolator,
     InterpolationType::Linear,
     bench_scalar_async_linear_32,
-    "scalar async linear  32"
+    "scalar async linear  32",
+    infallible
 );
 bench_async_resampler!(
     f32,
     ScalarInterpolator,
     InterpolationType::Nearest,
     bench_scalar_async_nearest_32,
-    "scalar async nearest 32"
+    "scalar async nearest 32",
+    infallible
 );
 bench_async_resampler!(
     f64,
     ScalarInterpolator,
     InterpolationType::Cubic,
     bench_scalar_async_cubic_64,
-    "scalar async cubic   64"
+    "scalar async cubic   64",
+    infallible
 );
 bench_async_resampler!(
     f64,
     ScalarInterpolator,
     InterpolationType::Linear,
     bench_scalar_async_linear_64,
-    "scalar async linear  64"
+    "scalar async linear  64",
+    infallible
 );
 bench_async_resampler!(
     f64,
     ScalarInterpolator,
     InterpolationType::Nearest,
     bench_scalar_async_nearest_64,
-    "scalar async nearest 64"
+    "scalar async nearest 64",
+    infallible
 );
 
 #[cfg(target_arch = "x86_64")]
