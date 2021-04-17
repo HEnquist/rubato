@@ -1,6 +1,6 @@
 [package]
 name = "rubato"
-version = "0.7.0"
+version = "0.8.0"
 authors = ["HEnquist <henrik.enquist@gmail.com>"]
 description = "Asynchronous resampling library intended for audio data"
 license = "MIT"
@@ -18,9 +18,9 @@ avx = []
 neon = ["packed_simd_2"]
 
 [dependencies]
-log = "0.4.11"
-realfft = "1.1.0"
-num-complex = "0.3"
+log = "0.4.14"
+realfft = "2.0.0"
+num-complex = "0.4"
 num-integer = "0.1.44"
 num-traits = "0.2"
 packed_simd_2 = {version="0.3.4", optional=true}

@@ -152,8 +152,8 @@ pub struct SseInterpolator<T> where T: SseSample {
 impl<T> SincInterpolator<T> for SseInterpolator<T> where T: SseSample {
     /// Calculate the scalar produt of an input wave and the selected sinc filter
     fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T {
-        assert!((index + self.length) < wave.len());
-        assert!(subindex < self.nbr_sincs);
+        assert!((index + self.length) < wave.len(), "Tried to interpolate for index {}, max for the given input is {}", index, wave.len()-self.length-1);
+        assert!(subindex < self.nbr_sincs, "Tried to use sinc subindex {}, max is {}", subindex, self.nbr_sincs-1);
         unsafe { T::get_sinc_interpolated_unsafe(wave, index, subindex, &self.sincs, self.length) }
     }
 
