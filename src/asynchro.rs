@@ -94,7 +94,7 @@ where
         f_cutoff: f32,
         window: WindowFunction,
     ) -> Self {
-        assert!(sinc_len % 8 == 0);
+        assert!(sinc_len % 8 == 0, "Sinc length must be a multiple of 8");
         let sincs = make_sincs(sinc_len, oversampling_factor, f_cutoff, window);
         Self {
             sincs,
