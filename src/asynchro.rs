@@ -41,6 +41,18 @@ where
 {
     /// Calculate the scalar produt of an input wave and the selected sinc filter
     fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T {
+        assert!(
+            (index + self.length) < wave.len(),
+            "Tried to interpolate for index {}, max for the given input is {}",
+            index,
+            wave.len() - self.length - 1
+        );
+        assert!(
+            subindex < self.nbr_sincs,
+            "Tried to use sinc subindex {}, max is {}",
+            subindex,
+            self.nbr_sincs - 1
+        );
         let wave_cut = &wave[index..(index + self.sincs[subindex].len())];
         let sinc = &self.sincs[subindex];
         unsafe {
@@ -311,7 +323,8 @@ where
         }
         let sinc_len = self.interpolator.len();
         let oversampling_factor = self.interpolator.nbr_sincs();
-        let end_idx = self.chunk_size as isize - (sinc_len as isize + 1);
+        let t_ratio = 1.0 / self.resample_ratio as f64;
+        let end_idx = self.chunk_size as isize - (sinc_len as isize + 1) - t_ratio.ceil() as isize;
         //update buffer with new data
         for wav in self.buffer.iter_mut() {
             for idx in 0..(2 * sinc_len) {
@@ -330,7 +343,6 @@ where
         }
 
         let mut idx = self.last_index;
-        let t_ratio = 1.0 / self.resample_ratio as f64;
 
         let mut n = 0;
 
@@ -813,8 +825,23 @@ mod tests {
         let mut resampler = SincFixedIn::<f64>::new(1.2, params, 1024, 2);
         let waves = vec![vec![0.0f64; 1024]; 2];
         let out = resampler.process(&waves).unwrap();
-        assert_eq!(out.len(), 2);
-        assert!(out[0].len() > 1150 && out[0].len() < 1250);
+        assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
+        assert!(
+            out[0].len() > 1150 && out[0].len() < 1229,
+            "expected {} - {} samples, got {}",
+            1150,
+            1229,
+            out[0].len()
+        );
+        let out2 = resampler.process(&waves).unwrap();
+        assert_eq!(out2.len(), 2, "Expected {} channels, got {}", 2, out2.len());
+        assert!(
+            out2[0].len() > 1226 && out2[0].len() < 1232,
+            "expected {} - {} samples, got {}",
+            1226,
+            1232,
+            out2[0].len()
+        );
     }
 
     #[test]
@@ -829,8 +856,23 @@ mod tests {
         let mut resampler = SincFixedIn::<f32>::new(1.2, params, 1024, 2);
         let waves = vec![vec![0.0f32; 1024]; 2];
         let out = resampler.process(&waves).unwrap();
-        assert_eq!(out.len(), 2);
-        assert!(out[0].len() > 1150 && out[0].len() < 1250);
+        assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
+        assert!(
+            out[0].len() > 1150 && out[0].len() < 1229,
+            "expected {} - {} samples, got {}",
+            1150,
+            1229,
+            out[0].len()
+        );
+        let out2 = resampler.process(&waves).unwrap();
+        assert_eq!(out2.len(), 2, "Expected {} channels, got {}", 2, out2.len());
+        assert!(
+            out2[0].len() > 1226 && out2[0].len() < 1232,
+            "expected {} - {} samples, got {}",
+            1226,
+            1232,
+            out2[0].len()
+        );
     }
 
     #[test]
@@ -853,6 +895,70 @@ mod tests {
         assert_eq!(out.len(), 2);
         assert!(out[1].len() > 1150 && out[0].len() < 1250);
         assert!(out[0].is_empty());
+    }
+
+    #[test]
+    fn make_resampler_fi_downsample() {
+        // Replicate settings from reported issue
+        let params = InterpolationParameters {
+            sinc_len: 256,
+            f_cutoff: 0.95,
+            interpolation: InterpolationType::Cubic,
+            oversampling_factor: 160,
+            window: WindowFunction::BlackmanHarris2,
+        };
+        let mut resampler = SincFixedIn::<f64>::new(16000 as f64 / 96000 as f64, params, 1024, 2);
+        let waves = vec![vec![0.0f64; 1024]; 2];
+        let out = resampler.process(&waves).unwrap();
+        assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
+        assert!(
+            out[0].len() > 140 && out[0].len() < 200,
+            "expected {} - {} samples, got {}",
+            140,
+            200,
+            out[0].len()
+        );
+        let out2 = resampler.process(&waves).unwrap();
+        assert_eq!(out2.len(), 2, "Expected {} channels, got {}", 2, out2.len());
+        assert!(
+            out2[0].len() > 167 && out2[0].len() < 173,
+            "expected {} - {} samples, got {}",
+            167,
+            173,
+            out2[0].len()
+        );
+    }
+
+    #[test]
+    fn make_resampler_fi_upsample() {
+        // Replicate settings from reported issue
+        let params = InterpolationParameters {
+            sinc_len: 256,
+            f_cutoff: 0.95,
+            interpolation: InterpolationType::Cubic,
+            oversampling_factor: 160,
+            window: WindowFunction::BlackmanHarris2,
+        };
+        let mut resampler = SincFixedIn::<f64>::new(192000 as f64 / 44100 as f64, params, 1024, 2);
+        let waves = vec![vec![0.0f64; 1024]; 2];
+        let out = resampler.process(&waves).unwrap();
+        assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
+        assert!(
+            out[0].len() > 3800 && out[0].len() < 4458,
+            "expected {} - {} samples, got {}",
+            3800,
+            4458,
+            out[0].len()
+        );
+        let out2 = resampler.process(&waves).unwrap();
+        assert_eq!(out2.len(), 2, "Expected {} channels, got {}", 2, out2.len());
+        assert!(
+            out2[0].len() > 4455 && out2[0].len() < 4461,
+            "expected {} - {} samples, got {}",
+            4455,
+            4461,
+            out2[0].len()
+        );
     }
 
     #[test]
@@ -928,5 +1034,79 @@ mod tests {
         let summed = out[1].iter().sum::<f64>();
         assert!(summed < 4.0);
         assert!(summed > 2.0);
+    }
+
+    #[test]
+    fn make_resampler_fo_downsample() {
+        let params = InterpolationParameters {
+            sinc_len: 256,
+            f_cutoff: 0.95,
+            interpolation: InterpolationType::Cubic,
+            oversampling_factor: 160,
+            window: WindowFunction::BlackmanHarris2,
+        };
+        let mut resampler = SincFixedOut::<f64>::new(0.125, params, 1024, 2);
+        let frames = resampler.nbr_frames_needed();
+        println!("{}", frames);
+        assert!(
+            frames > 8192 && frames < 9000,
+            "expected {}..{} samples, got {}",
+            8192,
+            9000,
+            frames
+        );
+        let waves = vec![vec![0.0f64; frames]; 2];
+        let out = resampler.process(&waves).unwrap();
+        assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
+        assert_eq!(out[0].len(), 1024, "Expected {} frames, got {}", 1024, out[0].len());
+        let frames2 = resampler.nbr_frames_needed();
+        assert!(
+            frames2 > 8189 && frames2 < 8195,
+            "expected {}..{} samples, got {}",
+            8189,
+            8195,
+            frames2
+        );
+        let waves2 = vec![vec![0.0f64; frames2]; 2];
+        let out2 = resampler.process(&waves2).unwrap();
+        assert_eq!(out2[0].len(), 1024, "Expected {} frames, got {}", 1024, out2[0].len());
+
+    }
+
+    #[test]
+    fn make_resampler_fo_upsample() {
+        let params = InterpolationParameters {
+            sinc_len: 256,
+            f_cutoff: 0.95,
+            interpolation: InterpolationType::Cubic,
+            oversampling_factor: 160,
+            window: WindowFunction::BlackmanHarris2,
+        };
+        let mut resampler = SincFixedOut::<f64>::new(8.0, params, 1024, 2);
+        let frames = resampler.nbr_frames_needed();
+        println!("{}", frames);
+        assert!(
+            frames > 128 && frames < 300,
+            "expected {}..{} samples, got {}",
+            140,
+            200,
+            frames
+        );
+        let waves = vec![vec![0.0f64; frames]; 2];
+        let out = resampler.process(&waves).unwrap();
+        assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
+        assert_eq!(out[0].len(), 1024, "Expected {} frames, got {}", 1024, out[0].len());
+        let frames2 = resampler.nbr_frames_needed();
+        assert!(
+            frames2 > 125 && frames2 < 131,
+            "expected {}..{} samples, got {}",
+            125,
+            131,
+            frames2
+        );
+        let waves2 = vec![vec![0.0f64; frames2]; 2];
+        let out2 = resampler.process(&waves2).unwrap();
+        assert_eq!(out2[0].len(), 1024, "Expected {} frames, got {}", 1024, out2[0].len());
+
     }
 }
