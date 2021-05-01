@@ -262,6 +262,6 @@ mod tests {
             NeonInterpolator::<f32>::new(sinc_len, oversampling_factor, f_cutoff, window).unwrap();
         let value = interpolator.get_sinc_interpolated(&wave, 333, 123);
         let check = get_sinc_interpolated(&wave, 333, &sincs[123]);
-        assert!((value - check).abs() < 1.0e-6);
+        assert!((value - check).abs() < 1.0e-5);
     }
 }
