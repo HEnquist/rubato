@@ -1058,7 +1058,13 @@ mod tests {
         let waves = vec![vec![0.0f64; frames]; 2];
         let out = resampler.process(&waves).unwrap();
         assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
-        assert_eq!(out[0].len(), 1024, "Expected {} frames, got {}", 1024, out[0].len());
+        assert_eq!(
+            out[0].len(),
+            1024,
+            "Expected {} frames, got {}",
+            1024,
+            out[0].len()
+        );
         let frames2 = resampler.nbr_frames_needed();
         assert!(
             frames2 > 8189 && frames2 < 8195,
@@ -1069,8 +1075,13 @@ mod tests {
         );
         let waves2 = vec![vec![0.0f64; frames2]; 2];
         let out2 = resampler.process(&waves2).unwrap();
-        assert_eq!(out2[0].len(), 1024, "Expected {} frames, got {}", 1024, out2[0].len());
-
+        assert_eq!(
+            out2[0].len(),
+            1024,
+            "Expected {} frames, got {}",
+            1024,
+            out2[0].len()
+        );
     }
 
     #[test]
@@ -1095,7 +1106,13 @@ mod tests {
         let waves = vec![vec![0.0f64; frames]; 2];
         let out = resampler.process(&waves).unwrap();
         assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
-        assert_eq!(out[0].len(), 1024, "Expected {} frames, got {}", 1024, out[0].len());
+        assert_eq!(
+            out[0].len(),
+            1024,
+            "Expected {} frames, got {}",
+            1024,
+            out[0].len()
+        );
         let frames2 = resampler.nbr_frames_needed();
         assert!(
             frames2 > 125 && frames2 < 131,
@@ -1106,7 +1123,12 @@ mod tests {
         );
         let waves2 = vec![vec![0.0f64; frames2]; 2];
         let out2 = resampler.process(&waves2).unwrap();
-        assert_eq!(out2[0].len(), 1024, "Expected {} frames, got {}", 1024, out2[0].len());
-
+        assert_eq!(
+            out2[0].len(),
+            1024,
+            "Expected {} frames, got {}",
+            1024,
+            out2[0].len()
+        );
     }
 }
