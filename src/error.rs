@@ -42,6 +42,7 @@ impl CpuFeature {
     }
 }
 
+#[allow(unused_variables)]
 impl fmt::Display for CpuFeature {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
@@ -55,7 +56,7 @@ impl fmt::Display for CpuFeature {
             }
             #[cfg(target_arch = "x86_64")]
             CpuFeature::Fma => {
-                write!(f, "fmx")
+                write!(f, "fma")
             }
             #[cfg(all(feature = "neon", target_arch = "aarch64"))]
             CpuFeature::Neon => {
