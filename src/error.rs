@@ -14,8 +14,10 @@ pub enum CpuFeature {
     #[cfg(target_arch = "x86_64")]
     Fma,
     /// aarc64 neon cpu feature.
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(all(feature = "neon", target_arch = "aarch64"))]
     Neon,
+    // A dummy cpu feature to have at least one enum variant
+    Dummy,
 }
 
 impl CpuFeature {
@@ -34,10 +36,11 @@ impl CpuFeature {
             CpuFeature::Fma => {
                 is_x86_feature_detected!("fma")
             }
-            #[cfg(target_arch = "aarch64")]
+            #[cfg(all(feature = "neon", target_arch = "aarch64"))]
             CpuFeature::Neon => {
                 is_aarch64_feature_detected!("neon")
             }
+            CpuFeature::Dummy => false,
         }
     }
 }
@@ -57,9 +60,12 @@ impl fmt::Display for CpuFeature {
             CpuFeature::Fma => {
                 write!(f, "fmx")
             }
-            #[cfg(target_arch = "aarch64")]
+            #[cfg(all(feature = "neon", target_arch = "aarch64"))]
             CpuFeature::Neon => {
                 write!(f, "neon")
+            }
+            CpuFeature::Dummy => {
+                write!(f, "dummy")
             }
         }
     }
