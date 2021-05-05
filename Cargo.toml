@@ -34,3 +34,6 @@ num-traits = "0.2.14"
 [[bench]]
 name = "resamplers"
 harness = false
+
+[lib]
+bench = false

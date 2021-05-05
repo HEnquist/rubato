@@ -1,8 +1,8 @@
 use crate::windows::WindowFunction;
 use crate::sinc::make_sincs;
 use core::arch::x86_64::{__m128, __m128d};
-use core::arch::x86_64::{_mm_add_pd, _mm_hadd_pd, _mm_loadu_pd, _mm_mul_pd, _mm_setzero_pd};
-use core::arch::x86_64::{_mm_add_ps, _mm_hadd_ps, _mm_loadu_ps, _mm_mul_ps, _mm_setzero_ps};
+use core::arch::x86_64::{_mm_add_pd, _mm_hadd_pd, _mm_loadu_pd, _mm_mul_pd, _mm_setzero_pd, _mm_store_sd};
+use core::arch::x86_64::{_mm_add_ps, _mm_hadd_ps, _mm_loadu_ps, _mm_mul_ps, _mm_setzero_ps, _mm_store_ss};
 use crate::asynchro::SincInterpolator;
 use crate::error::{MissingCpuFeature, CpuFeature};
 use crate::Sample;
@@ -78,10 +78,12 @@ impl SseSample for f32 {
             w_idx += 8;
             s_idx += 2;
         }
-        let mut packedsum = _mm_hadd_ps(acc0, acc1);
-        packedsum = _mm_hadd_ps(packedsum, packedsum);
-        let array = std::mem::transmute::<__m128, [f32; 4]>(packedsum);
-        array[0] + array[1]
+        let temp4 = _mm_add_ps(acc0, acc1);
+        let temp2 = _mm_hadd_ps(temp4, temp4);
+        let temp1 = _mm_hadd_ps(temp2, temp2);
+        let mut result = 0.0;
+        _mm_store_ss(&mut result, temp1);
+        result
     }
 }
 
@@ -134,11 +136,13 @@ impl SseSample for f64 {
             w_idx += 8;
             s_idx += 4;
         }
-        let mut packedsum0 = _mm_hadd_pd(acc0, acc1);
-        let packedsum1 = _mm_hadd_pd(acc2, acc3);
-        packedsum0 = _mm_hadd_pd(packedsum0, packedsum1);
-        let array = std::mem::transmute::<__m128d, [f64; 2]>(packedsum0);
-        array[0] + array[1]
+        let temp2_0 = _mm_add_pd(acc0, acc1);
+        let temp2_1 = _mm_add_pd(acc2, acc3);
+        let temp2 = _mm_hadd_pd(temp2_0, temp2_1);
+        let temp1 = _mm_hadd_pd(temp2, temp2);
+        let mut result = 0.0;
+        _mm_store_sd(&mut result, temp1);
+        result
     }
 }
 

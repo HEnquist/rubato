@@ -2,14 +2,14 @@ use crate::sinc::make_sincs;
 use crate::windows::WindowFunction;
 use crate::error::{MissingCpuFeature, CpuFeature};
 use core::arch::x86_64::{
-    __m128, __m128d, __m256, __m256d, _mm256_castpd256_pd128, _mm256_castps256_ps128,
+    __m256, __m256d, _mm256_castpd256_pd128, _mm256_castps256_ps128,
     _mm256_extractf128_pd, _mm256_extractf128_ps,
 };
 use core::arch::x86_64::{
-    _mm256_add_pd, _mm256_fmadd_pd, _mm256_loadu_pd, _mm256_setzero_pd, _mm_add_pd,
+    _mm256_add_pd, _mm256_fmadd_pd, _mm256_loadu_pd, _mm256_setzero_pd, _mm_add_pd, _mm_hadd_pd,  _mm_store_sd,
 };
 use core::arch::x86_64::{
-    _mm256_fmadd_ps, _mm256_loadu_ps, _mm256_setzero_ps, _mm_add_ps, _mm_hadd_ps,
+    _mm256_fmadd_ps, _mm256_loadu_ps, _mm256_setzero_ps, _mm_add_ps, _mm_hadd_ps, _mm_store_ss,
 };
 use crate::asynchro::SincInterpolator;
 use crate::Sample;
@@ -79,10 +79,12 @@ impl AvxSample for f32 {
             w_idx += 8;
         }
         let acc_high = _mm256_extractf128_ps(acc, 1);
-        let mut acc_low = _mm_add_ps(acc_high, _mm256_castps256_ps128(acc));
-        acc_low = _mm_hadd_ps(acc_low, acc_low);
-        let array = std::mem::transmute::<__m128, [f32; 4]>(acc_low);
-        array[0] + array[1]
+        let acc_low = _mm_add_ps(acc_high, _mm256_castps256_ps128(acc));
+        let temp2 = _mm_hadd_ps(acc_low, acc_low);
+        let temp1 = _mm_hadd_ps(temp2, temp2);
+        let mut result = 0.0;
+        _mm_store_ss(&mut result, temp1);
+        result
     }
 }
 
@@ -127,9 +129,11 @@ impl AvxSample for f64 {
         }
         let acc_all = _mm256_add_pd(acc0, acc1);
         let acc_high = _mm256_extractf128_pd(acc_all, 1);
-        let acc = _mm_add_pd(acc_high, _mm256_castpd256_pd128(acc_all));
-        let array = std::mem::transmute::<__m128d, [f64; 2]>(acc);
-        array[0] + array[1]
+        let temp2 = _mm_add_pd(acc_high, _mm256_castpd256_pd128(acc_all));
+        let temp1 = _mm_hadd_pd(temp2, temp2);
+        let mut result = 0.0;
+        _mm_store_sd(&mut result, temp1);
+        result
     }
 }
 
