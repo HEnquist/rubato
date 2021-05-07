@@ -685,6 +685,17 @@ mod tests {
     }
 
     #[test]
+    fn make_resampler_fi_downsample() {
+        let mut resampler = FftFixedIn::<f64>::new(48000, 16000, 1200, 2, 2);
+        let frames = resampler.nbr_frames_needed();
+        assert_eq!(frames, 1200);
+        let waves = vec![vec![0.0f64; frames]; 2];
+        let out = resampler.process(&waves).unwrap();
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].len(), 400);
+    }
+
+    #[test]
     fn make_resampler_fi_skipped() {
         let mut resampler = FftFixedIn::<f64>::new(44100, 48000, 1024, 2, 2);
         let frames = resampler.nbr_frames_needed();

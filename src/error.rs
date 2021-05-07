@@ -14,14 +14,14 @@ pub enum CpuFeature {
     #[cfg(target_arch = "x86_64")]
     Fma,
     /// aarc64 neon cpu feature.
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(all(feature = "neon", target_arch = "aarch64"))]
     Neon,
 }
 
 impl CpuFeature {
     /// Test if the given CPU feature is detected.
     pub fn is_detected(&self) -> bool {
-        match self {
+        match *self {
             #[cfg(target_arch = "x86_64")]
             CpuFeature::Sse3 => {
                 is_x86_feature_detected!("sse3")
@@ -34,7 +34,7 @@ impl CpuFeature {
             CpuFeature::Fma => {
                 is_x86_feature_detected!("fma")
             }
-            #[cfg(target_arch = "aarch64")]
+            #[cfg(all(feature = "neon", target_arch = "aarch64"))]
             CpuFeature::Neon => {
                 is_aarch64_feature_detected!("neon")
             }
@@ -42,9 +42,10 @@ impl CpuFeature {
     }
 }
 
+#[allow(unused_variables)]
 impl fmt::Display for CpuFeature {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
+        match *self {
             #[cfg(target_arch = "x86_64")]
             CpuFeature::Sse3 => {
                 write!(f, "sse3")
@@ -55,9 +56,9 @@ impl fmt::Display for CpuFeature {
             }
             #[cfg(target_arch = "x86_64")]
             CpuFeature::Fma => {
-                write!(f, "fmx")
+                write!(f, "fma")
             }
-            #[cfg(target_arch = "aarch64")]
+            #[cfg(all(feature = "neon", target_arch = "aarch64"))]
             CpuFeature::Neon => {
                 write!(f, "neon")
             }

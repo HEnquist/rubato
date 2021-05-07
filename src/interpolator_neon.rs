@@ -2,9 +2,8 @@ use crate::asynchro::SincInterpolator;
 use crate::sinc::make_sincs;
 use crate::windows::WindowFunction;
 use core::arch::aarch64::{float32x4_t, float64x2_t};
-use core::arch::aarch64::{vaddq_f32, vmulq_f32};
-use core::arch::aarch64::{vaddq_f64, vmulq_f64};
-use packed_simd_2::{f32x4, f64x2};
+use core::arch::aarch64::{vaddq_f32, vmulq_f32, vld1q_f32, vld1q_dup_f32};
+use core::arch::aarch64::{vaddq_f64, vmulq_f64, vld1q_f64};
 use crate::error::{MissingCpuFeature, CpuFeature};
 use crate::Sample;
 
@@ -47,8 +46,7 @@ impl NeonSample for f32 {
         for sinc in sincs.iter() {
             let mut packed = Vec::new();
             for elements in sinc.chunks(4) {
-                let elem = f32x4::from_slice_unaligned(elements);
-                let packed_elems = std::mem::transmute(elem);
+                let packed_elems = vld1q_f32(&elements[0]); 
                 packed.push(packed_elems);
             }
             packed_sincs.push(packed);
@@ -66,17 +64,13 @@ impl NeonSample for f32 {
     ) -> f32 {
         let sinc = sincs.get_unchecked(subindex);
         let wave_cut = &wave[index..(index + length)];
-        let mut acc0 = std::mem::transmute::<f32x4, float32x4_t>(f32x4::new(0.0, 0.0, 0.0, 0.0));
-        let mut acc1 = std::mem::transmute::<f32x4, float32x4_t>(f32x4::new(0.0, 0.0, 0.0, 0.0));
+        let mut acc0 = vld1q_dup_f32(&0.0);
+        let mut acc1 = vld1q_dup_f32(&0.0);
         let mut w_idx = 0;
         let mut s_idx = 0;
         for _ in 0..wave_cut.len() / 8 {
-            let w0 = std::mem::transmute(f32x4::from_slice_unaligned(
-                wave_cut.get_unchecked(w_idx..w_idx + 4),
-            ));
-            let w1 = std::mem::transmute(f32x4::from_slice_unaligned(
-                wave_cut.get_unchecked(w_idx + 4..w_idx + 8),
-            ));
+            let w0 = vld1q_f32(wave_cut.get_unchecked(w_idx));
+            let w1 = vld1q_f32(wave_cut.get_unchecked(w_idx + 4));
             let s0 = vmulq_f32(w0, *sinc.get_unchecked(s_idx));
             let s1 = vmulq_f32(w1, *sinc.get_unchecked(s_idx + 1));
             acc0 = vaddq_f32(acc0, s0);
@@ -85,7 +79,7 @@ impl NeonSample for f32 {
             s_idx += 2;
         }
         let packedsum = vaddq_f32(acc0, acc1);
-        let array = std::mem::transmute::<float32x4_t, [f32; 4]>(packedsum);
+	let array = core::slice::from_raw_parts(&packedsum as *const _ as *const f32 , 4);
         array[0] + array[1] + array[2] + array[3]
     }
 }
@@ -99,8 +93,7 @@ impl NeonSample for f64 {
         for sinc in sincs.iter() {
             let mut packed = Vec::new();
             for elements in sinc.chunks(2) {
-                let elem = f64x2::from_slice_unaligned(elements);
-                let packed_elems = std::mem::transmute(elem);
+                let packed_elems = vld1q_f64(&elements[0]);
                 packed.push(packed_elems);
             }
             packed_sincs.push(packed);
@@ -118,25 +111,17 @@ impl NeonSample for f64 {
     ) -> f64 {
         let sinc = sincs.get_unchecked(subindex);
         let wave_cut = &wave[index..(index + length)];
-        let mut acc0 = std::mem::transmute::<f64x2, float64x2_t>(f64x2::new(0.0, 0.0));
-        let mut acc1 = std::mem::transmute::<f64x2, float64x2_t>(f64x2::new(0.0, 0.0));
-        let mut acc2 = std::mem::transmute::<f64x2, float64x2_t>(f64x2::new(0.0, 0.0));
-        let mut acc3 = std::mem::transmute::<f64x2, float64x2_t>(f64x2::new(0.0, 0.0));
+        let mut acc0 = vld1q_f64([0.0, 0.0].as_ptr());
+        let mut acc1 = vld1q_f64([0.0, 0.0].as_ptr());
+        let mut acc2 = vld1q_f64([0.0, 0.0].as_ptr());
+        let mut acc3 = vld1q_f64([0.0, 0.0].as_ptr());
         let mut w_idx = 0;
         let mut s_idx = 0;
         for _ in 0..wave_cut.len() / 8 {
-            let w0 = std::mem::transmute(f64x2::from_slice_unaligned(
-                wave_cut.get_unchecked(w_idx..w_idx + 2),
-            ));
-            let w1 = std::mem::transmute(f64x2::from_slice_unaligned(
-                wave_cut.get_unchecked(w_idx + 2..w_idx + 4),
-            ));
-            let w2 = std::mem::transmute(f64x2::from_slice_unaligned(
-                wave_cut.get_unchecked(w_idx + 4..w_idx + 6),
-            ));
-            let w3 = std::mem::transmute(f64x2::from_slice_unaligned(
-                wave_cut.get_unchecked(w_idx + 6..w_idx + 8),
-            ));
+            let w0 = vld1q_f64(wave_cut.get_unchecked(w_idx));
+            let w1 = vld1q_f64(wave_cut.get_unchecked(w_idx+2));
+            let w2 = vld1q_f64(wave_cut.get_unchecked(w_idx+4));
+            let w3 = vld1q_f64(wave_cut.get_unchecked(w_idx+6));
             let s0 = vmulq_f64(w0, *sinc.get_unchecked(s_idx));
             let s1 = vmulq_f64(w1, *sinc.get_unchecked(s_idx + 1));
             let s2 = vmulq_f64(w2, *sinc.get_unchecked(s_idx + 2));
@@ -148,11 +133,11 @@ impl NeonSample for f64 {
             w_idx += 8;
             s_idx += 4;
         }
-        let mut packedsum0 = vaddq_f64(acc0, acc1);
+        let packedsum0 = vaddq_f64(acc0, acc1);
         let packedsum1 = vaddq_f64(acc2, acc3);
-        packedsum0 = vaddq_f64(packedsum0, packedsum1);
-        let array = std::mem::transmute::<float64x2_t, [f64; 2]>(packedsum0);
-        array[0] + array[1]
+        let packedsum2 = vaddq_f64(packedsum0, packedsum1);
+        let values = core::slice::from_raw_parts(&packedsum2 as *const _ as *const f64 , 2);
+        values[0] + values[1]
     }
 }
 
@@ -262,6 +247,6 @@ mod tests {
             NeonInterpolator::<f32>::new(sinc_len, oversampling_factor, f_cutoff, window).unwrap();
         let value = interpolator.get_sinc_interpolated(&wave, 333, 123);
         let check = get_sinc_interpolated(&wave, 333, &sincs[123]);
-        assert!((value - check).abs() < 1.0e-6);
+        assert!((value - check).abs() < 1.0e-5);
     }
 }
