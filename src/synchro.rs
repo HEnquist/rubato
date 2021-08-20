@@ -230,7 +230,7 @@ where
     ///
     /// The function returns an error if the size of the input data is not equal
     /// to the number of channels and input size defined when creating the instance.
-    fn process(&mut self, wave_in: &[Vec<T>]) -> ResampleResult<Vec<Vec<T>>> {
+    fn process<V: AsRef<[T]>>(&mut self, wave_in: &[V]) -> ResampleResult<Vec<Vec<T>>> {
         if wave_in.len() != self.nbr_channels {
             return Err(ResampleError::WrongNumberOfChannels {
                 expected: self.nbr_channels,
@@ -239,6 +239,7 @@ where
         }
         let mut used_channels = Vec::new();
         for (chan, wave) in wave_in.iter().enumerate() {
+            let wave = wave.as_ref();
             if !wave.is_empty() {
                 used_channels.push(chan);
                 if wave.len() != self.chunk_size_in {
@@ -256,8 +257,11 @@ where
         }
 
         for n in used_channels.iter() {
-            self.resampler
-                .resample_unit(&wave_in[*n], &mut wave_out[*n], &mut self.overlaps[*n])
+            self.resampler.resample_unit(
+                wave_in[*n].as_ref(),
+                &mut wave_out[*n],
+                &mut self.overlaps[*n],
+            )
         }
         Ok(wave_out)
     }
@@ -348,7 +352,7 @@ where
     /// The function returns an error if the length of the input data is not
     /// equal to the number of channels defined when creating the instance,
     /// and the number of audio frames given by "nbr_frames_needed".
-    fn process(&mut self, wave_in: &[Vec<T>]) -> ResampleResult<Vec<Vec<T>>> {
+    fn process<V: AsRef<[T]>>(&mut self, wave_in: &[V]) -> ResampleResult<Vec<Vec<T>>> {
         if wave_in.len() != self.nbr_channels {
             return Err(ResampleError::WrongNumberOfChannels {
                 expected: self.nbr_channels,
@@ -357,6 +361,7 @@ where
         }
         let mut used_channels = Vec::new();
         for (chan, wave) in wave_in.iter().enumerate() {
+            let wave = wave.as_ref();
             if !wave.is_empty() {
                 used_channels.push(chan);
                 if wave.len() != self.frames_needed {
@@ -376,6 +381,7 @@ where
 
         for n in used_channels.iter() {
             for (in_chunk, out_chunk) in wave_in[*n]
+                .as_ref()
                 .chunks(self.fft_size_in)
                 .zip(wave_out[*n][self.saved_frames..].chunks_mut(self.fft_size_out))
             {
@@ -491,7 +497,7 @@ where
     /// The function returns an error if the length of the input data is not
     /// equal to the number of channels defined when creating the instance,
     /// and the number of audio frames given by "nbr_frames_needed".
-    fn process(&mut self, wave_in: &[Vec<T>]) -> ResampleResult<Vec<Vec<T>>> {
+    fn process<V: AsRef<[T]>>(&mut self, wave_in: &[V]) -> ResampleResult<Vec<Vec<T>>> {
         if wave_in.len() != self.nbr_channels {
             return Err(ResampleError::WrongNumberOfChannels {
                 expected: self.nbr_channels,
@@ -500,6 +506,7 @@ where
         }
         let mut used_channels = Vec::new();
         for (chan, wave) in wave_in.iter().enumerate() {
+            let wave = wave.as_ref();
             if !wave.is_empty() {
                 used_channels.push(chan);
                 if wave.len() != self.chunk_size_in {
@@ -528,7 +535,7 @@ where
             }
         }
         for n in used_channels.iter() {
-            for (input, buffer) in wave_in[*n].iter().zip(
+            for (input, buffer) in wave_in[*n].as_ref().iter().zip(
                 input_temp[*n]
                     .iter_mut()
                     .skip(self.saved_frames)

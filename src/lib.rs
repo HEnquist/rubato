@@ -196,7 +196,7 @@ pub enum InterpolationType {
 pub trait Resampler<T> {
     /// Resample a chunk of audio. Input and output data is stored in a vector,
     /// where each element contains a vector with all samples for a single channel.
-    fn process(&mut self, wave_in: &[Vec<T>]) -> ResampleResult<Vec<Vec<T>>>;
+    fn process<V: AsRef<[T]>>(&mut self, wave_in: &[V]) -> ResampleResult<Vec<Vec<T>>>;
 
     /// Query for the number of frames needed for the next call to "process".
     fn nbr_frames_needed(&self) -> usize;
