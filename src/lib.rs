@@ -194,8 +194,12 @@ pub enum InterpolationType {
 /// A resampler that us used to resample a chunk of audio to a new sample rate.
 /// The rate can be adjusted as required.
 pub trait Resampler<T> {
-    /// Resample a chunk of audio. Input and output data is stored in a vector,
-    /// where each element contains a vector with all samples for a single channel.
+    /// Resample a chunk of audio.
+    ///
+    /// The input data is a slice, where each element of the slice is itself referenceable as a slice
+    /// ([`AsRef<[T]>`](AsRef)) which contains the samples for a single channel. Since [`Vec<T>`] implements
+    /// [`AsRef<[T]>`](AsRef), the input may simply be `&*Vec<Vec<T>>`. The output data is a vector, where each element
+    /// of the vector is itself a vector which contains the samples for a single channel.
     fn process<V: AsRef<[T]>>(&mut self, wave_in: &[V]) -> ResampleResult<Vec<Vec<T>>>;
 
     /// Query for the number of frames needed for the next call to "process".
