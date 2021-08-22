@@ -301,7 +301,7 @@ where
     ///
     /// The function returns an error if the length of the input data is not equal
     /// to the number of channels and chunk size defined when creating the instance.
-    fn process(&mut self, wave_in: &[Vec<T>]) -> ResampleResult<Vec<Vec<T>>> {
+    fn process<V: AsRef<[T]>>(&mut self, wave_in: &[V]) -> ResampleResult<Vec<Vec<T>>> {
         if wave_in.len() != self.nbr_channels {
             return Err(ResampleError::WrongNumberOfChannels {
                 expected: self.nbr_channels,
@@ -310,6 +310,7 @@ where
         }
         let mut used_channels = Vec::new();
         for (chan, wave) in wave_in.iter().enumerate() {
+            let wave = wave.as_ref();
             if !wave.is_empty() {
                 used_channels.push(chan);
                 if wave.len() != self.chunk_size {
@@ -335,7 +336,7 @@ where
         let mut wave_out = vec![Vec::new(); self.nbr_channels];
 
         for chan in used_channels.iter() {
-            for (idx, sample) in wave_in[*chan].iter().enumerate() {
+            for (idx, sample) in wave_in[*chan].as_ref().iter().enumerate() {
                 self.buffer[*chan][idx + 2 * sinc_len] = *sample;
             }
             wave_out[*chan] =
@@ -544,7 +545,7 @@ where
     /// The function returns an error if the length of the input data is not
     /// equal to the number of channels defined when creating the instance,
     /// and the number of audio frames given by "nbr_frames_needed".
-    fn process(&mut self, wave_in: &[Vec<T>]) -> ResampleResult<Vec<Vec<T>>> {
+    fn process<V: AsRef<[T]>>(&mut self, wave_in: &[V]) -> ResampleResult<Vec<Vec<T>>> {
         //update buffer with new data
         if wave_in.len() != self.nbr_channels {
             return Err(ResampleError::WrongNumberOfChannels {
@@ -556,6 +557,7 @@ where
         let oversampling_factor = self.interpolator.nbr_sincs();
         let mut used_channels = Vec::new();
         for (chan, wave) in wave_in.iter().enumerate() {
+            let wave = wave.as_ref();
             if !wave.is_empty() {
                 used_channels.push(chan);
                 if wave.len() != self.needed_input_size {
@@ -577,7 +579,7 @@ where
         let mut wave_out = vec![Vec::new(); self.nbr_channels];
 
         for chan in used_channels.iter() {
-            for (idx, sample) in wave_in[*chan].iter().enumerate() {
+            for (idx, sample) in wave_in[*chan].as_ref().iter().enumerate() {
                 self.buffer[*chan][idx + 2 * sinc_len] = *sample;
             }
             wave_out[*chan] = vec![T::zero(); self.chunk_size];
