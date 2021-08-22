@@ -35,7 +35,7 @@ where
 
     /// Coerce `value` into the current type.
     ///
-    /// Coercions are governed through the [CoerceFrom] trait.
+    /// Coercions are governed through the private `CoerceFrom` trait.
     fn coerce<T>(value: T) -> Self
     where
         Self: CoerceFrom<T>,

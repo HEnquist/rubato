@@ -361,7 +361,7 @@ where
                         let buf = &self.buffer[*chan];
                         for (n, p) in nearest.iter().zip(points.iter_mut()) {
                             *p = self.interpolator.get_sinc_interpolated(
-                                &buf,
+                                buf,
                                 (n.0 + 2 * sinc_len as isize) as usize,
                                 n.1 as usize,
                             );
@@ -384,7 +384,7 @@ where
                         let buf = &self.buffer[*chan];
                         for (n, p) in nearest.iter().zip(points.iter_mut()) {
                             *p = self.interpolator.get_sinc_interpolated(
-                                &buf,
+                                buf,
                                 (n.0 + 2 * sinc_len as isize) as usize,
                                 n.1 as usize,
                             );
@@ -403,7 +403,7 @@ where
                     for chan in used_channels.iter() {
                         let buf = &self.buffer[*chan];
                         point = self.interpolator.get_sinc_interpolated(
-                            &buf,
+                            buf,
                             (nearest.0 + 2 * sinc_len as isize) as usize,
                             nearest.1 as usize,
                         );
@@ -602,7 +602,7 @@ where
                         let buf = &self.buffer[*chan];
                         for (n, p) in nearest.iter().zip(points.iter_mut()) {
                             *p = self.interpolator.get_sinc_interpolated(
-                                &buf,
+                                buf,
                                 (n.0 + 2 * sinc_len as isize) as usize,
                                 n.1 as usize,
                             );
@@ -624,7 +624,7 @@ where
                         let buf = &self.buffer[*chan];
                         for (n, p) in nearest.iter().zip(points.iter_mut()) {
                             *p = self.interpolator.get_sinc_interpolated(
-                                &buf,
+                                buf,
                                 (n.0 + 2 * sinc_len as isize) as usize,
                                 n.1 as usize,
                             );
@@ -642,7 +642,7 @@ where
                     for chan in used_channels.iter() {
                         let buf = &self.buffer[*chan];
                         point = self.interpolator.get_sinc_interpolated(
-                            &buf,
+                            buf,
                             (nearest.0 + 2 * sinc_len as isize) as usize,
                             nearest.1 as usize,
                         );
