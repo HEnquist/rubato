@@ -211,3 +211,67 @@ pub trait Resampler<T> {
     /// Update the resample ratio relative to the original one.
     fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> ResampleResult<()>;
 }
+
+/// This is a helper trait that can be used when a [Resampler] must be object safe.
+/// It differs from [Resampler] only by fixing the type of the input of `process()` to `&[Vec<T>]`.
+/// This allows it to be made into a Trait object like this:
+/// `let boxed: Box<dyn VecResampler<f64>> = Box::new(FftFixedIn::<f64>::new(44100, 88200, 1024, 2, 2));`
+///
+/// Use this implementation as an example if you need to fix the input type to something else.
+pub trait VecResampler<T> {
+    /// Resample a chunk of audio.
+    /// Input and output data is stored in vectors, where each element contains a vector with all samples for a single channel.
+    fn process(&mut self, wave_in: &[Vec<T>]) -> ResampleResult<Vec<Vec<T>>>;
+
+    /// Query for the number of frames needed for the next call to "process".
+    fn nbr_frames_needed(&self) -> usize;
+
+    /// Update the resample ratio.
+    fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()>;
+
+    /// Update the resample ratio relative to the original one.
+    fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> ResampleResult<()>;
+}
+
+impl<T, U> VecResampler<T> for U
+where
+    U: Resampler<T>,
+{
+    fn process(&mut self, wave_in: &[Vec<T>]) -> ResampleResult<Vec<Vec<T>>> {
+        Resampler::process(self, wave_in)
+    }
+
+    fn nbr_frames_needed(&self) -> usize {
+        Resampler::nbr_frames_needed(self)
+    }
+
+    fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()> {
+        Resampler::set_resample_ratio(self, new_ratio)
+    }
+
+    fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> ResampleResult<()> {
+        Resampler::set_resample_ratio_relative(self, rel_ratio)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::FftFixedIn;
+    use crate::VecResampler;
+
+    #[test]
+    fn boxed_resampler() {
+        let boxed: Box<dyn VecResampler<f64>> =
+            Box::new(FftFixedIn::<f64>::new(44100, 88200, 1024, 2, 2));
+        let result = process_with_boxed(boxed);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].len(), 2048);
+        assert_eq!(result[1].len(), 2048);
+    }
+
+    fn process_with_boxed(mut resampler: Box<dyn VecResampler<f64>>) -> Vec<Vec<f64>> {
+        let frames = resampler.nbr_frames_needed();
+        let waves = vec![vec![0.0f64; frames]; 2];
+        resampler.process(&waves).unwrap()
+    }
+}
