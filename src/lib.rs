@@ -213,10 +213,13 @@ pub trait Resampler<T> {
 }
 
 /// This is a helper trait that can be used when a [Resampler] must be object safe.
-/// It differs from [Resampler] only by fixing the type of the input of `process()` to `&[Vec<T>]`.
-/// This allows it to be made into a Trait object like this:
-/// `let boxed: Box<dyn VecResampler<f64>> = Box::new(FftFixedIn::<f64>::new(44100, 88200, 1024, 2, 2));`
 ///
+/// It differs from [Resampler] only by fixing the type of the input of `process()` to `&[Vec<T>]`.
+/// This allows it to be made into a trait object like this:
+/// ```
+/// # use rubato::{FftFixedIn, VecResampler};
+/// let boxed: Box<dyn VecResampler<f64>> = Box::new(FftFixedIn::<f64>::new(44100, 88200, 1024, 2, 2));
+/// ```
 /// Use this implementation as an example if you need to fix the input type to something else.
 pub trait VecResampler<T> {
     /// Resample a chunk of audio.
