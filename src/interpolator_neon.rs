@@ -3,7 +3,8 @@ use crate::sinc::make_sincs;
 use crate::windows::WindowFunction;
 use core::arch::aarch64::{float32x4_t, float64x2_t};
 use core::arch::aarch64::{vaddq_f32, vmulq_f32, vld1q_f32, vld1q_dup_f32};
-use core::arch::aarch64::{vaddq_f64, vmulq_f64, vld1q_f64};
+use core::arch::aarch64::{vaddq_f64, vmulq_f64, vld1q_f64, vdupq_n_f64, vmovq_n_f32, vmovq_n_f64, vst1q_f32, vst1q_f64};
+use core::arch::aarch64::{vmlaq_f64, vmlaq_f32};
 use crate::error::{MissingCpuFeature, CpuFeature};
 use crate::Sample;
 
@@ -64,22 +65,26 @@ impl NeonSample for f32 {
     ) -> f32 {
         let sinc = sincs.get_unchecked(subindex);
         let wave_cut = &wave[index..(index + length)];
-        let mut acc0 = vld1q_dup_f32(&0.0);
-        let mut acc1 = vld1q_dup_f32(&0.0);
+        let mut acc0 = vmovq_n_f32(0.0);
+        let mut acc1 = vmovq_n_f32(0.0);
         let mut w_idx = 0;
         let mut s_idx = 0;
         for _ in 0..wave_cut.len() / 8 {
             let w0 = vld1q_f32(wave_cut.get_unchecked(w_idx));
             let w1 = vld1q_f32(wave_cut.get_unchecked(w_idx + 4));
-            let s0 = vmulq_f32(w0, *sinc.get_unchecked(s_idx));
-            let s1 = vmulq_f32(w1, *sinc.get_unchecked(s_idx + 1));
-            acc0 = vaddq_f32(acc0, s0);
-            acc1 = vaddq_f32(acc1, s1);
+            //let s0 = vmulq_f32(w0, *sinc.get_unchecked(s_idx));
+            //let s1 = vmulq_f32(w1, *sinc.get_unchecked(s_idx + 1));
+            //acc0 = vaddq_f32(acc0, s0);
+            //acc1 = vaddq_f32(acc1, s1);
+            acc0 = vmlaq_f32(acc0, w0, *sinc.get_unchecked(s_idx));
+            acc1 = vmlaq_f32(acc1, w1, *sinc.get_unchecked(s_idx + 1));
             w_idx += 8;
             s_idx += 2;
         }
         let packedsum = vaddq_f32(acc0, acc1);
-	let array = core::slice::from_raw_parts(&packedsum as *const _ as *const f32 , 4);
+        let mut array = [0.0, 0.0, 0.0, 0.0];
+        vst1q_f32(array.as_mut_ptr(), packedsum);
+	    //let array = core::slice::from_raw_parts(&packedsum as *const _ as *const f32 , 4);
         array[0] + array[1] + array[2] + array[3]
     }
 }
@@ -111,10 +116,14 @@ impl NeonSample for f64 {
     ) -> f64 {
         let sinc = sincs.get_unchecked(subindex);
         let wave_cut = &wave[index..(index + length)];
-        let mut acc0 = vld1q_f64([0.0, 0.0].as_ptr());
-        let mut acc1 = vld1q_f64([0.0, 0.0].as_ptr());
-        let mut acc2 = vld1q_f64([0.0, 0.0].as_ptr());
-        let mut acc3 = vld1q_f64([0.0, 0.0].as_ptr());
+        //let mut acc0 = vld1q_f64([0.0, 0.0].as_ptr());
+        //let mut acc1 = vld1q_f64([0.0, 0.0].as_ptr());
+        //let mut acc2 = vld1q_f64([0.0, 0.0].as_ptr());
+        //let mut acc3 = vld1q_f64([0.0, 0.0].as_ptr());
+        let mut acc0 = vmovq_n_f64(0.0);
+        let mut acc1 = vmovq_n_f64(0.0);
+        let mut acc2 = vmovq_n_f64(0.0);
+        let mut acc3 = vmovq_n_f64(0.0);
         let mut w_idx = 0;
         let mut s_idx = 0;
         for _ in 0..wave_cut.len() / 8 {
@@ -122,21 +131,27 @@ impl NeonSample for f64 {
             let w1 = vld1q_f64(wave_cut.get_unchecked(w_idx+2));
             let w2 = vld1q_f64(wave_cut.get_unchecked(w_idx+4));
             let w3 = vld1q_f64(wave_cut.get_unchecked(w_idx+6));
-            let s0 = vmulq_f64(w0, *sinc.get_unchecked(s_idx));
-            let s1 = vmulq_f64(w1, *sinc.get_unchecked(s_idx + 1));
-            let s2 = vmulq_f64(w2, *sinc.get_unchecked(s_idx + 2));
-            let s3 = vmulq_f64(w3, *sinc.get_unchecked(s_idx + 3));
-            acc0 = vaddq_f64(acc0, s0);
-            acc1 = vaddq_f64(acc1, s1);
-            acc2 = vaddq_f64(acc2, s2);
-            acc3 = vaddq_f64(acc3, s3);
+            //let s0 = vmulq_f64(w0, *sinc.get_unchecked(s_idx));
+            //let s1 = vmulq_f64(w1, *sinc.get_unchecked(s_idx + 1));
+            //let s2 = vmulq_f64(w2, *sinc.get_unchecked(s_idx + 2));
+            //let s3 = vmulq_f64(w3, *sinc.get_unchecked(s_idx + 3));
+            //acc0 = vaddq_f64(acc0, s0);
+            //acc1 = vaddq_f64(acc1, s1);
+            //acc2 = vaddq_f64(acc2, s2);
+            //acc3 = vaddq_f64(acc3, s3);
+            acc0 = vmlaq_f64(acc0, w0, *sinc.get_unchecked(s_idx));
+            acc1 = vmlaq_f64(acc1, w1, *sinc.get_unchecked(s_idx + 1));
+            acc2 = vmlaq_f64(acc2, w2, *sinc.get_unchecked(s_idx + 2));
+            acc3 = vmlaq_f64(acc3, w3, *sinc.get_unchecked(s_idx + 3));
             w_idx += 8;
             s_idx += 4;
         }
         let packedsum0 = vaddq_f64(acc0, acc1);
         let packedsum1 = vaddq_f64(acc2, acc3);
         let packedsum2 = vaddq_f64(packedsum0, packedsum1);
-        let values = core::slice::from_raw_parts(&packedsum2 as *const _ as *const f64 , 2);
+        //let values = core::slice::from_raw_parts(&packedsum2 as *const _ as *const f64 , 2);
+        let mut values = [0.0, 0.0];
+        vst1q_f64(values.as_mut_ptr(), packedsum2);
         values[0] + values[1]
     }
 }
