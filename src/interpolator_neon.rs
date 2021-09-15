@@ -2,8 +2,8 @@ use crate::asynchro::SincInterpolator;
 use crate::sinc::make_sincs;
 use crate::windows::WindowFunction;
 use core::arch::aarch64::{float32x4_t, float64x2_t};
-use core::arch::aarch64::{vaddq_f32, vld1q_f32, vmovq_n_f32, vst1q_f32, vmlaq_f32};
-use core::arch::aarch64::{vaddq_f64, vld1q_f64, vmovq_n_f64, vst1q_f64, vmlaq_f64};
+use core::arch::aarch64::{vaddq_f32, vld1q_f32, vmovq_n_f32, vst1q_f32, vfmaq_f32};
+use core::arch::aarch64::{vaddq_f64, vld1q_f64, vmovq_n_f64, vst1q_f64, vfmaq_f64};
 use crate::error::{MissingCpuFeature, CpuFeature};
 use crate::Sample;
 
@@ -71,8 +71,8 @@ impl NeonSample for f32 {
         for _ in 0..wave_cut.len() / 8 {
             let w0 = vld1q_f32(wave_cut.get_unchecked(w_idx));
             let w1 = vld1q_f32(wave_cut.get_unchecked(w_idx + 4));
-            acc0 = vmlaq_f32(acc0, w0, *sinc.get_unchecked(s_idx));
-            acc1 = vmlaq_f32(acc1, w1, *sinc.get_unchecked(s_idx + 1));
+            acc0 = vfmaq_f32(acc0, w0, *sinc.get_unchecked(s_idx));
+            acc1 = vfmaq_f32(acc1, w1, *sinc.get_unchecked(s_idx + 1));
             w_idx += 8;
             s_idx += 2;
         }
@@ -121,10 +121,10 @@ impl NeonSample for f64 {
             let w1 = vld1q_f64(wave_cut.get_unchecked(w_idx+2));
             let w2 = vld1q_f64(wave_cut.get_unchecked(w_idx+4));
             let w3 = vld1q_f64(wave_cut.get_unchecked(w_idx+6));
-            acc0 = vmlaq_f64(acc0, w0, *sinc.get_unchecked(s_idx));
-            acc1 = vmlaq_f64(acc1, w1, *sinc.get_unchecked(s_idx + 1));
-            acc2 = vmlaq_f64(acc2, w2, *sinc.get_unchecked(s_idx + 2));
-            acc3 = vmlaq_f64(acc3, w3, *sinc.get_unchecked(s_idx + 3));
+            acc0 = vfmaq_f64(acc0, w0, *sinc.get_unchecked(s_idx));
+            acc1 = vfmaq_f64(acc1, w1, *sinc.get_unchecked(s_idx + 1));
+            acc2 = vfmaq_f64(acc2, w2, *sinc.get_unchecked(s_idx + 2));
+            acc3 = vfmaq_f64(acc3, w3, *sinc.get_unchecked(s_idx + 3));
             w_idx += 8;
             s_idx += 4;
         }
