@@ -2,8 +2,8 @@ use crate::asynchro::SincInterpolator;
 use crate::sinc::make_sincs;
 use crate::windows::WindowFunction;
 use core::arch::aarch64::{float32x4_t, float64x2_t};
-use core::arch::aarch64::{vaddq_f32, vld1q_f32, vmovq_n_f32, vst1q_f32, vfmaq_f32};
-use core::arch::aarch64::{vaddq_f64, vld1q_f64, vmovq_n_f64, vst1q_f64, vfmaq_f64};
+use core::arch::aarch64::{vadd_f32, vaddq_f32, vfmaq_f32, vld1q_f32, vmovq_n_f32, vst1_f32, vget_high_f32, vget_low_f32};
+use core::arch::aarch64::{vaddq_f64, vfmaq_f64, vld1q_f64, vmovq_n_f64, vst1q_f64};
 use crate::error::{MissingCpuFeature, CpuFeature};
 use crate::Sample;
 
@@ -76,10 +76,13 @@ impl NeonSample for f32 {
             w_idx += 8;
             s_idx += 2;
         }
-        let packedsum = vaddq_f32(acc0, acc1);
-        let mut array = [0.0, 0.0, 0.0, 0.0];
-        vst1q_f32(array.as_mut_ptr(), packedsum);
-        array[0] + array[1] + array[2] + array[3]
+        let sum4 = vaddq_f32(acc0, acc1);
+        let high = vget_high_f32(sum4);
+        let low = vget_low_f32(sum4);
+        let sum2 = vadd_f32(high, low);
+        let mut array = [0.0, 0.0];
+        vst1_f32(array.as_mut_ptr(), sum2);
+        array[0] + array[1]
     }
 }
 
