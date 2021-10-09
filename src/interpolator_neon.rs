@@ -12,7 +12,7 @@ static FEATURES: &[CpuFeature] = &[CpuFeature::Neon];
 
 /// Trait governing what can be done with an NeonSample.
 pub trait NeonSample: Sized + Send {
-    type Sinc;
+    type Sinc: Send;
 
     /// Pack sincs into a vector.
     ///
