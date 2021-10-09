@@ -1,38 +1,39 @@
+use crate::asynchro::SincInterpolator;
+use crate::error::{CpuFeature, MissingCpuFeature};
 use crate::sinc::make_sincs;
 use crate::windows::WindowFunction;
-use crate::error::{MissingCpuFeature, CpuFeature};
+use crate::Sample;
 use core::arch::x86_64::{
-    __m256, __m256d, _mm256_castpd256_pd128, _mm256_castps256_ps128,
-    _mm256_extractf128_pd, _mm256_extractf128_ps,
+    __m256, __m256d, _mm256_castpd256_pd128, _mm256_castps256_ps128, _mm256_extractf128_pd,
+    _mm256_extractf128_ps,
 };
 use core::arch::x86_64::{
-    _mm256_add_pd, _mm256_fmadd_pd, _mm256_loadu_pd, _mm256_setzero_pd, _mm_add_pd, _mm_hadd_pd,  _mm_store_sd,
+    _mm256_add_pd, _mm256_fmadd_pd, _mm256_loadu_pd, _mm256_setzero_pd, _mm_add_pd, _mm_hadd_pd,
+    _mm_store_sd,
 };
 use core::arch::x86_64::{
     _mm256_fmadd_ps, _mm256_loadu_ps, _mm256_setzero_ps, _mm_add_ps, _mm_hadd_ps, _mm_store_ss,
 };
-use crate::asynchro::SincInterpolator;
-use crate::Sample;
 
 /// Collection of cpu features required for this interpolator.
 static FEATURES: &[CpuFeature] = &[CpuFeature::Avx, CpuFeature::Fma];
 
 /// Trait governing what can be done with an AvxSample.
-pub trait AvxSample: Sized {
-    type Sinc;
+pub trait AvxSample: Sized + Send {
+    type Sinc: Send;
 
     /// Pack sincs into a vector.
-    /// 
+    ///
     /// # Safety
-    /// 
+    ///
     /// This is unsafe because it uses target_enable dispatching. There are no
     /// special requirements from the caller.
     unsafe fn pack_sincs(sincs: Vec<Vec<Self>>) -> Vec<Vec<Self::Sinc>>;
 
     /// Interpolate a sinc sample.
-    /// 
+    ///
     /// # Safety
-    /// 
+    ///
     /// The caller must ensure that the various indexes are not out of bounds
     /// in the collection of sincs.
     unsafe fn get_sinc_interpolated_unsafe(
@@ -138,17 +139,33 @@ impl AvxSample for f64 {
 }
 
 /// An AVX accelerated interpolator
-pub struct AvxInterpolator<T> where T: AvxSample {
+pub struct AvxInterpolator<T>
+where
+    T: AvxSample,
+{
     sincs: Vec<Vec<T::Sinc>>,
     length: usize,
     nbr_sincs: usize,
 }
 
-impl<T> SincInterpolator<T> for AvxInterpolator<T> where T: AvxSample {
+impl<T> SincInterpolator<T> for AvxInterpolator<T>
+where
+    T: AvxSample,
+{
     /// Calculate the scalar produt of an input wave and the selected sinc filter
     fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T {
-        assert!((index + self.length) < wave.len(), "Tried to interpolate for index {}, max for the given input is {}", index, wave.len()-self.length-1);
-        assert!(subindex < self.nbr_sincs, "Tried to use sinc subindex {}, max is {}", subindex, self.nbr_sincs-1);
+        assert!(
+            (index + self.length) < wave.len(),
+            "Tried to interpolate for index {}, max for the given input is {}",
+            index,
+            wave.len() - self.length - 1
+        );
+        assert!(
+            subindex < self.nbr_sincs,
+            "Tried to use sinc subindex {}, max is {}",
+            subindex,
+            self.nbr_sincs - 1
+        );
         unsafe { T::get_sinc_interpolated_unsafe(wave, index, subindex, &self.sincs, self.length) }
     }
 
@@ -161,7 +178,10 @@ impl<T> SincInterpolator<T> for AvxInterpolator<T> where T: AvxSample {
     }
 }
 
-impl<T> AvxInterpolator<T> where T: Sample {
+impl<T> AvxInterpolator<T>
+where
+    T: Sample,
+{
     /// Create a new AvxInterpolator
     ///
     /// Parameters are:
@@ -221,13 +241,14 @@ mod tests {
         let window = WindowFunction::BlackmanHarris2;
         let sincs = make_sincs::<f64>(sinc_len, oversampling_factor, f_cutoff, window);
 
-        let interpolator = match AvxInterpolator::<f64>::new(sinc_len, oversampling_factor, f_cutoff, window) {
-            Ok(interpolator) => interpolator,
-            Err(..) => {
-                assert!(!(is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma")));
-                return;
-            },
-        };
+        let interpolator =
+            match AvxInterpolator::<f64>::new(sinc_len, oversampling_factor, f_cutoff, window) {
+                Ok(interpolator) => interpolator,
+                Err(..) => {
+                    assert!(!(is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma")));
+                    return;
+                }
+            };
 
         let value = interpolator.get_sinc_interpolated(&wave, 333, 123);
         let check = get_sinc_interpolated(&wave, 333, &sincs[123]);
@@ -247,13 +268,14 @@ mod tests {
         let window = WindowFunction::BlackmanHarris2;
         let sincs = make_sincs::<f32>(sinc_len, oversampling_factor, f_cutoff, window);
 
-        let interpolator = match AvxInterpolator::<f32>::new(sinc_len, oversampling_factor, f_cutoff, window) {
-            Ok(interpolator) => interpolator,
-            Err(..) => {
-                assert!(!(is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma")));
-                return;
-            }
-        };
+        let interpolator =
+            match AvxInterpolator::<f32>::new(sinc_len, oversampling_factor, f_cutoff, window) {
+                Ok(interpolator) => interpolator,
+                Err(..) => {
+                    assert!(!(is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma")));
+                    return;
+                }
+            };
 
         let value = interpolator.get_sinc_interpolated(&wave, 333, 123);
         let check = get_sinc_interpolated(&wave, 333, &sincs[123]);

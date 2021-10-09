@@ -12,7 +12,7 @@ use crate::{InterpolationParameters, InterpolationType};
 use crate::{Resampler, Sample};
 
 /// Functions for making the scalar product with a sinc
-pub trait SincInterpolator<T> {
+pub trait SincInterpolator<T>: Send {
     /// Make the scalar product between the waveform starting at `index` and the sinc of `subindex`.
     fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T;
 

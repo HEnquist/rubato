@@ -23,7 +23,8 @@ where
         + std::ops::AddAssign
         + AvxSample
         + SseSample
-        + NeonSample,
+        + NeonSample
+        + Send,
 {
     const PI: Self;
 
