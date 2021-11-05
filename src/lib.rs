@@ -259,9 +259,11 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::FftFixedIn;
     use crate::VecResampler;
+    use crate::{FftFixedIn, FftFixedInOut, FftFixedOut};
+    use crate::{SincFixedIn, SincFixedOut};
 
+    // This tests that a VecResampler can be boxed.
     #[test]
     fn boxed_resampler() {
         let boxed: Box<dyn VecResampler<f64>> =
@@ -276,5 +278,21 @@ mod tests {
         let frames = resampler.nbr_frames_needed();
         let waves = vec![vec![0.0f64; frames]; 2];
         resampler.process(&waves).unwrap()
+    }
+
+    fn impl_send<T: Send>() {
+        fn is_send<T: Send>() {}
+        is_send::<SincFixedOut<T>>();
+        is_send::<SincFixedIn<T>>();
+        is_send::<FftFixedOut<T>>();
+        is_send::<FftFixedIn<T>>();
+        is_send::<FftFixedInOut<T>>();
+    }
+
+    // This tests that all resamplers are Send.
+    #[test]
+    fn test_impl_send() {
+        impl_send::<f32>();
+        impl_send::<f64>();
     }
 }
