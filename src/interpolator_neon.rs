@@ -7,9 +7,6 @@ use core::arch::aarch64::{vadd_f32, vaddq_f32, vfmaq_f32, vld1q_f32, vmovq_n_f32
 use core::arch::aarch64::{vaddq_f64, vfmaq_f64, vld1q_f64, vmovq_n_f64, vst1q_f64};
 use crate::error::{MissingCpuFeature, CpuFeature};
 use crate::Sample;
-use core::arch::aarch64::{float32x4_t, float64x2_t};
-use core::arch::aarch64::{vaddq_f32, vld1q_dup_f32, vld1q_f32, vmulq_f32};
-use core::arch::aarch64::{vaddq_f64, vld1q_f64, vmulq_f64};
 
 /// Collection of cpu features required for this interpolator.
 static FEATURES: &[CpuFeature] = &[CpuFeature::Neon];
