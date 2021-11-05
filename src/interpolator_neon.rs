@@ -1,31 +1,31 @@
 use crate::asynchro::SincInterpolator;
+use crate::error::{CpuFeature, MissingCpuFeature};
 use crate::sinc::make_sincs;
 use crate::windows::WindowFunction;
-use core::arch::aarch64::{float32x4_t, float64x2_t};
-use core::arch::aarch64::{vaddq_f32, vmulq_f32, vld1q_f32, vld1q_dup_f32};
-use core::arch::aarch64::{vaddq_f64, vmulq_f64, vld1q_f64};
-use crate::error::{MissingCpuFeature, CpuFeature};
 use crate::Sample;
+use core::arch::aarch64::{float32x4_t, float64x2_t};
+use core::arch::aarch64::{vaddq_f32, vld1q_dup_f32, vld1q_f32, vmulq_f32};
+use core::arch::aarch64::{vaddq_f64, vld1q_f64, vmulq_f64};
 
 /// Collection of cpu features required for this interpolator.
 static FEATURES: &[CpuFeature] = &[CpuFeature::Neon];
 
 /// Trait governing what can be done with an NeonSample.
-pub trait NeonSample: Sized {
-    type Sinc;
+pub trait NeonSample: Sized + Send {
+    type Sinc: Send;
 
     /// Pack sincs into a vector.
-    /// 
+    ///
     /// # Safety
-    /// 
+    ///
     /// This is unsafe because it uses target_enable dispatching. There are no
     /// special requirements from the caller.
     unsafe fn pack_sincs(sincs: Vec<Vec<Self>>) -> Vec<Vec<Self::Sinc>>;
 
     /// Interpolate a sinc sample.
-    /// 
+    ///
     /// # Safety
-    /// 
+    ///
     /// The caller must ensure that the various indexes are not out of bounds
     /// in the collection of sincs.
     unsafe fn get_sinc_interpolated_unsafe(
@@ -46,7 +46,7 @@ impl NeonSample for f32 {
         for sinc in sincs.iter() {
             let mut packed = Vec::new();
             for elements in sinc.chunks(4) {
-                let packed_elems = vld1q_f32(&elements[0]); 
+                let packed_elems = vld1q_f32(&elements[0]);
                 packed.push(packed_elems);
             }
             packed_sincs.push(packed);
@@ -79,7 +79,7 @@ impl NeonSample for f32 {
             s_idx += 2;
         }
         let packedsum = vaddq_f32(acc0, acc1);
-	let array = core::slice::from_raw_parts(&packedsum as *const _ as *const f32 , 4);
+        let array = core::slice::from_raw_parts(&packedsum as *const _ as *const f32, 4);
         array[0] + array[1] + array[2] + array[3]
     }
 }
@@ -119,9 +119,9 @@ impl NeonSample for f64 {
         let mut s_idx = 0;
         for _ in 0..wave_cut.len() / 8 {
             let w0 = vld1q_f64(wave_cut.get_unchecked(w_idx));
-            let w1 = vld1q_f64(wave_cut.get_unchecked(w_idx+2));
-            let w2 = vld1q_f64(wave_cut.get_unchecked(w_idx+4));
-            let w3 = vld1q_f64(wave_cut.get_unchecked(w_idx+6));
+            let w1 = vld1q_f64(wave_cut.get_unchecked(w_idx + 2));
+            let w2 = vld1q_f64(wave_cut.get_unchecked(w_idx + 4));
+            let w3 = vld1q_f64(wave_cut.get_unchecked(w_idx + 6));
             let s0 = vmulq_f64(w0, *sinc.get_unchecked(s_idx));
             let s1 = vmulq_f64(w1, *sinc.get_unchecked(s_idx + 1));
             let s2 = vmulq_f64(w2, *sinc.get_unchecked(s_idx + 2));
@@ -136,23 +136,39 @@ impl NeonSample for f64 {
         let packedsum0 = vaddq_f64(acc0, acc1);
         let packedsum1 = vaddq_f64(acc2, acc3);
         let packedsum2 = vaddq_f64(packedsum0, packedsum1);
-        let values = core::slice::from_raw_parts(&packedsum2 as *const _ as *const f64 , 2);
+        let values = core::slice::from_raw_parts(&packedsum2 as *const _ as *const f64, 2);
         values[0] + values[1]
     }
 }
 
 /// A SSE accelerated interpolator
-pub struct NeonInterpolator<T> where T: NeonSample {
+pub struct NeonInterpolator<T>
+where
+    T: NeonSample,
+{
     sincs: Vec<Vec<T::Sinc>>,
     length: usize,
     nbr_sincs: usize,
 }
 
-impl<T> SincInterpolator<T> for NeonInterpolator<T> where T: Sample {
+impl<T> SincInterpolator<T> for NeonInterpolator<T>
+where
+    T: Sample,
+{
     /// Calculate the scalar produt of an input wave and the selected sinc filter
     fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T {
-        assert!((index + self.length) < wave.len(), "Tried to interpolate for index {}, max for the given input is {}", index, wave.len()-self.length-1);
-        assert!(subindex < self.nbr_sincs, "Tried to use sinc subindex {}, max is {}", subindex, self.nbr_sincs-1);
+        assert!(
+            (index + self.length) < wave.len(),
+            "Tried to interpolate for index {}, max for the given input is {}",
+            index,
+            wave.len() - self.length - 1
+        );
+        assert!(
+            subindex < self.nbr_sincs,
+            "Tried to use sinc subindex {}, max is {}",
+            subindex,
+            self.nbr_sincs - 1
+        );
         unsafe { T::get_sinc_interpolated_unsafe(wave, index, subindex, &self.sincs, self.length) }
     }
 
@@ -165,7 +181,10 @@ impl<T> SincInterpolator<T> for NeonInterpolator<T> where T: Sample {
     }
 }
 
-impl<T> NeonInterpolator<T> where T: Sample {
+impl<T> NeonInterpolator<T>
+where
+    T: Sample,
+{
     /// Create a new NeonInterpolator
     ///
     /// Parameters are:

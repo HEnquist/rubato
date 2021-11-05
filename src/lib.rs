@@ -193,7 +193,7 @@ pub enum InterpolationType {
 
 /// A resampler that us used to resample a chunk of audio to a new sample rate.
 /// The rate can be adjusted as required.
-pub trait Resampler<T> {
+pub trait Resampler<T>: Send {
     /// Resample a chunk of audio.
     ///
     /// The input data is a slice, where each element of the slice is itself referenceable as a slice
@@ -221,7 +221,7 @@ pub trait Resampler<T> {
 /// let boxed: Box<dyn VecResampler<f64>> = Box::new(FftFixedIn::<f64>::new(44100, 88200, 1024, 2, 2));
 /// ```
 /// Use this implementation as an example if you need to fix the input type to something else.
-pub trait VecResampler<T> {
+pub trait VecResampler<T>: Send {
     /// Resample a chunk of audio.
     /// Input and output data is stored in vectors, where each element contains a vector with all samples for a single channel.
     fn process(&mut self, wave_in: &[Vec<T>]) -> ResampleResult<Vec<Vec<T>>>;
