@@ -259,9 +259,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::{FftFixedIn, FftFixedOut, FftFixedInOut};
-    use crate::{SincFixedIn, SincFixedOut};
     use crate::VecResampler;
+    use crate::{FftFixedIn, FftFixedInOut, FftFixedOut};
+    use crate::{SincFixedIn, SincFixedOut};
 
     // This tests that a VecResampler can be boxed.
     #[test]
@@ -280,7 +280,6 @@ mod tests {
         resampler.process(&waves).unwrap()
     }
 
-    #[allow(dead_code)]
     fn impl_send<T: Send>() {
         fn is_send<T: Send>() {}
         is_send::<SincFixedOut<T>>();
@@ -296,5 +295,4 @@ mod tests {
         impl_send::<f32>();
         impl_send::<f64>();
     }
-
 }
