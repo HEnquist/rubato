@@ -81,12 +81,14 @@ mod sample;
 mod sinc;
 mod synchro;
 mod windows;
+mod decimate_expand;
 
 pub use crate::asynchro::{ScalarInterpolator, SincFixedIn, SincFixedOut};
 pub use crate::error::{CpuFeature, MissingCpuFeature, ResampleError, ResampleResult};
 pub use crate::sample::Sample;
 pub use crate::synchro::{FftFixedIn, FftFixedInOut, FftFixedOut};
 pub use crate::windows::WindowFunction;
+pub use crate::decimate_expand::ExpandFixedInOut;
 
 /// Helper macro to define a dummy implementation of the sample trait if a
 /// feature is not supported.
