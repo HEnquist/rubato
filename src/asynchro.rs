@@ -429,6 +429,10 @@ where
         Ok(wave_out)
     }
 
+    fn process_into_buffer<V: AsRef<[T]>>(&mut self, wave_in: &[V], wave_out: &mut [Vec<T>], active_channels_mask: &[bool]) -> ResampleResult<()> {
+        unimplemented!("Coming soon!");
+    }
+
     /// Query for the number of frames needed for the next call to "process".
     /// Will always return the chunk_size defined when creating the instance.
     fn nbr_frames_needed(&self) -> usize {
@@ -669,6 +673,10 @@ where
             self.last_index
         );
         Ok(wave_out)
+    }
+
+    fn process_into_buffer<V: AsRef<[T]>>(&mut self, wave_in: &[V], wave_out: &mut [Vec<T>], active_channels_mask: &[bool]) -> ResampleResult<()> {
+        unimplemented!("Coming soon!");
     }
 
     /// Update the resample ratio. New value must be within +-10% of the original one

@@ -266,6 +266,10 @@ where
         Ok(wave_out)
     }
 
+    fn process_into_buffer<V: AsRef<[T]>>(&mut self, wave_in: &[V], wave_out: &mut [Vec<T>], active_channels_mask: &[bool]) -> ResampleResult<()> {
+        unimplemented!("Coming soon!");
+    }
+
     /// Update the resample ratio. This is not supported by this resampler and
     /// always returns an error.
     fn set_resample_ratio(&mut self, _new_ratio: f64) -> ResampleResult<()> {
@@ -413,6 +417,10 @@ where
         let chunks_needed = (frames_needed_out as f32 / self.fft_size_out as f32).ceil() as usize;
         self.frames_needed = chunks_needed * self.fft_size_in;
         Ok(wave_out)
+    }
+
+    fn process_into_buffer<V: AsRef<[T]>>(&mut self, wave_in: &[V], wave_out: &mut [Vec<T>], active_channels_mask: &[bool]) -> ResampleResult<()> {
+        unimplemented!("Coming soon!");
     }
 
     /// Update the resample ratio. This is not supported by this resampler and
@@ -583,6 +591,70 @@ where
         Ok(wave_out)
     }
 
+    fn process_into_buffer<V: AsRef<[T]>>(&mut self, wave_in: &[V], wave_out: &mut [Vec<T>], active_channels_mask: &[bool]) -> ResampleResult<()> {
+        if wave_in.len() != self.nbr_channels || wave_out.len() != self.nbr_channels {
+            return Err(ResampleError::WrongNumberOfChannels {
+                expected: self.nbr_channels,
+                actual: wave_in.len(),
+            });
+        }
+        for (chan, wave) in wave_in.iter().enumerate() {
+            let wave = wave.as_ref();
+            if wave.len() != self.chunk_size_in && active_channels_mask[chan] {
+                return Err(ResampleError::WrongNumberOfFrames {
+                    channel: chan,
+                    expected: self.chunk_size_in,
+                    actual: wave.len(),
+                });
+            }
+        }
+
+        // copy new samples to input buffer
+        for (chan, active) in active_channels_mask.iter().enumerate() {
+            if *active {
+                for (input, buffer) in wave_in[chan].as_ref().iter().zip(
+                    self.input_buffers[chan]
+                        .iter_mut()
+                        .skip(self.saved_frames)
+                        .take(self.chunk_size_in),
+                ) {
+                    *buffer = *input;
+                }
+            }
+        }
+        self.saved_frames += self.chunk_size_in;
+
+        let nbr_chunks_ready =
+            (self.saved_frames as f32 / self.fft_size_in as f32).floor() as usize;
+        for (chan, active) in active_channels_mask.iter().enumerate() {
+            if *active {
+                wave_out[chan].resize(nbr_chunks_ready * self.fft_size_out, T::zero());
+                for (in_chunk, out_chunk) in self.input_buffers[chan]
+                    .chunks(self.fft_size_in)
+                    .take(nbr_chunks_ready)
+                    .zip(wave_out[chan].chunks_mut(self.fft_size_out))
+                {
+                    self.resampler
+                        .resample_unit(in_chunk, out_chunk, &mut self.overlaps[chan]);
+                }
+            }
+        }
+
+        // save extra frames for next round
+        let frames_in_used = nbr_chunks_ready * self.fft_size_in;
+        let extra = self.saved_frames - frames_in_used;
+
+        if self.saved_frames > frames_in_used {
+            for (chan, active) in active_channels_mask.iter().enumerate() {
+                if *active {
+                    self.input_buffers[chan].copy_within(frames_in_used..self.saved_frames, 0);
+                }
+            }
+        }
+        self.saved_frames = extra;
+        Ok(())
+    }
+
     /// Update the resample ratio. This is not supported by this resampler and
     /// always returns an error.
     fn set_resample_ratio(&mut self, _new_ratio: f64) -> ResampleResult<()> {
@@ -687,6 +759,19 @@ mod tests {
         assert_eq!(frames, 1024);
         let waves = vec![vec![0.0f64; frames]; 2];
         let out = resampler.process(&waves).unwrap();
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].len(), 640);
+    }
+
+    #[test]
+    fn make_resampler_fi_noalloc() {
+        let mut resampler = FftFixedIn::<f64>::new(44100, 48000, 1024, 2, 2);
+        let frames = resampler.nbr_frames_needed();
+        assert_eq!(frames, 1024);
+        let waves = vec![vec![0.0f64; frames]; 2];
+        let mut out = vec![vec![0.0f64; 2*frames]; 2];
+        let mask = vec![true; 2];
+        resampler.process_into_buffer(&waves, &mut out, &mask).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 640);
     }

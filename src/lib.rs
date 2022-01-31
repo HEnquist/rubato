@@ -200,7 +200,20 @@ pub trait Resampler<T>: Send {
     /// ([`AsRef<[T]>`](AsRef)) which contains the samples for a single channel. Since [`Vec<T>`] implements
     /// [`AsRef<[T]>`](AsRef), the input may simply be `&*Vec<Vec<T>>`. The output data is a vector, where each element
     /// of the vector is itself a vector which contains the samples for a single channel.
+    /// If an input channel has zero length, this channel will be skipped and the corresponding output
+    /// will also be empty. 
     fn process<V: AsRef<[T]>>(&mut self, wave_in: &[V]) -> ResampleResult<Vec<Vec<T>>>;
+
+    /// Resample a chunk of audio to a pre-allocated output buffer.
+    ///
+    /// The input data is a slice, where each element of the slice is itself referenceable as a slice
+    /// ([`AsRef<[T]>`](AsRef)) which contains the samples for a single channel. Since [`Vec<T>`] implements
+    /// [`AsRef<[T]>`](AsRef), the input may simply be `&*Vec<Vec<T>>`. The output data is a vector, where each element
+    /// of the vector is itself a vector which contains the samples for a single channel. 
+    /// The output will be resized to fit all the output samples. To avoid allocations,
+    /// make sure that the output has sufficient capacity.
+    /// The active channels mask is optional. Any channel marked as inactive by a false value will be skipped during processing.
+    fn process_into_buffer<V: AsRef<[T]>>(&mut self, wave_in: &[V], wave_out: &mut [Vec<T>], active_channels_mask: &[bool]) -> ResampleResult<()>;
 
     /// Query for the number of frames needed for the next call to "process".
     fn nbr_frames_needed(&self) -> usize;
