@@ -303,7 +303,7 @@ where
     /// to the number of channels and chunk size defined when creating the instance.
     fn process<V: AsRef<[T]>>(&mut self, wave_in: &[V]) -> ResampleResult<Vec<Vec<T>>> {
         if wave_in.len() != self.nbr_channels {
-            return Err(ResampleError::WrongNumberOfChannels {
+            return Err(ResampleError::WrongNumberOfInputChannels {
                 expected: self.nbr_channels,
                 actual: wave_in.len(),
             });
@@ -314,7 +314,7 @@ where
             if !wave.is_empty() {
                 used_channels.push(chan);
                 if wave.len() != self.chunk_size {
-                    return Err(ResampleError::WrongNumberOfFrames {
+                    return Err(ResampleError::WrongNumberOfInputFrames {
                         channel: chan,
                         expected: self.chunk_size,
                         actual: wave.len(),
@@ -561,7 +561,7 @@ where
     fn process<V: AsRef<[T]>>(&mut self, wave_in: &[V]) -> ResampleResult<Vec<Vec<T>>> {
         //update buffer with new data
         if wave_in.len() != self.nbr_channels {
-            return Err(ResampleError::WrongNumberOfChannels {
+            return Err(ResampleError::WrongNumberOfInputChannels {
                 expected: self.nbr_channels,
                 actual: wave_in.len(),
             });
@@ -574,7 +574,7 @@ where
             if !wave.is_empty() {
                 used_channels.push(chan);
                 if wave.len() != self.needed_input_size {
-                    return Err(ResampleError::WrongNumberOfFrames {
+                    return Err(ResampleError::WrongNumberOfInputFrames {
                         channel: chan,
                         expected: self.needed_input_size,
                         actual: wave.len(),

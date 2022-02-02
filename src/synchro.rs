@@ -232,7 +232,7 @@ where
     /// to the number of channels and input size defined when creating the instance.
     fn process<V: AsRef<[T]>>(&mut self, wave_in: &[V]) -> ResampleResult<Vec<Vec<T>>> {
         if wave_in.len() != self.nbr_channels {
-            return Err(ResampleError::WrongNumberOfChannels {
+            return Err(ResampleError::WrongNumberOfInputChannels {
                 expected: self.nbr_channels,
                 actual: wave_in.len(),
             });
@@ -243,7 +243,7 @@ where
             if !wave.is_empty() {
                 used_channels.push(chan);
                 if wave.len() != self.chunk_size_in {
-                    return Err(ResampleError::WrongNumberOfFrames {
+                    return Err(ResampleError::WrongNumberOfInputFrames {
                         channel: chan,
                         expected: self.chunk_size_in,
                         actual: wave.len(),
@@ -367,7 +367,7 @@ where
     /// and the number of audio frames given by "nbr_frames_needed".
     fn process<V: AsRef<[T]>>(&mut self, wave_in: &[V]) -> ResampleResult<Vec<Vec<T>>> {
         if wave_in.len() != self.nbr_channels {
-            return Err(ResampleError::WrongNumberOfChannels {
+            return Err(ResampleError::WrongNumberOfInputChannels {
                 expected: self.nbr_channels,
                 actual: wave_in.len(),
             });
@@ -378,7 +378,7 @@ where
             if !wave.is_empty() {
                 used_channels.push(chan);
                 if wave.len() != self.frames_needed {
-                    return Err(ResampleError::WrongNumberOfFrames {
+                    return Err(ResampleError::WrongNumberOfInputFrames {
                         channel: chan,
                         expected: self.frames_needed,
                         actual: wave.len(),
@@ -520,8 +520,14 @@ where
         wave_out: &mut [Vec<T>],
         active_channels_mask: &[bool],
     ) -> ResampleResult<()> {
-        if wave_in.len() != self.nbr_channels || wave_out.len() != self.nbr_channels {
-            return Err(ResampleError::WrongNumberOfChannels {
+        if wave_in.len() != self.nbr_channels {
+            return Err(ResampleError::WrongNumberOfInputChannels {
+                expected: self.nbr_channels,
+                actual: wave_in.len(),
+            });
+        }
+        if wave_out.len() != self.nbr_channels {
+            return Err(ResampleError::WrongNumberOfOutputChannels {
                 expected: self.nbr_channels,
                 actual: wave_in.len(),
             });
@@ -529,7 +535,7 @@ where
         for (chan, wave) in wave_in.iter().enumerate() {
             let wave = wave.as_ref();
             if wave.len() != self.chunk_size_in && active_channels_mask[chan] {
-                return Err(ResampleError::WrongNumberOfFrames {
+                return Err(ResampleError::WrongNumberOfInputFrames {
                     channel: chan,
                     expected: self.chunk_size_in,
                     actual: wave.len(),
