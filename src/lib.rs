@@ -200,20 +200,41 @@ pub trait Resampler<T>: Send {
     /// ([`AsRef<[T]>`](AsRef)) which contains the samples for a single channel. Since [`Vec<T>`] implements
     /// [`AsRef<[T]>`](AsRef), the input may simply be `&*Vec<Vec<T>>`. The output data is a vector, where each element
     /// of the vector is itself a vector which contains the samples for a single channel.
-    /// If an input channel has zero length, this channel will be skipped and the corresponding output
-    /// will also be empty. 
-    fn process<V: AsRef<[T]>>(&mut self, wave_in: &[V]) -> ResampleResult<Vec<Vec<T>>>;
+    /// TODO! The `active_channels_mask` is optional.
+    /// Any channel marked as inactive by a false value will be skipped during processing
+    /// and the corresponding output will also be empty.
+    /// If None is given, the length of each input is used to determine the active channels.
+    /// Then if an input channel has zero length, this channel will be considered as inactive. , active_channels_mask: Option<&[bool]>
+    //fn process<V: AsRef<[T]>>(&mut self, wave_in: &[V]) -> ResampleResult<Vec<Vec<T>>>;
+    fn process<V: AsRef<[T]>>(&mut self, wave_in: &[V]) -> ResampleResult<Vec<Vec<T>>> {
+        let mut wave_out = self.allocate_output_buffer();
+        let channel_mask = make_mask_from_buffers(wave_in);
+        self.process_into_buffer(wave_in, &mut wave_out, &channel_mask)?;
+        Ok(wave_out)
+    }
 
     /// Resample a chunk of audio to a pre-allocated output buffer.
+    /// Use this in real-time applications where the unpredictable time required to allocate memory
+    /// is causing issues. If this is not a problem, then use the more convenient `process` method.
     ///
     /// The input data is a slice, where each element of the slice is itself referenceable as a slice
     /// ([`AsRef<[T]>`](AsRef)) which contains the samples for a single channel. Since [`Vec<T>`] implements
     /// [`AsRef<[T]>`](AsRef), the input may simply be `&*Vec<Vec<T>>`. The output data is a vector, where each element
-    /// of the vector is itself a vector which contains the samples for a single channel. 
+    /// of the vector is itself a vector which contains the samples for a single channel.
     /// The output will be resized to fit all the output samples. To avoid allocations,
     /// make sure that the output has sufficient capacity.
-    /// The active channels mask is optional. Any channel marked as inactive by a false value will be skipped during processing.
-    fn process_into_buffer<V: AsRef<[T]>>(&mut self, wave_in: &[V], wave_out: &mut [Vec<T>], active_channels_mask: &[bool]) -> ResampleResult<()>;
+    /// `active_channels_mask` is used to mark channels as active or inactive.
+    /// Any channel marked as inactive by a false value will be skipped during processing,
+    /// and the corresponding output will also be empty.
+    fn process_into_buffer<V: AsRef<[T]>>(
+        &mut self,
+        wave_in: &[V],
+        wave_out: &mut [Vec<T>],
+        active_channels_mask: &[bool],
+    ) -> ResampleResult<()>;
+
+    /// Convenience method for allocating an output buffer suitable for use with `process_into_buffer`.
+    fn allocate_output_buffer(&self) -> Vec<Vec<T>>;
 
     /// Query for the number of frames needed for the next call to "process".
     fn nbr_frames_needed(&self) -> usize;
@@ -268,6 +289,16 @@ where
     fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> ResampleResult<()> {
         Resampler::set_resample_ratio_relative(self, rel_ratio)
     }
+}
+
+/// Helper to make a mask for the active channels based on which ones are empty.
+fn make_mask_from_buffers<T, V: AsRef<[T]>>(wave_in: &[V]) -> Vec<bool> {
+    let mut channel_mask = Vec::with_capacity(wave_in.len());
+    for wave in wave_in.iter() {
+        let wave = wave.as_ref();
+        channel_mask.push(!wave.is_empty());
+    }
+    channel_mask
 }
 
 #[cfg(test)]

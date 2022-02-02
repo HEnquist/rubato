@@ -429,7 +429,16 @@ where
         Ok(wave_out)
     }
 
-    fn process_into_buffer<V: AsRef<[T]>>(&mut self, wave_in: &[V], wave_out: &mut [Vec<T>], active_channels_mask: &[bool]) -> ResampleResult<()> {
+    fn process_into_buffer<V: AsRef<[T]>>(
+        &mut self,
+        wave_in: &[V],
+        wave_out: &mut [Vec<T>],
+        active_channels_mask: &[bool],
+    ) -> ResampleResult<()> {
+        unimplemented!("Coming soon!");
+    }
+
+    fn allocate_output_buffer(&self) -> Vec<Vec<T>> {
         unimplemented!("Coming soon!");
     }
 
@@ -675,7 +684,16 @@ where
         Ok(wave_out)
     }
 
-    fn process_into_buffer<V: AsRef<[T]>>(&mut self, wave_in: &[V], wave_out: &mut [Vec<T>], active_channels_mask: &[bool]) -> ResampleResult<()> {
+    fn process_into_buffer<V: AsRef<[T]>>(
+        &mut self,
+        wave_in: &[V],
+        wave_out: &mut [Vec<T>],
+        active_channels_mask: &[bool],
+    ) -> ResampleResult<()> {
+        unimplemented!("Coming soon!");
+    }
+
+    fn allocate_output_buffer(&self) -> Vec<Vec<T>> {
         unimplemented!("Coming soon!");
     }
 
