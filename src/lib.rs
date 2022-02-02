@@ -301,6 +301,44 @@ fn make_mask_from_buffers<T, V: AsRef<[T]>>(wave_in: &[V]) -> Vec<bool> {
     channel_mask
 }
 
+pub(crate) fn validate_buffers<T, V: AsRef<[T]>>(
+    wave_in: &[V],
+    wave_out: &mut [Vec<T>],
+    mask: &[bool],
+    channels: usize,
+    needed_len: usize,
+) -> ResampleResult<()> {
+    if wave_in.len() != channels {
+        return Err(ResampleError::WrongNumberOfInputChannels {
+            expected: channels,
+            actual: wave_in.len(),
+        });
+    }
+    if mask.len() != channels {
+        return Err(ResampleError::WrongNumberOfMaskChannels {
+            expected: channels,
+            actual: wave_in.len(),
+        });
+    }
+    for (chan, wave) in wave_in.iter().enumerate() {
+        let wave = wave.as_ref();
+        if wave.len() != needed_len && mask[chan] {
+            return Err(ResampleError::WrongNumberOfInputFrames {
+                channel: chan,
+                expected: needed_len,
+                actual: wave.len(),
+            });
+        }
+    }
+    if wave_out.len() != channels {
+        return Err(ResampleError::WrongNumberOfOutputChannels {
+            expected: channels,
+            actual: wave_out.len(),
+        });
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use crate::VecResampler;
