@@ -194,17 +194,18 @@ pub enum InterpolationType {
 /// A resampler that us used to resample a chunk of audio to a new sample rate.
 /// The rate can be adjusted as required.
 pub trait Resampler<T>: Send {
-    /// Resample a chunk of audio.
+    /// Resample a chunk of audio. 
     ///
     /// The input data is a slice, where each element of the slice is itself referenceable as a slice
     /// ([`AsRef<[T]>`](AsRef)) which contains the samples for a single channel. Since [`Vec<T>`] implements
-    /// [`AsRef<[T]>`](AsRef), the input may simply be `&*Vec<Vec<T>>`. The output data is a vector, where each element
-    /// of the vector is itself a vector which contains the samples for a single channel.
-    /// TODO! The `active_channels_mask` is optional.
+    /// [`AsRef<[T]>`](AsRef), the input may simply be `&*Vec<Vec<T>>`. 
+    /// The output data is a vector, where each element of the vector is itself a vector
+    /// which contains the samples for a single channel.
+    /// TODO! The `active_channels_mask` is optional. (active_channels_mask: Option<&[bool]>)
     /// Any channel marked as inactive by a false value will be skipped during processing
     /// and the corresponding output will also be empty.
     /// If None is given, the length of each input is used to determine the active channels.
-    /// Then if an input channel has zero length, this channel will be considered as inactive. , active_channels_mask: Option<&[bool]>
+    /// Then if an input channel has zero length, this channel will be considered as inactive. 
     //fn process<V: AsRef<[T]>>(&mut self, wave_in: &[V]) -> ResampleResult<Vec<Vec<T>>>;
     fn process<V: AsRef<[T]>>(&mut self, wave_in: &[V]) -> ResampleResult<Vec<Vec<T>>> {
         let mut wave_out = self.allocate_output_buffer();
@@ -221,11 +222,11 @@ pub trait Resampler<T>: Send {
     /// ([`AsRef<[T]>`](AsRef)) which contains the samples for a single channel. Since [`Vec<T>`] implements
     /// [`AsRef<[T]>`](AsRef), the input may simply be `&*Vec<Vec<T>>`. The output data is a vector, where each element
     /// of the vector is itself a vector which contains the samples for a single channel.
-    /// The output will be resized to fit all the output samples. To avoid allocations,
-    /// make sure that the output has sufficient capacity.
+    /// The output will be resized to fit all the output samples.
+    /// To avoid allocations, make sure that the output has sufficient capacity.
     /// `active_channels_mask` is used to mark channels as active or inactive.
     /// Any channel marked as inactive by a false value will be skipped during processing,
-    /// and the corresponding output will also be empty.
+    /// and the corresponding output will be left unchanged.
     fn process_into_buffer<V: AsRef<[T]>>(
         &mut self,
         wave_in: &[V],
@@ -243,6 +244,8 @@ pub trait Resampler<T>: Send {
         wave_out
     }
 
+    /// Get the max output size the resampler can give, as (channels, frames).
+    /// Note that when adjusting the ratio of an asynchronous resampler, the maximum size can change.
     fn get_max_output_size(&self) -> (usize, usize);
 
     /// Query for the number of frames needed for the next call to "process".
@@ -269,6 +272,22 @@ pub trait VecResampler<T>: Send {
     /// Input and output data is stored in vectors, where each element contains a vector with all samples for a single channel.
     fn process(&mut self, wave_in: &[Vec<T>]) -> ResampleResult<Vec<Vec<T>>>;
 
+    /// Resample a chunk of audio, into a pre-allocated output buffer.
+    /// Input and output data is stored in vectors, where each element contains a vector with all samples for a single channel.
+    fn process_into_buffer(
+        &mut self,
+        wave_in: &[Vec<T>],
+        wave_out: &mut [Vec<T>],
+        active_channels_mask: &[bool],
+    ) -> ResampleResult<()>;
+
+    /// Convenience method for allocating an output buffer suitable for use with `process_into_buffer`.
+    fn allocate_output_buffer(&self) -> Vec<Vec<T>>;
+
+    /// Get the max output size the resampler can give, as (channels, frames).
+    /// Note that when adjusting the ratio of an asynchronous resampler, the maximum size can change.
+    fn get_max_output_size(&self) -> (usize, usize);
+
     /// Query for the number of frames needed for the next call to "process".
     fn nbr_frames_needed(&self) -> usize;
 
@@ -285,6 +304,23 @@ where
 {
     fn process(&mut self, wave_in: &[Vec<T>]) -> ResampleResult<Vec<Vec<T>>> {
         Resampler::process(self, wave_in)
+    }
+
+    fn process_into_buffer(
+        &mut self,
+        wave_in: &[Vec<T>],
+        wave_out: &mut [Vec<T>],
+        active_channels_mask: &[bool],
+    ) -> ResampleResult<()> {
+        Resampler::process_into_buffer(self, wave_in, wave_out, active_channels_mask)
+    }
+
+    fn allocate_output_buffer(&self) -> Vec<Vec<T>> {
+        Resampler::allocate_output_buffer(self)
+    }
+
+    fn get_max_output_size(&self) -> (usize, usize) {
+        Resampler::get_max_output_size(self)
     }
 
     fn nbr_frames_needed(&self) -> usize {
