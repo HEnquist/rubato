@@ -123,26 +123,26 @@ fn main() {
     //};
 
     // Balanced for async
-    //let sinc_len = 128;
-    //let f_cutoff = 0.925914648491266;
-    //let params = InterpolationParameters {
-    //    sinc_len,
-    //    f_cutoff,
-    //    interpolation: InterpolationType::Linear,
-    //    oversampling_factor: 2048,
-    //    window: WindowFunction::Blackman2,
-    //};
-    //
-    //// Best for sync for 44100 -> 96000 etc (note that for sync it's better to use the fft resampler)
-    let sinc_len = 256;
-    let f_cutoff = 0.9473371669037001;
+    let sinc_len = 128;
+    let f_cutoff = 0.925914648491266;
     let params = InterpolationParameters {
         sinc_len,
         f_cutoff,
-        interpolation: InterpolationType::Nearest,
-        oversampling_factor: 320,
-        window: WindowFunction::BlackmanHarris2,
+        interpolation: InterpolationType::Linear,
+        oversampling_factor: 2048,
+        window: WindowFunction::Blackman2,
     };
+    //
+    //// Best for sync for 44100 -> 96000 etc (note that for sync it's better to use the fft resampler)
+    //let sinc_len = 256;
+    //let f_cutoff = 0.9473371669037001;
+    //let params = InterpolationParameters {
+    //    sinc_len,
+    //    f_cutoff,
+    //    interpolation: InterpolationType::Nearest,
+    //    oversampling_factor: 320,
+    //    window: WindowFunction::BlackmanHarris2,
+    //};
 
     // Best quality for async
     //let sinc_len = 256;

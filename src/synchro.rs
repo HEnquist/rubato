@@ -239,7 +239,6 @@ where
 
         for (chan, active) in active_channels_mask.iter().enumerate() {
             if *active {
-                println!("resize ch {}", chan);
                 wave_out[chan].resize(self.chunk_size_out, T::zero());
                 self.resampler.resample_unit(
                     wave_in[chan].as_ref(),
@@ -348,19 +347,15 @@ where
 
         for (chan, active) in active_channels_mask.iter().enumerate() {
             if *active {
-                wave_out[chan].resize(self.chunk_size_out + self.fft_size_out, T::zero());
-                wave_out[chan][0..self.saved_frames]
-                    .copy_from_slice(&self.output_buffers[chan][0..self.saved_frames]);
+                wave_out[chan].resize(self.chunk_size_out, T::zero());
             }
         }
 
         for (chan, active) in active_channels_mask.iter().enumerate() {
             if *active {
-                for (in_chunk, out_chunk) in wave_in[chan]
-                    .as_ref()
-                    .chunks(self.fft_size_in)
-                    .zip(wave_out[chan][self.saved_frames..].chunks_mut(self.fft_size_out))
-                {
+                for (in_chunk, out_chunk) in wave_in[chan].as_ref().chunks(self.fft_size_in).zip(
+                    self.output_buffers[chan][self.saved_frames..].chunks_mut(self.fft_size_out),
+                ) {
                     self.resampler
                         .resample_unit(in_chunk, out_chunk, &mut self.overlaps[chan]);
                 }
@@ -369,18 +364,21 @@ where
         let processed_frames =
             self.saved_frames + self.fft_size_out * (self.frames_needed / self.fft_size_in);
 
-        // save extra frames for next round
-        self.saved_frames = processed_frames - self.chunk_size_out;
-        if processed_frames > self.chunk_size_out {
+        // copy to output, and save extra frames for next round
+        if processed_frames >= self.chunk_size_out {
+            self.saved_frames = processed_frames - self.chunk_size_out;
             for (chan, active) in active_channels_mask.iter().enumerate() {
                 if *active {
-                    self.output_buffers[chan][0..self.saved_frames].copy_from_slice(
-                        &wave_out[chan]
-                            [self.chunk_size_out..(self.chunk_size_out + self.saved_frames)],
+                    wave_out[chan][..]
+                        .copy_from_slice(&self.output_buffers[chan][0..self.chunk_size_out]);
+                    self.output_buffers[chan].copy_within(
+                        self.chunk_size_out..(self.chunk_size_out + self.saved_frames),
+                        0,
                     );
-                    wave_out[chan].truncate(self.chunk_size_out);
                 }
             }
+        } else {
+            self.saved_frames = processed_frames;
         }
         //calculate number of needed frames from next round
         let frames_needed_out = if self.chunk_size_out > self.saved_frames {
@@ -394,7 +392,7 @@ where
     }
 
     fn get_max_output_size(&self) -> (usize, usize) {
-        (self.nbr_channels, self.chunk_size_out + self.fft_size_out)
+        (self.nbr_channels, self.chunk_size_out)
     }
 
     /// Update the resample ratio. This is not supported by this resampler and
@@ -503,7 +501,6 @@ where
             (self.saved_frames as f32 / self.fft_size_in as f32).floor() as usize;
         for (chan, active) in active_channels_mask.iter().enumerate() {
             if *active {
-                println!("resize ch {}", chan);
                 wave_out[chan].resize(nbr_chunks_ready * self.fft_size_out, T::zero());
                 for (in_chunk, out_chunk) in self.input_buffers[chan]
                     .chunks(self.fft_size_in)
