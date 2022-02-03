@@ -251,13 +251,8 @@ where
         Ok(())
     }
 
-    fn allocate_output_buffer(&self) -> Vec<Vec<T>> {
-        let mut wave_out = Vec::with_capacity(self.nbr_channels);
-        let out_len = self.chunk_size_out;
-        for _ in 0..self.nbr_channels {
-            wave_out.push(Vec::with_capacity(out_len));
-        }
-        wave_out
+    fn get_max_output_size(&self) -> (usize, usize) {
+        (self.nbr_channels, self.chunk_size_out)
     }
 
     /// Update the resample ratio. This is not supported by this resampler and
@@ -398,13 +393,8 @@ where
         Ok(())
     }
 
-    fn allocate_output_buffer(&self) -> Vec<Vec<T>> {
-        let mut wave_out = Vec::with_capacity(self.nbr_channels);
-        let out_len = self.chunk_size_out + self.fft_size_out;
-        for _ in 0..self.nbr_channels {
-            wave_out.push(Vec::with_capacity(out_len));
-        }
-        wave_out
+    fn get_max_output_size(&self) -> (usize, usize) {
+        (self.nbr_channels, self.chunk_size_out + self.fft_size_out)
     }
 
     /// Update the resample ratio. This is not supported by this resampler and
@@ -541,13 +531,11 @@ where
         Ok(())
     }
 
-    fn allocate_output_buffer(&self) -> Vec<Vec<T>> {
-        let mut wave_out = Vec::with_capacity(self.nbr_channels);
-        let out_len = self.chunk_size_in * (self.fft_size_out / self.fft_size_in + 1);
-        for _ in 0..self.nbr_channels {
-            wave_out.push(Vec::with_capacity(out_len));
-        }
-        wave_out
+    fn get_max_output_size(&self) -> (usize, usize) {
+        (
+            self.nbr_channels,
+            self.chunk_size_in * (self.fft_size_out / self.fft_size_in + 1),
+        )
     }
 
     /// Update the resample ratio. This is not supported by this resampler and

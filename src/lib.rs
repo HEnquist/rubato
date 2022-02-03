@@ -234,7 +234,16 @@ pub trait Resampler<T>: Send {
     ) -> ResampleResult<()>;
 
     /// Convenience method for allocating an output buffer suitable for use with `process_into_buffer`.
-    fn allocate_output_buffer(&self) -> Vec<Vec<T>>;
+    fn allocate_output_buffer(&self) -> Vec<Vec<T>> {
+        let (channels, out_len) = self.get_max_output_size();
+        let mut wave_out = Vec::with_capacity(channels);
+        for _ in 0..channels {
+            wave_out.push(Vec::with_capacity(out_len));
+        }
+        wave_out
+    }
+
+    fn get_max_output_size(&self) -> (usize, usize);
 
     /// Query for the number of frames needed for the next call to "process".
     fn nbr_frames_needed(&self) -> usize;
