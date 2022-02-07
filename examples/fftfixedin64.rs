@@ -102,7 +102,7 @@ fn main() {
     let start = Instant::now();
     for _chunk in 0..num_chunks {
         let waves = read_frames(&mut f_in, chunksize, channels);
-        let waves_out = resampler.process(&waves).unwrap();
+        let waves_out = resampler.process(&waves, None).unwrap();
         write_frames(waves_out, &mut f_out, channels);
     }
 

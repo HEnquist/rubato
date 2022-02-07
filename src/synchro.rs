@@ -37,6 +37,7 @@ pub struct FftFixedIn<T> {
     fft_size_out: usize,
     overlaps: Vec<Vec<T>>,
     input_buffers: Vec<Vec<T>>,
+    default_mask: Vec<bool>,
     saved_frames: usize,
     resampler: FftResampler<T>,
 }
@@ -54,6 +55,7 @@ pub struct FftFixedOut<T> {
     fft_size_out: usize,
     overlaps: Vec<Vec<T>>,
     output_buffers: Vec<Vec<T>>,
+    default_mask: Vec<bool>,
     saved_frames: usize,
     frames_needed: usize,
     resampler: FftResampler<T>,
@@ -70,6 +72,7 @@ pub struct FftFixedInOut<T> {
     chunk_size_in: usize,
     chunk_size_out: usize,
     fft_size_in: usize,
+    default_mask: Vec<bool>,
     overlaps: Vec<Vec<T>>,
     resampler: FftResampler<T>,
 }
@@ -203,6 +206,8 @@ where
 
         let overlaps: Vec<Vec<T>> = vec![vec![T::zero(); fft_size_out]; nbr_channels];
 
+        let default_mask = vec![true; nbr_channels];
+
         FftFixedInOut {
             nbr_channels,
             chunk_size_in: fft_size_in,
@@ -210,6 +215,7 @@ where
             fft_size_in,
             overlaps,
             resampler,
+            default_mask,
         }
     }
 }
@@ -227,8 +233,14 @@ where
         &mut self,
         wave_in: &[V],
         wave_out: &mut [Vec<T>],
-        active_channels_mask: &[bool],
+        active_channels_mask: Option<&[bool]>,
     ) -> ResampleResult<()> {
+        let active_channels_mask = if let Some(mask) = active_channels_mask {
+            mask
+        } else {
+            &self.default_mask
+        };
+
         validate_buffers(
             wave_in,
             wave_out,
@@ -304,6 +316,8 @@ where
         let output_buffers: Vec<Vec<T>> =
             vec![vec![T::zero(); chunk_size_out + fft_size_out]; nbr_channels];
 
+        let default_mask = vec![true; nbr_channels];
+
         let saved_frames = 0;
         let chunks_needed = (chunk_size_out as f32 / fft_size_out as f32).ceil() as usize;
         let frames_needed = chunks_needed * fft_size_in;
@@ -318,6 +332,7 @@ where
             saved_frames,
             frames_needed,
             resampler,
+            default_mask,
         }
     }
 }
@@ -335,8 +350,14 @@ where
         &mut self,
         wave_in: &[V],
         wave_out: &mut [Vec<T>],
-        active_channels_mask: &[bool],
+        active_channels_mask: Option<&[bool]>,
     ) -> ResampleResult<()> {
+        let active_channels_mask = if let Some(mask) = active_channels_mask {
+            mask
+        } else {
+            &self.default_mask
+        };
+
         validate_buffers(
             wave_in,
             wave_out,
@@ -444,6 +465,8 @@ where
         let input_buffers: Vec<Vec<T>> =
             vec![vec![T::zero(); chunk_size_in + fft_size_out]; nbr_channels];
 
+        let default_mask = vec![true; nbr_channels];
+
         let saved_frames = 0;
 
         FftFixedIn {
@@ -455,6 +478,7 @@ where
             input_buffers,
             saved_frames,
             resampler,
+            default_mask,
         }
     }
 }
@@ -472,8 +496,14 @@ where
         &mut self,
         wave_in: &[V],
         wave_out: &mut [Vec<T>],
-        active_channels_mask: &[bool],
+        active_channels_mask: Option<&[bool]>,
     ) -> ResampleResult<()> {
+        let active_channels_mask = if let Some(mask) = active_channels_mask {
+            mask
+        } else {
+            &self.default_mask
+        };
+
         validate_buffers(
             wave_in,
             wave_out,
@@ -580,7 +610,7 @@ mod tests {
         let mut resampler = FftFixedInOut::<f64>::new(44100, 48000, 1024, 2);
         let frames = resampler.nbr_frames_needed();
         let waves = vec![vec![0.0f64; frames]; 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 1120);
     }
@@ -591,7 +621,7 @@ mod tests {
         let mut resampler = FftFixedInOut::<f64>::new(44100, 48000, 1024, 2);
         let frames = resampler.nbr_frames_needed();
         let waves = vec![vec![0.0f64; frames], Vec::new()];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 1120);
         assert!(out[1].is_empty());
@@ -603,7 +633,7 @@ mod tests {
         let frames = resampler.nbr_frames_needed();
         assert_eq!(frames, 294);
         let waves = vec![vec![0.0f64; frames]; 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 1024);
     }
@@ -614,7 +644,7 @@ mod tests {
         let frames = resampler.nbr_frames_needed();
         assert_eq!(frames, 294);
         let waves = vec![vec![0.0f64; frames], Vec::new()];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 1024);
         assert!(out[1].is_empty());
@@ -626,7 +656,7 @@ mod tests {
         let frames = resampler.nbr_frames_needed();
         assert_eq!(frames, 294);
         let waves = vec![Vec::new(); 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert!(out[0].is_empty());
         assert!(out[1].is_empty());
@@ -638,7 +668,7 @@ mod tests {
         let frames = resampler.nbr_frames_needed();
         assert_eq!(frames, 1024);
         let waves = vec![vec![0.0f64; frames]; 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 640);
     }
@@ -652,7 +682,7 @@ mod tests {
         let mut out = vec![vec![0.0f64; 2 * frames]; 2];
         let mask = vec![true; 2];
         resampler
-            .process_into_buffer(&waves, &mut out, &mask)
+            .process_into_buffer(&waves, &mut out, Some(&mask))
             .unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 640);
@@ -664,7 +694,7 @@ mod tests {
         let frames = resampler.nbr_frames_needed();
         assert_eq!(frames, 1200);
         let waves = vec![vec![0.0f64; frames]; 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 400);
     }
@@ -675,7 +705,7 @@ mod tests {
         let frames = resampler.nbr_frames_needed();
         assert_eq!(frames, 1024);
         let waves = vec![vec![0.0f64; frames], Vec::new()];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 640);
         assert!(out[1].is_empty());
@@ -687,7 +717,7 @@ mod tests {
         let frames = resampler.nbr_frames_needed();
         assert_eq!(frames, 1024);
         let waves = vec![Vec::new(); 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert!(out[0].is_empty());
         assert!(out[1].is_empty());
@@ -699,7 +729,7 @@ mod tests {
         let mut resampler = FftFixedInOut::<f64>::new(44100, 44110, 1024, 2);
         let frames = resampler.nbr_frames_needed();
         let waves = vec![vec![0.0f64; frames]; 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 4411);
     }
@@ -710,7 +740,7 @@ mod tests {
         let frames = resampler.nbr_frames_needed();
         assert_eq!(frames, 4410);
         let waves = vec![vec![0.0f64; frames]; 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 1024);
     }

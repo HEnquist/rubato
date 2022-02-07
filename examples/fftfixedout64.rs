@@ -106,7 +106,7 @@ fn main() {
         if waves[0].len() < nbr_frames {
             break;
         }
-        let waves_out = resampler.process(&waves).unwrap();
+        let waves_out = resampler.process(&waves, None).unwrap();
         write_frames(waves_out, &mut f_out, channels);
     }
 

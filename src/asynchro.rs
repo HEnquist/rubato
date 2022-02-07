@@ -130,6 +130,7 @@ pub struct SincFixedIn<T> {
     interpolator: Box<dyn SincInterpolator<T>>,
     buffer: Vec<Vec<T>>,
     interpolation: InterpolationType,
+    default_mask: Vec<bool>,
 }
 
 /// An asynchronous resampler that return a fixed number of audio frames.
@@ -148,6 +149,7 @@ pub struct SincFixedOut<T> {
     interpolator: Box<dyn SincInterpolator<T>>,
     buffer: Vec<Vec<T>>,
     interpolation: InterpolationType,
+    default_mask: Vec<bool>,
 }
 
 pub fn make_interpolator<T>(
@@ -277,6 +279,8 @@ where
     ) -> Self {
         let buffer = vec![vec![T::zero(); chunk_size + 2 * interpolator.len()]; nbr_channels];
 
+        let default_mask = vec![true; nbr_channels];
+
         SincFixedIn {
             nbr_channels,
             chunk_size,
@@ -286,6 +290,7 @@ where
             interpolator,
             buffer,
             interpolation: interpolation_type,
+            default_mask,
         }
     }
 }
@@ -298,8 +303,14 @@ where
         &mut self,
         wave_in: &[V],
         wave_out: &mut [Vec<T>],
-        active_channels_mask: &[bool],
+        active_channels_mask: Option<&[bool]>,
     ) -> ResampleResult<()> {
+        let active_channels_mask = if let Some(mask) = active_channels_mask {
+            mask
+        } else {
+            &self.default_mask
+        };
+
         validate_buffers(
             wave_in,
             wave_out,
@@ -513,6 +524,7 @@ where
             (chunk_size as f64 / resample_ratio).ceil() as usize + 2 + interpolator.len() / 2;
         let buffer =
             vec![vec![T::zero(); 3 * needed_input_size / 2 + 2 * interpolator.len()]; nbr_channels];
+        let default_mask = vec![true; nbr_channels];
 
         SincFixedOut {
             nbr_channels,
@@ -525,6 +537,7 @@ where
             interpolator,
             buffer,
             interpolation: interpolation_type,
+            default_mask,
         }
     }
 }
@@ -542,8 +555,14 @@ where
         &mut self,
         wave_in: &[V],
         wave_out: &mut [Vec<T>],
-        active_channels_mask: &[bool],
+        active_channels_mask: Option<&[bool]>,
     ) -> ResampleResult<()> {
+        let active_channels_mask = if let Some(mask) = active_channels_mask {
+            mask
+        } else {
+            &self.default_mask
+        };
+
         validate_buffers(
             wave_in,
             wave_out,
@@ -822,7 +841,7 @@ mod tests {
         };
         let mut resampler = SincFixedIn::<f64>::new(1.2, params, 1024, 2);
         let waves = vec![vec![0.0f64; 1024]; 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
         assert!(
             out[0].len() > 1150 && out[0].len() < 1229,
@@ -831,7 +850,7 @@ mod tests {
             1229,
             out[0].len()
         );
-        let out2 = resampler.process(&waves).unwrap();
+        let out2 = resampler.process(&waves, None).unwrap();
         assert_eq!(out2.len(), 2, "Expected {} channels, got {}", 2, out2.len());
         assert!(
             out2[0].len() > 1226 && out2[0].len() < 1232,
@@ -853,7 +872,7 @@ mod tests {
         };
         let mut resampler = SincFixedIn::<f32>::new(1.2, params, 1024, 2);
         let waves = vec![vec![0.0f32; 1024]; 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
         assert!(
             out[0].len() > 1150 && out[0].len() < 1229,
@@ -862,7 +881,7 @@ mod tests {
             1229,
             out[0].len()
         );
-        let out2 = resampler.process(&waves).unwrap();
+        let out2 = resampler.process(&waves, None).unwrap();
         assert_eq!(out2.len(), 2, "Expected {} channels, got {}", 2, out2.len());
         assert!(
             out2[0].len() > 1226 && out2[0].len() < 1232,
@@ -884,12 +903,12 @@ mod tests {
         };
         let mut resampler = SincFixedIn::<f64>::new(1.2, params, 1024, 2);
         let waves = vec![vec![0.0f64; 1024], Vec::new()];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert!(out[0].len() > 1150 && out[0].len() < 1250);
         assert!(out[1].is_empty());
         let waves = vec![Vec::new(), vec![0.0f64; 1024]];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert!(out[1].len() > 1150 && out[0].len() < 1250);
         assert!(out[0].is_empty());
@@ -907,7 +926,7 @@ mod tests {
         };
         let mut resampler = SincFixedIn::<f64>::new(16000 as f64 / 96000 as f64, params, 1024, 2);
         let waves = vec![vec![0.0f64; 1024]; 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
         assert!(
             out[0].len() > 140 && out[0].len() < 200,
@@ -916,7 +935,7 @@ mod tests {
             200,
             out[0].len()
         );
-        let out2 = resampler.process(&waves).unwrap();
+        let out2 = resampler.process(&waves, None).unwrap();
         assert_eq!(out2.len(), 2, "Expected {} channels, got {}", 2, out2.len());
         assert!(
             out2[0].len() > 167 && out2[0].len() < 173,
@@ -939,7 +958,7 @@ mod tests {
         };
         let mut resampler = SincFixedIn::<f64>::new(192000 as f64 / 44100 as f64, params, 1024, 2);
         let waves = vec![vec![0.0f64; 1024]; 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
         assert!(
             out[0].len() > 3800 && out[0].len() < 4458,
@@ -948,7 +967,7 @@ mod tests {
             4458,
             out[0].len()
         );
-        let out2 = resampler.process(&waves).unwrap();
+        let out2 = resampler.process(&waves, None).unwrap();
         assert_eq!(out2.len(), 2, "Expected {} channels, got {}", 2, out2.len());
         assert!(
             out2[0].len() > 4455 && out2[0].len() < 4461,
@@ -973,7 +992,7 @@ mod tests {
         println!("{}", frames);
         assert!(frames > 800 && frames < 900);
         let waves = vec![vec![0.0f64; frames]; 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 1024);
     }
@@ -992,7 +1011,7 @@ mod tests {
         println!("{}", frames);
         assert!(frames > 800 && frames < 900);
         let waves = vec![vec![0.0f32; frames]; 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 1024);
     }
@@ -1012,7 +1031,7 @@ mod tests {
         assert!(frames > 800 && frames < 900);
         let mut waves = vec![vec![0.0f64; frames], Vec::new()];
         waves[0][100] = 3.0;
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 1024);
         assert!(out[1].is_empty());
@@ -1025,7 +1044,7 @@ mod tests {
         let frames = resampler.nbr_frames_needed();
         let mut waves = vec![Vec::new(), vec![0.0f64; frames]];
         waves[1][10] = 3.0;
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[1].len(), 1024);
         assert!(out[0].is_empty());
@@ -1054,7 +1073,7 @@ mod tests {
             frames
         );
         let waves = vec![vec![0.0f64; frames]; 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
         assert_eq!(
             out[0].len(),
@@ -1072,7 +1091,7 @@ mod tests {
             frames2
         );
         let waves2 = vec![vec![0.0f64; frames2]; 2];
-        let out2 = resampler.process(&waves2).unwrap();
+        let out2 = resampler.process(&waves2, None).unwrap();
         assert_eq!(
             out2[0].len(),
             1024,
@@ -1102,7 +1121,7 @@ mod tests {
             frames
         );
         let waves = vec![vec![0.0f64; frames]; 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
         assert_eq!(
             out[0].len(),
@@ -1120,7 +1139,7 @@ mod tests {
             frames2
         );
         let waves2 = vec![vec![0.0f64; frames2]; 2];
-        let out2 = resampler.process(&waves2).unwrap();
+        let out2 = resampler.process(&waves2, None).unwrap();
         assert_eq!(
             out2[0].len(),
             1024,
