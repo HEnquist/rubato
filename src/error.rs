@@ -36,7 +36,7 @@ impl CpuFeature {
             }
             #[cfg(all(feature = "neon", target_arch = "aarch64"))]
             CpuFeature::Neon => {
-                is_aarch64_feature_detected!("neon")
+                std::arch::is_aarch64_feature_detected!("neon")
             }
         }
     }
