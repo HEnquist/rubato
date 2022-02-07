@@ -8,7 +8,7 @@ use crate::interpolator_neon::NeonInterpolator;
 use crate::interpolator_sse::SseInterpolator;
 use crate::sinc::make_sincs;
 use crate::windows::WindowFunction;
-use crate::{validate_buffers, Resampler, Sample};
+use crate::{update_mask_from_buffers, validate_buffers, Resampler, Sample};
 use crate::{InterpolationParameters, InterpolationType};
 
 /// Functions for making the scalar product with a sinc
@@ -130,7 +130,7 @@ pub struct SincFixedIn<T> {
     interpolator: Box<dyn SincInterpolator<T>>,
     buffer: Vec<Vec<T>>,
     interpolation: InterpolationType,
-    default_mask: Vec<bool>,
+    channel_mask: Vec<bool>,
 }
 
 /// An asynchronous resampler that return a fixed number of audio frames.
@@ -149,7 +149,7 @@ pub struct SincFixedOut<T> {
     interpolator: Box<dyn SincInterpolator<T>>,
     buffer: Vec<Vec<T>>,
     interpolation: InterpolationType,
-    default_mask: Vec<bool>,
+    channel_mask: Vec<bool>,
 }
 
 pub fn make_interpolator<T>(
@@ -279,7 +279,7 @@ where
     ) -> Self {
         let buffer = vec![vec![T::zero(); chunk_size + 2 * interpolator.len()]; nbr_channels];
 
-        let default_mask = vec![true; nbr_channels];
+        let channel_mask = vec![true; nbr_channels];
 
         SincFixedIn {
             nbr_channels,
@@ -290,7 +290,7 @@ where
             interpolator,
             buffer,
             interpolation: interpolation_type,
-            default_mask,
+            channel_mask,
         }
     }
 }
@@ -305,16 +305,16 @@ where
         wave_out: &mut [Vec<T>],
         active_channels_mask: Option<&[bool]>,
     ) -> ResampleResult<()> {
-        let active_channels_mask = if let Some(mask) = active_channels_mask {
-            mask
+        if let Some(mask) = active_channels_mask {
+            self.channel_mask.copy_from_slice(mask);
         } else {
-            &self.default_mask
+            update_mask_from_buffers(wave_in, &mut self.channel_mask);
         };
 
         validate_buffers(
             wave_in,
             wave_out,
-            active_channels_mask,
+            &self.channel_mask,
             self.nbr_channels,
             self.chunk_size,
         )?;
@@ -329,7 +329,7 @@ where
             buf.copy_within(self.chunk_size..self.chunk_size + 2 * sinc_len, 0);
         }
 
-        for (chan, active) in active_channels_mask.iter().enumerate() {
+        for (chan, active) in self.channel_mask.iter().enumerate() {
             if *active {
                 self.buffer[chan][2 * sinc_len..2 * sinc_len + self.chunk_size]
                     .copy_from_slice(wave_in[chan].as_ref());
@@ -354,7 +354,7 @@ where
                     let frac = idx * oversampling_factor as f64
                         - (idx * oversampling_factor as f64).floor();
                     let frac_offset = T::coerce(frac);
-                    for (chan, active) in active_channels_mask.iter().enumerate() {
+                    for (chan, active) in self.channel_mask.iter().enumerate() {
                         if *active {
                             let buf = &self.buffer[chan];
                             for (n, p) in nearest.iter().zip(points.iter_mut()) {
@@ -379,7 +379,7 @@ where
                     let frac = idx * oversampling_factor as f64
                         - (idx * oversampling_factor as f64).floor();
                     let frac_offset = T::coerce(frac);
-                    for (chan, active) in active_channels_mask.iter().enumerate() {
+                    for (chan, active) in self.channel_mask.iter().enumerate() {
                         if *active {
                             let buf = &self.buffer[chan];
                             for (n, p) in nearest.iter().zip(points.iter_mut()) {
@@ -401,7 +401,7 @@ where
                 while idx < end_idx as f64 {
                     idx += t_ratio;
                     nearest = get_nearest_time(idx, oversampling_factor as isize);
-                    for (chan, active) in active_channels_mask.iter().enumerate() {
+                    for (chan, active) in self.channel_mask.iter().enumerate() {
                         if *active {
                             let buf = &self.buffer[chan];
                             point = self.interpolator.get_sinc_interpolated(
@@ -419,7 +419,7 @@ where
 
         // store last index for next iteration
         self.last_index = idx - self.chunk_size as f64;
-        for (chan, active) in active_channels_mask.iter().enumerate() {
+        for (chan, active) in self.channel_mask.iter().enumerate() {
             if *active {
                 wave_out[chan].truncate(n);
             }
@@ -524,7 +524,7 @@ where
             (chunk_size as f64 / resample_ratio).ceil() as usize + 2 + interpolator.len() / 2;
         let buffer =
             vec![vec![T::zero(); 3 * needed_input_size / 2 + 2 * interpolator.len()]; nbr_channels];
-        let default_mask = vec![true; nbr_channels];
+        let channel_mask = vec![true; nbr_channels];
 
         SincFixedOut {
             nbr_channels,
@@ -537,7 +537,7 @@ where
             interpolator,
             buffer,
             interpolation: interpolation_type,
-            default_mask,
+            channel_mask,
         }
     }
 }
@@ -557,16 +557,16 @@ where
         wave_out: &mut [Vec<T>],
         active_channels_mask: Option<&[bool]>,
     ) -> ResampleResult<()> {
-        let active_channels_mask = if let Some(mask) = active_channels_mask {
-            mask
+        if let Some(mask) = active_channels_mask {
+            self.channel_mask.copy_from_slice(mask);
         } else {
-            &self.default_mask
+            update_mask_from_buffers(wave_in, &mut self.channel_mask);
         };
 
         validate_buffers(
             wave_in,
             wave_out,
-            active_channels_mask,
+            &self.channel_mask,
             self.nbr_channels,
             self.needed_input_size,
         )?;
@@ -581,7 +581,7 @@ where
         }
         self.current_buffer_fill = self.needed_input_size;
 
-        for (chan, active) in active_channels_mask.iter().enumerate() {
+        for (chan, active) in self.channel_mask.iter().enumerate() {
             if *active {
                 self.buffer[chan][2 * sinc_len..2 * sinc_len + wave_in[chan].as_ref().len()]
                     .copy_from_slice(wave_in[chan].as_ref());
@@ -602,7 +602,7 @@ where
                     let frac = idx * oversampling_factor as f64
                         - (idx * oversampling_factor as f64).floor();
                     let frac_offset = T::coerce(frac);
-                    for (chan, active) in active_channels_mask.iter().enumerate() {
+                    for (chan, active) in self.channel_mask.iter().enumerate() {
                         if *active {
                             let buf = &self.buffer[chan];
                             for (n, p) in nearest.iter().zip(points.iter_mut()) {
@@ -626,7 +626,7 @@ where
                     let frac = idx * oversampling_factor as f64
                         - (idx * oversampling_factor as f64).floor();
                     let frac_offset = T::coerce(frac);
-                    for (chan, active) in active_channels_mask.iter().enumerate() {
+                    for (chan, active) in self.channel_mask.iter().enumerate() {
                         if *active {
                             let buf = &self.buffer[chan];
                             for (n, p) in nearest.iter().zip(points.iter_mut()) {
@@ -647,7 +647,7 @@ where
                 for n in 0..self.chunk_size {
                     idx += t_ratio;
                     nearest = get_nearest_time(idx, oversampling_factor as isize);
-                    for (chan, active) in active_channels_mask.iter().enumerate() {
+                    for (chan, active) in self.channel_mask.iter().enumerate() {
                         if *active {
                             let buf = &self.buffer[chan];
                             point = self.interpolator.get_sinc_interpolated(

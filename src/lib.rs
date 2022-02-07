@@ -212,13 +212,7 @@ pub trait Resampler<T>: Send {
         active_channels_mask: Option<&[bool]>,
     ) -> ResampleResult<Vec<Vec<T>>> {
         let mut wave_out = self.allocate_output_buffer();
-        let mask_from_buf = make_mask_from_buffers(wave_in);
-        let channel_mask = if let Some(mask) = active_channels_mask {
-            mask
-        } else {
-            &mask_from_buf
-        };
-        self.process_into_buffer(wave_in, &mut wave_out, Some(channel_mask))?;
+        self.process_into_buffer(wave_in, &mut wave_out, active_channels_mask)?;
         Ok(wave_out)
     }
 
@@ -232,11 +226,11 @@ pub trait Resampler<T>: Send {
     /// of the vector is itself a vector which contains the samples for a single channel.
     /// The output will be resized to fit all the output samples.
     /// To avoid allocations, make sure that the output has sufficient capacity.
-    /// The optional `active_channels_mask` is used to mark channels as active or inactive.
-    /// Giving `None` means all channels will be active.
-    /// Note that the `None` value is interpreted differently compared to the `process` function.
-    /// Any channel marked as inactive by a false value will be skipped during processing,
-    /// and the corresponding output will be left unchanged.
+    /// The `active_channels_mask` is optional.
+    /// Any channel marked as inactive by a false value will be skipped during processing
+    /// and the corresponding output will also be empty.
+    /// If `None` is given, the length of each input is used to determine the active channels.
+    /// Then if an input channel has zero length, this channel will be considered as inactive.
     fn process_into_buffer<V: AsRef<[T]>>(
         &mut self,
         wave_in: &[V],
@@ -360,13 +354,11 @@ where
 }
 
 /// Helper to make a mask for the active channels based on which ones are empty.
-fn make_mask_from_buffers<T, V: AsRef<[T]>>(wave_in: &[V]) -> Vec<bool> {
-    let mut channel_mask = Vec::with_capacity(wave_in.len());
-    for wave in wave_in.iter() {
+fn update_mask_from_buffers<T, V: AsRef<[T]>>(wave_in: &[V], mask: &mut [bool]) {
+    for (wave, active) in wave_in.iter().zip(mask.iter_mut()) {
         let wave = wave.as_ref();
-        channel_mask.push(!wave.is_empty());
+        *active = !wave.is_empty();
     }
-    channel_mask
 }
 
 pub(crate) fn validate_buffers<T, V: AsRef<[T]>>(

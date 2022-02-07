@@ -6,7 +6,7 @@ use num_traits::Zero;
 use std::sync::Arc;
 
 use crate::error::{ResampleError, ResampleResult};
-use crate::{validate_buffers, Resampler, Sample};
+use crate::{update_mask_from_buffers, validate_buffers, Resampler, Sample};
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 
 /// A helper for resampling a single chunk of data.
@@ -37,7 +37,7 @@ pub struct FftFixedIn<T> {
     fft_size_out: usize,
     overlaps: Vec<Vec<T>>,
     input_buffers: Vec<Vec<T>>,
-    default_mask: Vec<bool>,
+    channel_mask: Vec<bool>,
     saved_frames: usize,
     resampler: FftResampler<T>,
 }
@@ -55,7 +55,7 @@ pub struct FftFixedOut<T> {
     fft_size_out: usize,
     overlaps: Vec<Vec<T>>,
     output_buffers: Vec<Vec<T>>,
-    default_mask: Vec<bool>,
+    channel_mask: Vec<bool>,
     saved_frames: usize,
     frames_needed: usize,
     resampler: FftResampler<T>,
@@ -72,7 +72,7 @@ pub struct FftFixedInOut<T> {
     chunk_size_in: usize,
     chunk_size_out: usize,
     fft_size_in: usize,
-    default_mask: Vec<bool>,
+    channel_mask: Vec<bool>,
     overlaps: Vec<Vec<T>>,
     resampler: FftResampler<T>,
 }
@@ -206,7 +206,7 @@ where
 
         let overlaps: Vec<Vec<T>> = vec![vec![T::zero(); fft_size_out]; nbr_channels];
 
-        let default_mask = vec![true; nbr_channels];
+        let channel_mask = vec![true; nbr_channels];
 
         FftFixedInOut {
             nbr_channels,
@@ -215,7 +215,7 @@ where
             fft_size_in,
             overlaps,
             resampler,
-            default_mask,
+            channel_mask,
         }
     }
 }
@@ -235,21 +235,21 @@ where
         wave_out: &mut [Vec<T>],
         active_channels_mask: Option<&[bool]>,
     ) -> ResampleResult<()> {
-        let active_channels_mask = if let Some(mask) = active_channels_mask {
-            mask
+        if let Some(mask) = active_channels_mask {
+            self.channel_mask.copy_from_slice(mask);
         } else {
-            &self.default_mask
+            update_mask_from_buffers(wave_in, &mut self.channel_mask);
         };
 
         validate_buffers(
             wave_in,
             wave_out,
-            active_channels_mask,
+            &self.channel_mask,
             self.nbr_channels,
             self.chunk_size_in,
         )?;
 
-        for (chan, active) in active_channels_mask.iter().enumerate() {
+        for (chan, active) in self.channel_mask.iter().enumerate() {
             if *active {
                 wave_out[chan].resize(self.chunk_size_out, T::zero());
                 self.resampler.resample_unit(
@@ -316,7 +316,7 @@ where
         let output_buffers: Vec<Vec<T>> =
             vec![vec![T::zero(); chunk_size_out + fft_size_out]; nbr_channels];
 
-        let default_mask = vec![true; nbr_channels];
+        let channel_mask = vec![true; nbr_channels];
 
         let saved_frames = 0;
         let chunks_needed = (chunk_size_out as f32 / fft_size_out as f32).ceil() as usize;
@@ -332,7 +332,7 @@ where
             saved_frames,
             frames_needed,
             resampler,
-            default_mask,
+            channel_mask,
         }
     }
 }
@@ -352,27 +352,27 @@ where
         wave_out: &mut [Vec<T>],
         active_channels_mask: Option<&[bool]>,
     ) -> ResampleResult<()> {
-        let active_channels_mask = if let Some(mask) = active_channels_mask {
-            mask
+        if let Some(mask) = active_channels_mask {
+            self.channel_mask.copy_from_slice(mask);
         } else {
-            &self.default_mask
+            update_mask_from_buffers(wave_in, &mut self.channel_mask);
         };
 
         validate_buffers(
             wave_in,
             wave_out,
-            active_channels_mask,
+            &self.channel_mask,
             self.nbr_channels,
             self.frames_needed,
         )?;
 
-        for (chan, active) in active_channels_mask.iter().enumerate() {
+        for (chan, active) in self.channel_mask.iter().enumerate() {
             if *active {
                 wave_out[chan].resize(self.chunk_size_out, T::zero());
             }
         }
 
-        for (chan, active) in active_channels_mask.iter().enumerate() {
+        for (chan, active) in self.channel_mask.iter().enumerate() {
             if *active {
                 for (in_chunk, out_chunk) in wave_in[chan].as_ref().chunks(self.fft_size_in).zip(
                     self.output_buffers[chan][self.saved_frames..].chunks_mut(self.fft_size_out),
@@ -388,7 +388,7 @@ where
         // copy to output, and save extra frames for next round
         if processed_frames >= self.chunk_size_out {
             self.saved_frames = processed_frames - self.chunk_size_out;
-            for (chan, active) in active_channels_mask.iter().enumerate() {
+            for (chan, active) in self.channel_mask.iter().enumerate() {
                 if *active {
                     wave_out[chan][..]
                         .copy_from_slice(&self.output_buffers[chan][0..self.chunk_size_out]);
@@ -465,7 +465,7 @@ where
         let input_buffers: Vec<Vec<T>> =
             vec![vec![T::zero(); chunk_size_in + fft_size_out]; nbr_channels];
 
-        let default_mask = vec![true; nbr_channels];
+        let channel_mask = vec![true; nbr_channels];
 
         let saved_frames = 0;
 
@@ -478,7 +478,7 @@ where
             input_buffers,
             saved_frames,
             resampler,
-            default_mask,
+            channel_mask,
         }
     }
 }
@@ -498,22 +498,22 @@ where
         wave_out: &mut [Vec<T>],
         active_channels_mask: Option<&[bool]>,
     ) -> ResampleResult<()> {
-        let active_channels_mask = if let Some(mask) = active_channels_mask {
-            mask
+        if let Some(mask) = active_channels_mask {
+            self.channel_mask.copy_from_slice(mask);
         } else {
-            &self.default_mask
+            update_mask_from_buffers(wave_in, &mut self.channel_mask);
         };
 
         validate_buffers(
             wave_in,
             wave_out,
-            active_channels_mask,
+            &self.channel_mask,
             self.nbr_channels,
             self.chunk_size_in,
         )?;
 
         // copy new samples to input buffer
-        for (chan, active) in active_channels_mask.iter().enumerate() {
+        for (chan, active) in self.channel_mask.iter().enumerate() {
             if *active {
                 for (input, buffer) in wave_in[chan].as_ref().iter().zip(
                     self.input_buffers[chan]
@@ -529,7 +529,7 @@ where
 
         let nbr_chunks_ready =
             (self.saved_frames as f32 / self.fft_size_in as f32).floor() as usize;
-        for (chan, active) in active_channels_mask.iter().enumerate() {
+        for (chan, active) in self.channel_mask.iter().enumerate() {
             if *active {
                 wave_out[chan].resize(nbr_chunks_ready * self.fft_size_out, T::zero());
                 for (in_chunk, out_chunk) in self.input_buffers[chan]
@@ -548,7 +548,7 @@ where
         let extra = self.saved_frames - frames_in_used;
 
         if self.saved_frames > frames_in_used {
-            for (chan, active) in active_channels_mask.iter().enumerate() {
+            for (chan, active) in self.channel_mask.iter().enumerate() {
                 if *active {
                     self.input_buffers[chan].copy_within(frames_in_used..self.saved_frames, 0);
                 }
