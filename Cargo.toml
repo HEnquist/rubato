@@ -36,3 +36,4 @@ harness = false
 
 [lib]
 bench = false
+path = "src/lib.rs"
