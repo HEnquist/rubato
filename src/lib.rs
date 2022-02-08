@@ -6,31 +6,57 @@
 //! Implementations are available that accept a fixed length input
 //! while returning a variable length output, and vice versa.
 //!
-//! ## Asynchronous resampling
+//! ### Input and output data format
+//!
+//! Input and output data is stored non-interleaved.
+//!
+//! The output data is stored in a vector or vectors, `Vec<Vec<f32>>` or `Vec<Vec<f64>>`.
+//! The inner vectors (`Vec<f32>` or `Vec<f64>`) hold the sample values for one channel each.
+//!
+//! The input data is similar, except that is allows the inner vectors to be `AsRef<[f32]>` or `AsRef<[f64]>`.
+//! Normal vectors can be used since `Vec` implements the `AsRef` trait.
+//!
+//! ### Asynchronous resampling
+//!
 //! The resampling is based on band-limited interpolation using sinc
 //! interpolation filters. The sinc interpolation upsamples by an adjustable factor,
 //! and then the new sample points are calculated by interpolating between these points.
 //! The resampling ratio can be updated at any time.
 //!
-//! ## Synchronous resampling
+//! ### Synchronous resampling
+//!
 //! Synchronous resampling is implemented via FFT. The data is FFT:ed, the spectrum modified,
 //! and then inverse FFT:ed to get the resampled data.
 //! This type of resampler is considerably faster but doesn't support changing the resampling ratio.
 //!
-//! ## SIMD acceleration
+//! ### SIMD acceleration
+//!
+//! #### Asynchronous resampling
+//!
 //! The asynchronous resampler is designed to benefit from auto-vectorization, meaning that the Rust compiler
 //! can recognize calculations that can be done in parallel. It will then use SIMD instructions for those.
 //! This works quite well, but there is still room for improvement.
-//! On x86_64 it will always use SSE3 if available. The speed benefit compared to auto-vectorization
-//! depends on the CPU, but tends to be in the range 20-30% for 64-bit data, and 50-100% for 32-bit data.
+//! To address this, it also has optimized SIMD support.
+//! This gets enabled at runtime by checking the SIMD support of the CPU.
 //!
-//! ## Cargo features
-//! #### `avx`: AVX on x86_64
+//! On x86_64 it will try to use SSE3. The speed benefit compared to auto-vectorization
+//! depends on the CPU, but tends to be in the range 20-30% for 64-bit data, and 50-100% for 32-bit data.
+//! There is also optional support for AVX on x86_64, and Neon on aarch64 via Cargo features.
+//!
+//! #### Synchronous resampling
+//!
+//! The synchronous resamplers benefit from the SIMD support of the RustFFT library.
+//!
+//! ### Cargo features
+//!
+//! ##### `avx`: AVX on x86_64
+//!
 //! The `avx` feature is enabled by default, and enables the use of AVX when it's available.
 //! The speed increase compared to SSE depends on the CPU, and tends to range from zero to 50%.
 //! On other architectures than x86_64 the `avx` feature does nothing.
 //!
-//! #### `neon`: Experimental Neon support on aarch64
+//! ##### `neon`: Experimental Neon support on aarch64
+//!
 //! Experimental support for Neon is available for aarch64 (64-bit Arm) by enabling the `neon` feature.
 //! This requires the use of a nightly compiler, as the Neon support in Rust is still experimental.
 //! On a Raspberry Pi 4, this gives a boost of about 10% for 64-bit floats and 50% for 32-bit floats when
@@ -45,6 +71,7 @@
 //! ```
 //!
 //! ## Example
+//!
 //! Resample a single chunk of a dummy audio file from 44100 to 48000 Hz.
 //! See also the "fixedin64" example that can be used to process a file from disk.
 //! ```
@@ -204,8 +231,7 @@ pub trait Resampler<T>: Send {
     /// The `active_channels_mask` is optional.
     /// Any channel marked as inactive by a false value will be skipped during processing
     /// and the corresponding output will also be empty.
-    /// If `None` is given, the length of each input is used to determine the active channels.
-    /// Then if an input channel has zero length, this channel will be considered as inactive.
+    /// If `None` is given, all channels will be considered active unless their length is 0.
     fn process<V: AsRef<[T]>>(
         &mut self,
         wave_in: &[V],
@@ -228,9 +254,8 @@ pub trait Resampler<T>: Send {
     /// To avoid allocations, make sure that the output has sufficient capacity.
     /// The `active_channels_mask` is optional.
     /// Any channel marked as inactive by a false value will be skipped during processing
-    /// and the corresponding output will also be empty.
-    /// If `None` is given, the length of each input is used to determine the active channels.
-    /// Then if an input channel has zero length, this channel will be considered as inactive.
+    /// and the corresponding output will be left unchanged.
+    /// If `None` is given, all channels will be considered active unless their length is 0.
     fn process_into_buffer<V: AsRef<[T]>>(
         &mut self,
         wave_in: &[V],
@@ -241,7 +266,7 @@ pub trait Resampler<T>: Send {
     /// Convenience method for allocating an output buffer suitable for use with `process_into_buffer`.
     /// For the Resamplers with variable output sizes ([FftFixedIn] and [SincFixedIn]),
     /// the buffer size is only guaranteed to be sufficient to prevent allocation
-    /// within [process_into_buffer] until the resampling ratio is changed.
+    /// within [Resampler::process_into_buffer] until the resampling ratio is changed.
     fn allocate_output_buffer(&self) -> Vec<Vec<T>> {
         let (channels, out_len) = self.get_max_output_size();
         let mut wave_out = Vec::with_capacity(channels);
@@ -251,10 +276,10 @@ pub trait Resampler<T>: Send {
         wave_out
     }
 
-    /// Get the max output size the resampler can give, as (channels, frames).
+    /// Get the max output size the resampler can give as (channels, frames).
     /// For the Resamplers with variable output sizes ([FftFixedIn] and [SincFixedIn]),
     /// the max output size is only guaranteed to be sufficient to prevent allocation
-    /// within [process_into_buffer] until the resampling ratio is changed.
+    /// within [Resampler::process_into_buffer] until the resampling ratio is changed.
     fn get_max_output_size(&self) -> (usize, usize);
 
     /// Query for the number of frames needed for the next call to "process".
@@ -269,7 +294,8 @@ pub trait Resampler<T>: Send {
 
 /// This is a helper trait that can be used when a [Resampler] must be object safe.
 ///
-/// It differs from [Resampler] only by fixing the type of the input of `process()` to `&[Vec<T>]`.
+/// It differs from [Resampler] only by fixing the type of the input of `process()`
+/// and `process_into_buffer` to `&[Vec<T>]`.
 /// This allows it to be made into a trait object like this:
 /// ```
 /// # use rubato::{FftFixedIn, VecResampler};
@@ -279,6 +305,7 @@ pub trait Resampler<T>: Send {
 pub trait VecResampler<T>: Send {
     /// Resample a chunk of audio.
     /// Input and output data is stored in vectors, where each element contains a vector with all samples for a single channel.
+    /// See also [Resampler::process].
     fn process(
         &mut self,
         wave_in: &[Vec<T>],
@@ -287,6 +314,7 @@ pub trait VecResampler<T>: Send {
 
     /// Resample a chunk of audio, into a pre-allocated output buffer.
     /// Input and output data is stored in vectors, where each element contains a vector with all samples for a single channel.
+    /// See also [Resampler::process_into_buffer].
     fn process_into_buffer(
         &mut self,
         wave_in: &[Vec<T>],
@@ -301,7 +329,7 @@ pub trait VecResampler<T>: Send {
     /// Note that when adjusting the ratio of an asynchronous resampler, the maximum size can change.
     fn get_max_output_size(&self) -> (usize, usize);
 
-    /// Query for the number of frames needed for the next call to "process".
+    /// Query for the number of frames needed for the next call to `process`.
     fn nbr_frames_needed(&self) -> usize;
 
     /// Update the resample ratio.

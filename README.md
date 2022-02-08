@@ -8,31 +8,57 @@ The ratio between input and output sample rates is completely free.
 Implementations are available that accept a fixed length input
 while returning a variable length output, and vice versa.
 
+### Input and output data format
+
+Input and output data is stored non-interleaved.
+
+The output data is stored in a vector or vectors, `Vec<Vec<f32>>` or `Vec<Vec<f64>>`.
+The inner vectors (`Vec<f32>` or `Vec<f64>`) hold the sample values for one channel each.
+
+The input data is similar, except that is allows the inner vectors to be `AsRef<[f32]>` or `AsRef<[f64]>`.
+Normal vectors can be used since `Vec` implements the `AsRef` trait.
+
 ### Asynchronous resampling
+
 The resampling is based on band-limited interpolation using sinc
 interpolation filters. The sinc interpolation upsamples by an adjustable factor,
 and then the new sample points are calculated by interpolating between these points.
 The resampling ratio can be updated at any time.
 
 ### Synchronous resampling
+
 Synchronous resampling is implemented via FFT. The data is FFT:ed, the spectrum modified,
 and then inverse FFT:ed to get the resampled data.
 This type of resampler is considerably faster but doesn't support changing the resampling ratio.
 
 ### SIMD acceleration
+
+#### Asynchronous resampling
+
 The asynchronous resampler is designed to benefit from auto-vectorization, meaning that the Rust compiler
 can recognize calculations that can be done in parallel. It will then use SIMD instructions for those.
 This works quite well, but there is still room for improvement.
-On x86_64 it will always use SSE3 if available. The speed benefit compared to auto-vectorization
+To address this, it also has optimized SIMD support.
+This gets enabled at runtime by checking the SIMD support of the CPU.
+
+On x86_64 it will try to use SSE3. The speed benefit compared to auto-vectorization
 depends on the CPU, but tends to be in the range 20-30% for 64-bit data, and 50-100% for 32-bit data.
+There is also optional support for AVX on x86_64, and Neon on aarch64 via Cargo features.
+
+#### Synchronous resampling
+
+The synchronous resamplers benefit from the SIMD support of the RustFFT library.
 
 ### Cargo features
+
 ##### `avx`: AVX on x86_64
+
 The `avx` feature is enabled by default, and enables the use of AVX when it's available.
 The speed increase compared to SSE depends on the CPU, and tends to range from zero to 50%.
 On other architectures than x86_64 the `avx` feature does nothing.
 
 ##### `neon`: Experimental Neon support on aarch64
+
 Experimental support for Neon is available for aarch64 (64-bit Arm) by enabling the `neon` feature.
 This requires the use of a nightly compiler, as the Neon support in Rust is still experimental.
 On a Raspberry Pi 4, this gives a boost of about 10% for 64-bit floats and 50% for 32-bit floats when
@@ -47,8 +73,10 @@ cargo doc --open
 ```
 
 ### Example
+
 Resample a single chunk of a dummy audio file from 44100 to 48000 Hz.
 See also the "fixedin64" example that can be used to process a file from disk.
+
 ```rust
 use rubato::{Resampler, SincFixedIn, InterpolationType, InterpolationParameters, WindowFunction};
 let params = InterpolationParameters {
@@ -66,7 +94,7 @@ let mut resampler = SincFixedIn::<f64>::new(
 );
 
 let waves_in = vec![vec![0.0f64; 1024];2];
-let waves_out = resampler.process(&waves_in).unwrap();
+let waves_out = resampler.process(&waves_in, None).unwrap();
 ```
 
 ### Compatibility

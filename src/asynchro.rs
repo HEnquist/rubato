@@ -333,6 +333,7 @@ where
             if *active {
                 self.buffer[chan][2 * sinc_len..2 * sinc_len + self.chunk_size]
                     .copy_from_slice(wave_in[chan].as_ref());
+                // Set length to chunksize*ratio plus a safety margin of 10 elements.
                 wave_out[chan].resize(
                     (self.chunk_size as f64 * self.resample_ratio + 10.0) as usize,
                     T::zero(),
@@ -435,6 +436,7 @@ where
     }
 
     fn get_max_output_size(&self) -> (usize, usize) {
+        // Set length to chunksize*ratio plus a safety margin of 10 elements.
         (
             self.nbr_channels,
             (self.chunk_size as f64 * self.resample_ratio + 10.0) as usize,
