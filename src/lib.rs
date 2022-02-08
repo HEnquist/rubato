@@ -10,10 +10,10 @@
 //!
 //! Input and output data is stored non-interleaved.
 //!
-//! The output data is stored in a vector or vectors, `Vec<Vec<f32>>` or `Vec<Vec<f64>>`.
+//! The output data is stored in a vector of vectors, `Vec<Vec<f32>>` or `Vec<Vec<f64>>`.
 //! The inner vectors (`Vec<f32>` or `Vec<f64>`) hold the sample values for one channel each.
 //!
-//! The input data is similar, except that is allows the inner vectors to be `AsRef<[f32]>` or `AsRef<[f64]>`.
+//! The input data is similar, except that it allows the inner vectors to be `AsRef<[f32]>` or `AsRef<[f64]>`.
 //! Normal vectors can be used since `Vec` implements the `AsRef` trait.
 //!
 //! ### Asynchronous resampling
@@ -230,7 +230,7 @@ pub trait Resampler<T>: Send {
     /// which contains the samples for a single channel.
     /// The `active_channels_mask` is optional.
     /// Any channel marked as inactive by a false value will be skipped during processing
-    /// and the corresponding output will also be empty.
+    /// and the corresponding output channel will also be empty.
     /// If `None` is given, all channels will be considered active unless their length is 0.
     fn process<V: AsRef<[T]>>(
         &mut self,
