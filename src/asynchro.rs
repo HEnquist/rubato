@@ -425,7 +425,6 @@ where
                 wave_out[chan].truncate(n);
             }
         }
-        #[cfg(debug_assertions)]
         trace!(
             "Resampling channels {:?}, {} frames in, {} frames out",
             active_channels_mask,
@@ -451,7 +450,6 @@ where
 
     /// Update the resample ratio. New value must be within +-10% of the original one
     fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()> {
-        #[cfg(debug_assertions)]
         trace!("Change resample ratio to {}", new_ratio);
         if (new_ratio / self.resample_ratio_original > 0.9)
             && (new_ratio / self.resample_ratio_original < 1.1)
@@ -671,7 +669,6 @@ where
             + sinc_len as f32)
             .ceil() as usize
             + 2;
-        #[cfg(debug_assertions)]
         trace!(
             "Resampling channels {:?}, {} frames in, {} frames out. Next needed length: {} frames, last index {}",
             active_channels_mask,
@@ -689,7 +686,6 @@ where
 
     /// Update the resample ratio. New value must be within +-10% of the original one
     fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()> {
-        #[cfg(debug_assertions)]
         trace!("Change resample ratio to {}", new_ratio);
         if (new_ratio / self.resample_ratio_original > 0.9)
             && (new_ratio / self.resample_ratio_original < 1.1)
