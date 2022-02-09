@@ -13,11 +13,11 @@ use env_logger::Builder;
 use log::LevelFilter;
 
 ///! A resampler app that reads a raw file of little-endian 64 bit floats, and writes the output in the same format.
-///! While resampling, it ramps the resampling ratio from 100% to a user-provided value, during a given time duration (measured in output time). 
+///! While resampling, it ramps the resampling ratio from 100% to a user-provided value, during a given time duration (measured in output time).
 ///! This version takes a varying number of input samples per chunk, and outputs a fixed number of samples.
-///! The command line arguments are input filename, output filename, input samplerate, output samplerate, 
+///! The command line arguments are input filename, output filename, input samplerate, output samplerate,
 ///! number of channels, final relative ratio in percent, and ramp duration in seconds.
-///! To resample the file `sine_f64_2ch.raw` from 44.1kHz to 192kHz, and assuming the file has two channels, 
+///! To resample the file `sine_f64_2ch.raw` from 44.1kHz to 192kHz, and assuming the file has two channels,
 ///  and that the resampling ratio should be ramped to 150% during 3 seconds, the command is:
 ///! ```
 ///! cargo run --release --example fixedout_ramp64 sine_f64_2ch.raw test.raw 44100 192000 2 150 3
@@ -135,8 +135,8 @@ fn main() {
         write_frames(waves_out, &mut f_out, channels);
         output_time += chunksize as f64 / fs_out as f64;
         if output_time < duration {
-            let rel_time = output_time/duration;
-            let rel_ratio = 1.0 + (target_ratio-1.0)*rel_time;
+            let rel_time = output_time / duration;
+            let rel_ratio = 1.0 + (target_ratio - 1.0) * rel_time;
             println!("time {}, rel ratio {}", output_time, rel_ratio);
             resampler.set_resample_ratio_relative(rel_ratio).unwrap();
         }

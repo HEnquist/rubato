@@ -121,7 +121,7 @@ where
 ///
 /// The resampling is done by creating a number of intermediate points (defined by oversampling_factor)
 /// by sinc interpolation. The new samples are then calculated by interpolating between these points.
-/// 
+///
 /// The resampling ratio can be freely adjusted. The allowed range is -50% to +100%.
 /// Adjusting the ratio does not recalculate the sinc functions used by the anti-aliasing filter.
 /// This causes no issue when increasing the ratio (which slows down the output).
@@ -144,7 +144,7 @@ pub struct SincFixedIn<T> {
 ///
 /// The resampling is done by creating a number of intermediate points (defined by oversampling_factor)
 /// by sinc interpolation. The new samples are then calculated by interpolating between these points.
-/// 
+///
 /// The resampling ratio can be freely adjusted. The allowed range is -50% to +100%.
 /// Adjusting the ratio does not recalculate the sinc functions used by the anti-aliasing filter.
 /// This causes no issue when increasing the ratio (which slows down the output).

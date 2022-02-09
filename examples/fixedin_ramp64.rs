@@ -13,9 +13,9 @@ use env_logger::Builder;
 use log::LevelFilter;
 
 ///! A resampler app that reads a raw file of little-endian 64 bit floats, and writes the output in the same format.
-///! The command line arguments are input filename, output filename, input samplerate, output samplerate, 
+///! The command line arguments are input filename, output filename, input samplerate, output samplerate,
 ///! number of channels, final relative ratio in percent, and ramp duration in seconds.
-///! To resample the file `sine_f64_2ch.raw` from 44.1kHz to 192kHz, and assuming the file has two channels, 
+///! To resample the file `sine_f64_2ch.raw` from 44.1kHz to 192kHz, and assuming the file has two channels,
 ///  and that the resampling ratio should be ramped to 150% during 3 seconds, the command is:
 ///! ```
 ///! cargo run --release --example fixedin_ramp64 sine_f64_2ch.raw test.raw 44100 192000 2 150 3
@@ -103,7 +103,7 @@ fn main() {
 
     let file_size = f_in_ram.len();
     let mut f_out_ram: Vec<u8> =
-        Vec::with_capacity(2*(file_size as f32 * fs_out as f32 / fs_in as f32) as usize);
+        Vec::with_capacity(2 * (file_size as f32 * fs_out as f32 / fs_in as f32) as usize);
 
     let mut f_in = Cursor::new(&f_in_ram);
     let mut f_out = Cursor::new(&mut f_out_ram);
@@ -181,8 +181,8 @@ fn main() {
         write_frames(waves_out, &mut f_out, channels);
         output_time += new_frames as f64 / fs_out as f64;
         if output_time < duration {
-            let rel_time = output_time/duration;
-            let rel_ratio = 1.0 + (target_ratio-1.0)*rel_time;
+            let rel_time = output_time / duration;
+            let rel_ratio = 1.0 + (target_ratio - 1.0) * rel_time;
             println!("time {}, rel ratio {}", output_time, rel_ratio);
             resampler.set_resample_ratio_relative(rel_ratio).unwrap();
         }
