@@ -122,7 +122,8 @@ where
 /// The resampling is done by creating a number of intermediate points (defined by oversampling_factor)
 /// by sinc interpolation. The new samples are then calculated by interpolating between these points.
 ///
-/// The resampling ratio can be freely adjusted. The allowed range is -50% to +100%.
+/// The resampling ratio can be freely adjusted.
+/// The allowed range is from 10% to 1000% of the original ratio (a factor 10 in each direction).
 /// Adjusting the ratio does not recalculate the sinc functions used by the anti-aliasing filter.
 /// This causes no issue when increasing the ratio (which slows down the output).
 /// However when decreasing more than a few percent (or speeding up the output),
@@ -145,7 +146,8 @@ pub struct SincFixedIn<T> {
 /// The resampling is done by creating a number of intermediate points (defined by oversampling_factor)
 /// by sinc interpolation. The new samples are then calculated by interpolating between these points.
 ///
-/// The resampling ratio can be freely adjusted. The allowed range is -50% to +100%.
+/// The resampling ratio can be freely adjusted.
+/// The allowed range is from 10% to 1000% of the original ratio (a factor 10 in each direction).
 /// Adjusting the ratio does not recalculate the sinc functions used by the anti-aliasing filter.
 /// This causes no issue when increasing the ratio (which slows down the output).
 /// However when decreasing more than a few percent (i.e. speeding up the output),
@@ -466,11 +468,11 @@ where
         self.chunk_size
     }
 
-    /// Update the resample ratio. New value must be within a factor 2 the original one.
+    /// Update the resample ratio. New value must be within a factor 10 of the original one.
     fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()> {
         trace!("Change resample ratio to {}", new_ratio);
-        if (new_ratio / self.resample_ratio_original >= 0.5)
-            && (new_ratio / self.resample_ratio_original <= 2.0)
+        if (new_ratio / self.resample_ratio_original >= 0.1)
+            && (new_ratio / self.resample_ratio_original <= 10.0)
         {
             self.resample_ratio = new_ratio;
             Ok(())
@@ -479,6 +481,7 @@ where
         }
     }
     /// Update the resample ratio relative to the original one.
+    /// New value must be in the range 0.1 to 10.
     fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> ResampleResult<()> {
         let new_ratio = self.resample_ratio_original * rel_ratio;
         self.set_resample_ratio(new_ratio)
@@ -541,7 +544,7 @@ where
         let needed_input_size =
             (chunk_size as f64 / resample_ratio).ceil() as usize + 2 + interpolator.len() / 2;
         let buffer =
-            vec![vec![T::zero(); 4 * needed_input_size / 2 + 2 * interpolator.len()]; nbr_channels];
+            vec![vec![T::zero(); 11 * needed_input_size + 2 * interpolator.len()]; nbr_channels];
         let channel_mask = vec![true; nbr_channels];
 
         SincFixedOut {
@@ -710,11 +713,11 @@ where
         (self.nbr_channels, self.chunk_size)
     }
 
-    /// Update the resample ratio. New value must be within a factor 2 from the original one.
+    /// Update the resample ratio. New value must be within a factor 10 from the original one.
     fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()> {
         trace!("Change resample ratio to {}", new_ratio);
-        if (new_ratio / self.resample_ratio_original >= 0.5)
-            && (new_ratio / self.resample_ratio_original <= 2.0)
+        if (new_ratio / self.resample_ratio_original >= 0.1)
+            && (new_ratio / self.resample_ratio_original <= 10.0)
         {
             self.resample_ratio = new_ratio;
             self.needed_input_size = (self.last_index as f32
@@ -729,6 +732,7 @@ where
     }
 
     /// Update the resample ratio relative to the original one.
+    /// New value must be in the range 0.1 to 10.
     fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> ResampleResult<()> {
         let new_ratio = self.resample_ratio_original * rel_ratio;
         self.set_resample_ratio(new_ratio)
