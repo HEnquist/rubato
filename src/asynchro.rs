@@ -121,6 +121,12 @@ where
 ///
 /// The resampling is done by creating a number of intermediate points (defined by oversampling_factor)
 /// by sinc interpolation. The new samples are then calculated by interpolating between these points.
+/// 
+/// The resampling ratio can be freely adjusted. The allowed range is -50% to +100%.
+/// Adjusting the ratio does not recalculate the sinc functions used by the anti-aliasing filter.
+/// This causes no issue when increasing the ratio (which slows down the output).
+/// However when decreasing more than a few percent (or speeding up the output),
+/// the filters can no longer suppress all aliasing and this may lead to some artefacts.
 pub struct SincFixedIn<T> {
     nbr_channels: usize,
     chunk_size: usize,
@@ -138,6 +144,12 @@ pub struct SincFixedIn<T> {
 ///
 /// The resampling is done by creating a number of intermediate points (defined by oversampling_factor)
 /// by sinc interpolation. The new samples are then calculated by interpolating between these points.
+/// 
+/// The resampling ratio can be freely adjusted. The allowed range is -50% to +100%.
+/// Adjusting the ratio does not recalculate the sinc functions used by the anti-aliasing filter.
+/// This causes no issue when increasing the ratio (which slows down the output).
+/// However when decreasing more than a few percent (i.e. speeding up the output),
+/// the filters can no longer suppress all aliasing and this may lead to some artefacts.
 pub struct SincFixedOut<T> {
     nbr_channels: usize,
     chunk_size: usize,
@@ -454,7 +466,7 @@ where
         self.chunk_size
     }
 
-    /// Update the resample ratio. New value must be within a factor 2 the original one
+    /// Update the resample ratio. New value must be within a factor 2 the original one.
     fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()> {
         trace!("Change resample ratio to {}", new_ratio);
         if (new_ratio / self.resample_ratio_original >= 0.5)
@@ -466,7 +478,7 @@ where
             Err(ResampleError::BadRatioUpdate)
         }
     }
-    /// Update the resample ratio relative to the original one
+    /// Update the resample ratio relative to the original one.
     fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> ResampleResult<()> {
         let new_ratio = self.resample_ratio_original * rel_ratio;
         self.set_resample_ratio(new_ratio)
@@ -529,7 +541,7 @@ where
         let needed_input_size =
             (chunk_size as f64 / resample_ratio).ceil() as usize + 2 + interpolator.len() / 2;
         let buffer =
-            vec![vec![T::zero(); 3 * needed_input_size / 2 + 2 * interpolator.len()]; nbr_channels];
+            vec![vec![T::zero(); 4 * needed_input_size / 2 + 2 * interpolator.len()]; nbr_channels];
         let channel_mask = vec![true; nbr_channels];
 
         SincFixedOut {
@@ -698,7 +710,7 @@ where
         (self.nbr_channels, self.chunk_size)
     }
 
-    /// Update the resample ratio. New value must be within a factor 2 from the original one
+    /// Update the resample ratio. New value must be within a factor 2 from the original one.
     fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()> {
         trace!("Change resample ratio to {}", new_ratio);
         if (new_ratio / self.resample_ratio_original >= 0.5)
@@ -716,7 +728,7 @@ where
         }
     }
 
-    /// Update the resample ratio relative to the original one
+    /// Update the resample ratio relative to the original one.
     fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> ResampleResult<()> {
         let new_ratio = self.resample_ratio_original * rel_ratio;
         self.set_resample_ratio(new_ratio)
