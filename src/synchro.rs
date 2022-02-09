@@ -251,6 +251,14 @@ where
 
         for (chan, active) in self.channel_mask.iter().enumerate() {
             if *active {
+                if self.chunk_size_out > wave_out[chan].capacity() {
+                    trace!(
+                        "Allocating more space for channel {}, old capacity: {}, new: {}",
+                        chan,
+                        wave_out[chan].capacity(),
+                        self.chunk_size_out
+                    );
+                }
                 wave_out[chan].resize(self.chunk_size_out, T::zero());
                 self.resampler.resample_unit(
                     wave_in[chan].as_ref(),
@@ -368,12 +376,15 @@ where
 
         for (chan, active) in self.channel_mask.iter().enumerate() {
             if *active {
+                if self.chunk_size_out > wave_out[chan].capacity() {
+                    trace!(
+                        "Allocating more space for channel {}, old capacity: {}, new: {}",
+                        chan,
+                        wave_out[chan].capacity(),
+                        self.chunk_size_out
+                    );
+                }
                 wave_out[chan].resize(self.chunk_size_out, T::zero());
-            }
-        }
-
-        for (chan, active) in self.channel_mask.iter().enumerate() {
-            if *active {
                 for (in_chunk, out_chunk) in wave_in[chan].as_ref().chunks(self.fft_size_in).zip(
                     self.output_buffers[chan][self.saved_frames..].chunks_mut(self.fft_size_out),
                 ) {
@@ -529,9 +540,18 @@ where
 
         let nbr_chunks_ready =
             (self.saved_frames as f32 / self.fft_size_in as f32).floor() as usize;
+        let needed_len = nbr_chunks_ready * self.fft_size_out;
         for (chan, active) in self.channel_mask.iter().enumerate() {
             if *active {
-                wave_out[chan].resize(nbr_chunks_ready * self.fft_size_out, T::zero());
+                if needed_len > wave_out[chan].capacity() {
+                    trace!(
+                        "Allocating more space for channel {}, old capacity: {}, new: {}",
+                        chan,
+                        wave_out[chan].capacity(),
+                        needed_len
+                    );
+                }
+                wave_out[chan].resize(needed_len, T::zero());
                 for (in_chunk, out_chunk) in self.input_buffers[chan]
                     .chunks(self.fft_size_in)
                     .take(nbr_chunks_ready)

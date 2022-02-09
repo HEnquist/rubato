@@ -18,7 +18,7 @@ avx = []
 neon = []
 
 [dependencies]
-log = "0.4.14"
+log = { version = "0.4.14", optional = true }
 realfft = "2.0.0"
 num-complex = "0.4"
 num-integer = "0.1.44"
@@ -29,6 +29,7 @@ env_logger = "0.9.0"
 criterion = "0.3.5"
 rand = "0.8.4"
 num-traits = "0.2.14"
+log = "0.4.14"
 
 [[bench]]
 name = "resamplers"
