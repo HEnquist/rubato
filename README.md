@@ -67,7 +67,10 @@ Note that this only works on a full 64-bit operating system.
 
 ###### `log`: Enable logging
 
-This feature is enabled by default, and enables logging via the `log` crate.
+This feature enables logging via the `log` crate. This is intended for debugging purposes.
+Note that outputting logs involves various system calls.
+These calls may take some (unpredictable) time to return, during which the application is blocked.
+This means that logging should be avoided if using this library in a realtime application.
 
 ### Documentation
 
