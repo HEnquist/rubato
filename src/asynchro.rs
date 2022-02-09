@@ -329,15 +329,21 @@ where
             buf.copy_within(self.chunk_size..self.chunk_size + 2 * sinc_len, 0);
         }
 
+        let needed_len = (self.chunk_size as f64 * self.resample_ratio + 10.0) as usize;
         for (chan, active) in self.channel_mask.iter().enumerate() {
             if *active {
                 self.buffer[chan][2 * sinc_len..2 * sinc_len + self.chunk_size]
                     .copy_from_slice(wave_in[chan].as_ref());
                 // Set length to chunksize*ratio plus a safety margin of 10 elements.
-                wave_out[chan].resize(
-                    (self.chunk_size as f64 * self.resample_ratio + 10.0) as usize,
-                    T::zero(),
-                );
+                if needed_len > wave_out[chan].capacity() {
+                    trace!(
+                        "Allocating more space for channel {}, old capacity: {}, new: {}",
+                        chan,
+                        wave_out[chan].capacity(),
+                        needed_len
+                    );
+                }
+                wave_out[chan].resize(needed_len, T::zero());
             }
         }
 
@@ -585,6 +591,14 @@ where
             if *active {
                 self.buffer[chan][2 * sinc_len..2 * sinc_len + wave_in[chan].as_ref().len()]
                     .copy_from_slice(wave_in[chan].as_ref());
+                if self.chunk_size > wave_out[chan].capacity() {
+                    trace!(
+                        "Allocating more space for channel {}, old capacity: {}, new: {}",
+                        chan,
+                        wave_out[chan].capacity(),
+                        self.chunk_size
+                    );
+                }
                 wave_out[chan].resize(self.chunk_size, T::zero());
             }
         }
