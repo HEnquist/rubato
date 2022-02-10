@@ -214,7 +214,7 @@ pub struct InterpolationParameters {
     pub f_cutoff: f32,
     /// The number of intermediate points to use for interpolation.
     /// Higher values use more memory for storing the sinc filters.
-    /// Only the points actually needed are calculated dusing processing
+    /// Only the points actually needed are calculated during processing
     /// so a larger number does not directly lead to higher cpu usage.
     /// But keeping it down helps in keeping the sincs in the cpu cache. Start at 128.
     pub oversampling_factor: usize,
@@ -225,7 +225,7 @@ pub struct InterpolationParameters {
 }
 
 /// Interpolation methods that can be selected. For asynchronous interpolation where the
-/// ratio between inut and output sample rates can be any number, it's not possible to
+/// ratio between input and output sample rates can be any number, it's not possible to
 /// pre-calculate all the needed interpolation filters.
 /// Instead they have to be computed as needed, which becomes impractical since the
 /// sincs are very expensive to generate in terms of cpu time.
@@ -242,7 +242,7 @@ pub enum InterpolationType {
     Cubic,
     /// With linear interpolation the new sample value is calculated by linear interpolation
     /// between the two nearest points.
-    /// This requires two intermediate points to be calcuated using sinc interpolation,
+    /// This requires two intermediate points to be calculated using sinc interpolation,
     /// and te output is a weighted average of these two.
     /// This is relatively fast, but needs a large number of intermediate points to
     /// push the resampling artefacts below the noise floor.
@@ -251,7 +251,7 @@ pub enum InterpolationType {
     /// This is useful when the nearest point is actually the correct one, for example when upsampling by a factor 2,
     /// like 48kHz->96kHz.
     /// Then setting the oversampling_factor to 2, and using Nearest mode,
-    /// no unneccesary computations are performed and the result is the same as for synchronous resampling.
+    /// no unnecessary computations are performed and the result is the same as for synchronous resampling.
     /// This also works for other ratios that can be expressed by a fraction. For 44.1kHz -> 48 kHz,
     /// setting oversampling_factor to 160 gives the desired result (since 48kHz = 160/147 * 44.1kHz).
     Nearest,

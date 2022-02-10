@@ -123,7 +123,7 @@ where
 /// by sinc interpolation. The new samples are then calculated by interpolating between these points.
 ///
 /// The resampling ratio can be freely adjusted.
-/// The allowed range is from 10% to 1000% of the original ratio (a factor 10 in each direction).
+/// The allowed range is from 10% to 1000% of the original ratio (a factor of 10 in each direction).
 /// Adjusting the ratio does not recalculate the sinc functions used by the anti-aliasing filter.
 /// This causes no issue when increasing the ratio (which slows down the output).
 /// However when decreasing more than a few percent (or speeding up the output),
@@ -147,7 +147,7 @@ pub struct SincFixedIn<T> {
 /// by sinc interpolation. The new samples are then calculated by interpolating between these points.
 ///
 /// The resampling ratio can be freely adjusted.
-/// The allowed range is from 10% to 1000% of the original ratio (a factor 10 in each direction).
+/// The allowed range is from 10% to 1000% of the original ratio (a factor of 10 in each direction).
 /// Adjusting the ratio does not recalculate the sinc functions used by the anti-aliasing filter.
 /// This causes no issue when increasing the ratio (which slows down the output).
 /// However when decreasing more than a few percent (i.e. speeding up the output),
