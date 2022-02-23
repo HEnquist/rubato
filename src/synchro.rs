@@ -224,8 +224,16 @@ impl<T> Resampler<T> for FftFixedInOut<T>
 where
     T: Sample,
 {
+    fn nbr_channels(&self) -> usize {
+        self.nbr_channels
+    }
+
     /// Query for the number of frames needed for the next call to "process".
     fn nbr_frames_needed(&self) -> usize {
+        self.fft_size_in
+    }
+
+    fn max_nbr_frames_needed(&self) -> usize {
         self.fft_size_in
     }
 
@@ -349,9 +357,17 @@ impl<T> Resampler<T> for FftFixedOut<T>
 where
     T: Sample,
 {
+    fn nbr_channels(&self) -> usize {
+        self.nbr_channels
+    }
+
     /// Query for the number of frames needed for the next call to "process".
     fn nbr_frames_needed(&self) -> usize {
         self.frames_needed
+    }
+
+    fn max_nbr_frames_needed(&self) -> usize {
+        (self.chunk_size_out as f32 / self.fft_size_out as f32).ceil() as usize * self.fft_size_in
     }
 
     fn process_into_buffer<V: AsRef<[T]>>(
@@ -498,8 +514,16 @@ impl<T> Resampler<T> for FftFixedIn<T>
 where
     T: Sample,
 {
+    fn nbr_channels(&self) -> usize {
+        self.nbr_channels
+    }
+
     /// Query for the number of frames needed for the next call to "process".
     fn nbr_frames_needed(&self) -> usize {
+        self.chunk_size_in
+    }
+
+    fn max_nbr_frames_needed(&self) -> usize {
         self.chunk_size_in
     }
 

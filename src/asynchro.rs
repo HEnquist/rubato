@@ -160,6 +160,7 @@ pub struct SincFixedOut<T> {
     current_buffer_fill: usize,
     resample_ratio: f64,
     resample_ratio_original: f64,
+    max_relative_ratio: f64,
     interpolator: Box<dyn SincInterpolator<T>>,
     buffer: Vec<Vec<T>>,
     interpolation: InterpolationType,
@@ -462,9 +463,17 @@ where
         )
     }
 
+    fn nbr_channels(&self) -> usize {
+        self.nbr_channels
+    }
+
     /// Query for the number of frames needed for the next call to "process".
     /// Will always return the chunk_size defined when creating the instance.
     fn nbr_frames_needed(&self) -> usize {
+        self.chunk_size
+    }
+
+    fn max_nbr_frames_needed(&self) -> usize {
         self.chunk_size
     }
 
@@ -555,6 +564,7 @@ where
             current_buffer_fill: needed_input_size,
             resample_ratio,
             resample_ratio_original: resample_ratio,
+            max_relative_ratio: 10.0,
             interpolator,
             buffer,
             interpolation: interpolation_type,
@@ -570,6 +580,13 @@ where
     /// Query for the number of frames needed for the next call to "process".
     fn nbr_frames_needed(&self) -> usize {
         self.needed_input_size
+    }
+
+    fn max_nbr_frames_needed(&self) -> usize {
+        (self.chunk_size as f64 * self.resample_ratio_original * self.max_relative_ratio).ceil()
+            as usize
+            + 2
+            + self.interpolator.len() / 2
     }
 
     fn process_into_buffer<V: AsRef<[T]>>(
@@ -713,11 +730,15 @@ where
         (self.nbr_channels, self.chunk_size)
     }
 
+    fn nbr_channels(&self) -> usize {
+        self.nbr_channels
+    }
+
     /// Update the resample ratio. New value must be within a factor 10 from the original one.
     fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()> {
         trace!("Change resample ratio to {}", new_ratio);
-        if (new_ratio / self.resample_ratio_original >= 0.1)
-            && (new_ratio / self.resample_ratio_original <= 10.0)
+        if (new_ratio / self.resample_ratio_original >= 1.0 / self.max_relative_ratio)
+            && (new_ratio / self.resample_ratio_original <= self.max_relative_ratio)
         {
             self.resample_ratio = new_ratio;
             self.needed_input_size = (self.last_index as f32

@@ -321,8 +321,27 @@ pub trait Resampler<T>: Send {
     /// within [Resampler::process_into_buffer] until the resampling ratio is changed.
     fn get_max_output_size(&self) -> (usize, usize);
 
+    /// Get the maximum number of channels this Resampler can process
+    fn nbr_channels(&self) -> usize;
+
     /// Query for the number of frames needed for the next call to "process".
     fn nbr_frames_needed(&self) -> usize;
+
+    /// Get the maximum number of input frames the resampler could require
+    fn max_nbr_frames_needed(&self) -> usize;
+
+    /// Convenience method for allocating an input buffer large enough to be passed to
+    /// [Resampler::process_into_buffer] or [Resampler::process] without needing to
+    /// allocate when filling the buffer.
+    fn allocate_input_buffer(&self) -> Vec<Vec<T>> {
+        let frames = self.max_nbr_frames_needed();
+        let channels = self.nbr_channels();
+        let mut buffer = Vec::with_capacity(channels);
+        for _ in 0..channels {
+            buffer.push(Vec::with_capacity(frames));
+        }
+        buffer
+    }
 
     /// Update the resample ratio.
     fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()>;
@@ -368,8 +387,19 @@ pub trait VecResampler<T>: Send {
     /// Note that when adjusting the ratio of an asynchronous resampler, the maximum size can change.
     fn get_max_output_size(&self) -> (usize, usize);
 
-    /// Query for the number of frames needed for the next call to `process`.
+    /// Get the maximum number of channels this Resampler can process
+    fn nbr_channels(&self) -> usize;
+
+    /// Query for the number of frames needed for the next call to "process".
     fn nbr_frames_needed(&self) -> usize;
+
+    /// Get the maximum number of input frames the resampler could require
+    fn max_nbr_frames_needed(&self) -> usize;
+
+    /// Convenience method for allocating an input buffer large enough to be passed to
+    /// [VecResampler::process_into_buffer] or [VecResampler::process] and never get a
+    /// [ResampleError::WrongNumberOfInputFrames].
+    fn allocate_input_buffer(&self) -> Vec<Vec<T>>;
 
     /// Update the resample ratio.
     fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()>;
@@ -409,6 +439,18 @@ where
 
     fn nbr_frames_needed(&self) -> usize {
         Resampler::nbr_frames_needed(self)
+    }
+
+    fn nbr_channels(&self) -> usize {
+        Resampler::nbr_channels(self)
+    }
+
+    fn max_nbr_frames_needed(&self) -> usize {
+        Resampler::max_nbr_frames_needed(self)
+    }
+
+    fn allocate_input_buffer(&self) -> Vec<Vec<T>> {
+        Resampler::allocate_input_buffer(self)
     }
 
     fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()> {
