@@ -455,12 +455,9 @@ where
         Ok(())
     }
 
-    fn get_max_output_size(&self) -> (usize, usize) {
+    fn get_max_output_frames(&self) -> usize {
         // Set length to chunksize*ratio plus a safety margin of 10 elements.
-        (
-            self.nbr_channels,
-            (self.chunk_size as f64 * self.resample_ratio + 10.0) as usize,
-        )
+        (self.chunk_size as f64 * self.resample_ratio + 10.0) as usize
     }
 
     fn nbr_channels(&self) -> usize {
@@ -726,8 +723,8 @@ where
         Ok(())
     }
 
-    fn get_max_output_size(&self) -> (usize, usize) {
-        (self.nbr_channels, self.chunk_size)
+    fn get_max_output_frames(&self) -> usize {
+        self.chunk_size
     }
 
     fn nbr_channels(&self) -> usize {

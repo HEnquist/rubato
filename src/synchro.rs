@@ -278,8 +278,8 @@ where
         Ok(())
     }
 
-    fn get_max_output_size(&self) -> (usize, usize) {
-        (self.nbr_channels, self.chunk_size_out)
+    fn get_max_output_frames(&self) -> usize {
+        self.chunk_size_out
     }
 
     /// Update the resample ratio. This is not supported by this resampler and
@@ -439,8 +439,8 @@ where
         Ok(())
     }
 
-    fn get_max_output_size(&self) -> (usize, usize) {
-        (self.nbr_channels, self.chunk_size_out)
+    fn get_max_output_frames(&self) -> usize {
+        self.chunk_size_out
     }
 
     /// Update the resample ratio. This is not supported by this resampler and
@@ -602,11 +602,8 @@ where
         Ok(())
     }
 
-    fn get_max_output_size(&self) -> (usize, usize) {
-        (
-            self.nbr_channels,
-            self.chunk_size_in * (self.fft_size_out / self.fft_size_in + 1),
-        )
+    fn get_max_output_frames(&self) -> usize {
+        self.chunk_size_in * (self.fft_size_out / self.fft_size_in + 1)
     }
 
     /// Update the resample ratio. This is not supported by this resampler and

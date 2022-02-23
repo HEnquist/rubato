@@ -307,19 +307,20 @@ pub trait Resampler<T>: Send {
     /// the buffer size is only guaranteed to be sufficient to prevent allocation
     /// within [Resampler::process_into_buffer] until the resampling ratio is changed.
     fn allocate_output_buffer(&self) -> Vec<Vec<T>> {
-        let (channels, out_len) = self.get_max_output_size();
-        let mut wave_out = Vec::with_capacity(channels);
+        let frames = self.get_max_output_frames();
+        let channels = self.nbr_channels();
+        let mut buffer = Vec::with_capacity(channels);
         for _ in 0..channels {
-            wave_out.push(Vec::with_capacity(out_len));
+            buffer.push(Vec::with_capacity(frames));
         }
-        wave_out
+        buffer
     }
 
-    /// Get the max output size the resampler can give as (channels, frames).
+    /// Get the max number of output frames per channel.
     /// For the Resamplers with variable output sizes ([FftFixedIn] and [SincFixedIn]),
     /// the max output size is only guaranteed to be sufficient to prevent allocation
     /// within [Resampler::process_into_buffer] until the resampling ratio is changed.
-    fn get_max_output_size(&self) -> (usize, usize);
+    fn get_max_output_frames(&self) -> usize;
 
     /// Get the maximum number of channels this Resampler can process
     fn nbr_channels(&self) -> usize;
@@ -383,9 +384,9 @@ pub trait VecResampler<T>: Send {
     /// Convenience method for allocating an output buffer suitable for use with `process_into_buffer`.
     fn allocate_output_buffer(&self) -> Vec<Vec<T>>;
 
-    /// Get the max output size the resampler can give, as (channels, frames).
+    /// Get the max number of output frames per channel.
     /// Note that when adjusting the ratio of an asynchronous resampler, the maximum size can change.
-    fn get_max_output_size(&self) -> (usize, usize);
+    fn get_max_output_frames(&self) -> usize;
 
     /// Get the maximum number of channels this Resampler can process
     fn nbr_channels(&self) -> usize;
@@ -433,8 +434,8 @@ where
         Resampler::allocate_output_buffer(self)
     }
 
-    fn get_max_output_size(&self) -> (usize, usize) {
-        Resampler::get_max_output_size(self)
+    fn get_max_output_frames(&self) -> usize {
+        Resampler::get_max_output_frames(self)
     }
 
     fn nbr_frames_needed(&self) -> usize {
