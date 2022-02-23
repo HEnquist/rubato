@@ -1,6 +1,6 @@
 [package]
 name = "rubato"
-version = "0.10.1"
+version = "0.11.0"
 authors = ["HEnquist <henrik.enquist@gmail.com>"]
 description = "Asynchronous resampling library intended for audio data"
 license = "MIT"
@@ -18,8 +18,8 @@ avx = []
 neon = []
 
 [dependencies]
-log = "0.4.14"
-realfft = "2.0.0"
+log = { version = "0.4.14", optional = true }
+realfft = "3.0.0"
 num-complex = "0.4"
 num-integer = "0.1.44"
 num-traits = "0.2"
@@ -29,6 +29,7 @@ env_logger = "0.9.0"
 criterion = "0.3.5"
 rand = "0.8.4"
 num-traits = "0.2.14"
+log = "0.4.14"
 
 [[bench]]
 name = "resamplers"
@@ -36,3 +37,4 @@ harness = false
 
 [lib]
 bench = false
+path = "src/lib.rs"

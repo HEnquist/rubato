@@ -86,11 +86,15 @@ pub enum ResampleError {
     BadRatioUpdate,
     /// Error raised when trying to adjust a synchronous resampler.
     SyncNotAdjustable,
-    /// Error raised when the number of channels doesn't match expected.
-    WrongNumberOfChannels { expected: usize, actual: usize },
+    /// Error raised when the number of channels of the input buffer doesn't match expected.
+    WrongNumberOfInputChannels { expected: usize, actual: usize },
+    /// Error raised when the number of channels of the output buffer doesn't match expected.
+    WrongNumberOfOutputChannels { expected: usize, actual: usize },
+    /// Error raised when the number of channels of the mask doesn't match expected.
+    WrongNumberOfMaskChannels { expected: usize, actual: usize },
     /// Error raised when the number of frames in a single channel doesn't match
     /// the expected.
-    WrongNumberOfFrames {
+    WrongNumberOfInputFrames {
         channel: usize,
         expected: usize,
         actual: usize,
@@ -106,14 +110,28 @@ impl fmt::Display for ResampleError {
             Self::SyncNotAdjustable { .. } => {
                 write!(f, "Not possible to adjust a synchronous resampler")
             }
-            Self::WrongNumberOfChannels { expected, actual } => {
+            Self::WrongNumberOfInputChannels { expected, actual } => {
                 write!(
                     f,
                     "Wrong number of channels {} in input, expected {}",
                     actual, expected
                 )
             }
-            Self::WrongNumberOfFrames {
+            Self::WrongNumberOfOutputChannels { expected, actual } => {
+                write!(
+                    f,
+                    "Wrong number of channels {} in output, expected {}",
+                    actual, expected
+                )
+            }
+            Self::WrongNumberOfMaskChannels { expected, actual } => {
+                write!(
+                    f,
+                    "Wrong number of channels {} in mask, expected {}",
+                    actual, expected
+                )
+            }
+            Self::WrongNumberOfInputFrames {
                 channel,
                 expected,
                 actual,

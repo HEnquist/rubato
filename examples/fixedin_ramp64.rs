@@ -1,5 +1,5 @@
 extern crate rubato;
-use rubato::{FftFixedIn, Resampler};
+use rubato::{InterpolationParameters, InterpolationType, Resampler, SincFixedIn, WindowFunction};
 use std::convert::TryInto;
 use std::env;
 use std::fs::File;
@@ -13,10 +13,12 @@ use env_logger::Builder;
 use log::LevelFilter;
 
 ///! A resampler app that reads a raw file of little-endian 64 bit floats, and writes the output in the same format.
-///! The command line arguments are input filename, output filename, input samplerate, output samplerate, number of channels
-///! To resample the file `sine_f64_2ch.raw` from 44.1kHz to 192kHz, and assuming the file has two channels, the command is:
+///! The command line arguments are input filename, output filename, input samplerate, output samplerate,
+///! number of channels, final relative ratio in percent, and ramp duration in seconds.
+///! To resample the file `sine_f64_2ch.raw` from 44.1kHz to 192kHz, and assuming the file has two channels,
+///  and that the resampling ratio should be ramped to 150% during 3 seconds, the command is:
 ///! ```
-///! cargo run --release --example fftfixedin64 sine_f64_2ch.raw test.raw 44100 192000 2
+///! cargo run --release --example fixedin_ramp64 sine_f64_2ch.raw test.raw 44100 192000 2 150 3
 ///! ```
 ///! There are two helper python scripts for testing. `makesineraw.py` simply writes a stereo file
 ///! with a 1 second long 1kHz tone (at 44.1kHz). This script takes no aruments. Modify as needed to create other test files.
@@ -81,29 +83,109 @@ fn main() {
         .expect("Please specify number of channels");
     let channels = channels_str.parse::<usize>().unwrap();
 
+    let ratio_str = env::args()
+        .nth(6)
+        .expect("Please specify final resampling ratio in percent");
+    let final_ratio = ratio_str.parse::<f64>().unwrap();
+
+    let duration_str = env::args()
+        .nth(7)
+        .expect("Please specify ramp time in seconds");
+    let duration = duration_str.parse::<f64>().unwrap();
+
     //open files
     let mut f_in_disk = File::open(file_in).expect("Can't open file");
     let mut f_in_ram: Vec<u8> = vec![];
+    //let mut f_out_ram: Vec<u8> = vec![];
 
     println!("Copy input file to buffer");
     std::io::copy(&mut f_in_disk, &mut f_in_ram).unwrap();
 
     let file_size = f_in_ram.len();
     let mut f_out_ram: Vec<u8> =
-        Vec::with_capacity((file_size as f32 * fs_out as f32 / fs_in as f32) as usize);
+        Vec::with_capacity(2 * (file_size as f32 * fs_out as f32 / fs_in as f32) as usize);
 
     let mut f_in = Cursor::new(&f_in_ram);
     let mut f_out = Cursor::new(&mut f_out_ram);
 
-    let mut resampler = FftFixedIn::<f64>::new(fs_in, fs_out, 1024, 2, channels);
-    let chunksize = resampler.nbr_frames_needed();
+    // parameters
+
+    let f_ratio = fs_out as f64 / fs_in as f64;
+
+    // Fast for async
+    //let sinc_len = 64;
+    //let f_cutoff = 0.9156021241005041; //1.0 /(1.0 + std::f32::consts::PI/sinc_len as f32);
+    //let params = InterpolationParameters {
+    //    sinc_len,
+    //    f_cutoff,
+    //    interpolation: InterpolationType::Linear,
+    //    oversampling_factor: 1024,
+    //    window: WindowFunction::Hann2,
+    //};
+
+    // Balanced for sync for 44100 -> 96000 etc (note that for sync it's better to use the fft resampler)
+    //let sinc_len = 128;
+    //let f_cutoff = 0.925914648491266;
+    //let params = InterpolationParameters {
+    //    sinc_len,
+    //    f_cutoff,
+    //    interpolation: InterpolationType::Nearest,
+    //    oversampling_factor: 320,
+    //    window: WindowFunction::Blackman2,
+    //};
+
+    // Balanced for async
+    let sinc_len = 128;
+    let f_cutoff = 0.925914648491266;
+    let params = InterpolationParameters {
+        sinc_len,
+        f_cutoff,
+        interpolation: InterpolationType::Linear,
+        oversampling_factor: 2048,
+        window: WindowFunction::Blackman2,
+    };
+    //
+    //// Best for sync for 44100 -> 96000 etc (note that for sync it's better to use the fft resampler)
+    //let sinc_len = 256;
+    //let f_cutoff = 0.9473371669037001;
+    //let params = InterpolationParameters {
+    //    sinc_len,
+    //    f_cutoff,
+    //    interpolation: InterpolationType::Nearest,
+    //    oversampling_factor: 320,
+    //    window: WindowFunction::BlackmanHarris2,
+    //};
+
+    // Best quality for async
+    //let sinc_len = 256;
+    //let f_cutoff = 0.9473371669037001;
+    //let params = InterpolationParameters {
+    //    sinc_len,
+    //    f_cutoff,
+    //    interpolation: InterpolationType::Cubic,
+    //    oversampling_factor: 256,
+    //    window: WindowFunction::BlackmanHarris2,
+    //};
+
+    let chunksize = 1024;
+    let mut resampler = SincFixedIn::<f64>::new(f_ratio, params, chunksize, channels);
 
     let num_chunks = f_in_ram.len() / (8 * channels * chunksize);
+    let mut output_time = 0.0;
+    let target_ratio = final_ratio / 100.0;
     let start = Instant::now();
     for _chunk in 0..num_chunks {
         let waves = read_frames(&mut f_in, chunksize, channels);
         let waves_out = resampler.process(&waves, None).unwrap();
+        let new_frames = waves_out[0].len();
         write_frames(waves_out, &mut f_out, channels);
+        output_time += new_frames as f64 / fs_out as f64;
+        if output_time < duration {
+            let rel_time = output_time / duration;
+            let rel_ratio = 1.0 + (target_ratio - 1.0) * rel_time;
+            println!("time {}, rel ratio {}", output_time, rel_ratio);
+            resampler.set_resample_ratio_relative(rel_ratio).unwrap();
+        }
     }
 
     let duration = start.elapsed();

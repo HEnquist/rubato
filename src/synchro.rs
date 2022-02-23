@@ -6,7 +6,7 @@ use num_traits::Zero;
 use std::sync::Arc;
 
 use crate::error::{ResampleError, ResampleResult};
-use crate::{Resampler, Sample};
+use crate::{update_mask_from_buffers, validate_buffers, Resampler, Sample};
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 
 /// A helper for resampling a single chunk of data.
@@ -37,6 +37,7 @@ pub struct FftFixedIn<T> {
     fft_size_out: usize,
     overlaps: Vec<Vec<T>>,
     input_buffers: Vec<Vec<T>>,
+    channel_mask: Vec<bool>,
     saved_frames: usize,
     resampler: FftResampler<T>,
 }
@@ -54,6 +55,7 @@ pub struct FftFixedOut<T> {
     fft_size_out: usize,
     overlaps: Vec<Vec<T>>,
     output_buffers: Vec<Vec<T>>,
+    channel_mask: Vec<bool>,
     saved_frames: usize,
     frames_needed: usize,
     resampler: FftResampler<T>,
@@ -70,6 +72,7 @@ pub struct FftFixedInOut<T> {
     chunk_size_in: usize,
     chunk_size_out: usize,
     fft_size_in: usize,
+    channel_mask: Vec<bool>,
     overlaps: Vec<Vec<T>>,
     resampler: FftResampler<T>,
 }
@@ -203,6 +206,8 @@ where
 
         let overlaps: Vec<Vec<T>> = vec![vec![T::zero(); fft_size_out]; nbr_channels];
 
+        let channel_mask = vec![true; nbr_channels];
+
         FftFixedInOut {
             nbr_channels,
             chunk_size_in: fft_size_in,
@@ -210,6 +215,7 @@ where
             fft_size_in,
             overlaps,
             resampler,
+            channel_mask,
         }
     }
 }
@@ -223,47 +229,49 @@ where
         self.fft_size_in
     }
 
-    /// Resample a chunk of audio. The input and output lengths are fixed.
-    /// If the waveform for a channel is empty, this channel will be ignored and produce a
-    /// corresponding empty output waveform.
-    /// # Errors
-    ///
-    /// The function returns an error if the size of the input data is not equal
-    /// to the number of channels and input size defined when creating the instance.
-    fn process<V: AsRef<[T]>>(&mut self, wave_in: &[V]) -> ResampleResult<Vec<Vec<T>>> {
-        if wave_in.len() != self.nbr_channels {
-            return Err(ResampleError::WrongNumberOfChannels {
-                expected: self.nbr_channels,
-                actual: wave_in.len(),
-            });
-        }
-        let mut used_channels = Vec::new();
-        for (chan, wave) in wave_in.iter().enumerate() {
-            let wave = wave.as_ref();
-            if !wave.is_empty() {
-                used_channels.push(chan);
-                if wave.len() != self.chunk_size_in {
-                    return Err(ResampleError::WrongNumberOfFrames {
-                        channel: chan,
-                        expected: self.chunk_size_in,
-                        actual: wave.len(),
-                    });
+    fn process_into_buffer<V: AsRef<[T]>>(
+        &mut self,
+        wave_in: &[V],
+        wave_out: &mut [Vec<T>],
+        active_channels_mask: Option<&[bool]>,
+    ) -> ResampleResult<()> {
+        if let Some(mask) = active_channels_mask {
+            self.channel_mask.copy_from_slice(mask);
+        } else {
+            update_mask_from_buffers(wave_in, &mut self.channel_mask);
+        };
+
+        validate_buffers(
+            wave_in,
+            wave_out,
+            &self.channel_mask,
+            self.nbr_channels,
+            self.chunk_size_in,
+        )?;
+
+        for (chan, active) in self.channel_mask.iter().enumerate() {
+            if *active {
+                if self.chunk_size_out > wave_out[chan].capacity() {
+                    trace!(
+                        "Allocating more space for channel {}, old capacity: {}, new: {}",
+                        chan,
+                        wave_out[chan].capacity(),
+                        self.chunk_size_out
+                    );
                 }
+                wave_out[chan].resize(self.chunk_size_out, T::zero());
+                self.resampler.resample_unit(
+                    wave_in[chan].as_ref(),
+                    &mut wave_out[chan],
+                    &mut self.overlaps[chan],
+                )
             }
         }
-        let mut wave_out = vec![Vec::new(); self.nbr_channels];
-        for chan in used_channels.iter() {
-            wave_out[*chan] = vec![T::zero(); self.chunk_size_out];
-        }
+        Ok(())
+    }
 
-        for n in used_channels.iter() {
-            self.resampler.resample_unit(
-                wave_in[*n].as_ref(),
-                &mut wave_out[*n],
-                &mut self.overlaps[*n],
-            )
-        }
-        Ok(wave_out)
+    fn get_max_output_size(&self) -> (usize, usize) {
+        (self.nbr_channels, self.chunk_size_out)
     }
 
     /// Update the resample ratio. This is not supported by this resampler and
@@ -316,6 +324,8 @@ where
         let output_buffers: Vec<Vec<T>> =
             vec![vec![T::zero(); chunk_size_out + fft_size_out]; nbr_channels];
 
+        let channel_mask = vec![true; nbr_channels];
+
         let saved_frames = 0;
         let chunks_needed = (chunk_size_out as f32 / fft_size_out as f32).ceil() as usize;
         let frames_needed = chunks_needed * fft_size_in;
@@ -330,6 +340,7 @@ where
             saved_frames,
             frames_needed,
             resampler,
+            channel_mask,
         }
     }
 }
@@ -343,66 +354,63 @@ where
         self.frames_needed
     }
 
-    /// Resample a chunk of audio. The required input length is provided by
-    /// the "nbr_frames_needed" function, and the output length is fixed.
-    /// If the waveform for a channel is empty, this channel will be ignored and produce a
-    /// corresponding empty output waveform.
-    /// # Errors
-    ///
-    /// The function returns an error if the length of the input data is not
-    /// equal to the number of channels defined when creating the instance,
-    /// and the number of audio frames given by "nbr_frames_needed".
-    fn process<V: AsRef<[T]>>(&mut self, wave_in: &[V]) -> ResampleResult<Vec<Vec<T>>> {
-        if wave_in.len() != self.nbr_channels {
-            return Err(ResampleError::WrongNumberOfChannels {
-                expected: self.nbr_channels,
-                actual: wave_in.len(),
-            });
-        }
-        let mut used_channels = Vec::new();
-        for (chan, wave) in wave_in.iter().enumerate() {
-            let wave = wave.as_ref();
-            if !wave.is_empty() {
-                used_channels.push(chan);
-                if wave.len() != self.frames_needed {
-                    return Err(ResampleError::WrongNumberOfFrames {
-                        channel: chan,
-                        expected: self.frames_needed,
-                        actual: wave.len(),
-                    });
+    fn process_into_buffer<V: AsRef<[T]>>(
+        &mut self,
+        wave_in: &[V],
+        wave_out: &mut [Vec<T>],
+        active_channels_mask: Option<&[bool]>,
+    ) -> ResampleResult<()> {
+        if let Some(mask) = active_channels_mask {
+            self.channel_mask.copy_from_slice(mask);
+        } else {
+            update_mask_from_buffers(wave_in, &mut self.channel_mask);
+        };
+
+        validate_buffers(
+            wave_in,
+            wave_out,
+            &self.channel_mask,
+            self.nbr_channels,
+            self.frames_needed,
+        )?;
+
+        for (chan, active) in self.channel_mask.iter().enumerate() {
+            if *active {
+                if self.chunk_size_out > wave_out[chan].capacity() {
+                    trace!(
+                        "Allocating more space for channel {}, old capacity: {}, new: {}",
+                        chan,
+                        wave_out[chan].capacity(),
+                        self.chunk_size_out
+                    );
                 }
-            }
-        }
-
-        let mut wave_out = vec![Vec::new(); self.nbr_channels];
-        for chan in used_channels.iter() {
-            wave_out[*chan] = self.output_buffers[*chan].clone();
-        }
-
-        for n in used_channels.iter() {
-            for (in_chunk, out_chunk) in wave_in[*n]
-                .as_ref()
-                .chunks(self.fft_size_in)
-                .zip(wave_out[*n][self.saved_frames..].chunks_mut(self.fft_size_out))
-            {
-                self.resampler
-                    .resample_unit(in_chunk, out_chunk, &mut self.overlaps[*n]);
+                wave_out[chan].resize(self.chunk_size_out, T::zero());
+                for (in_chunk, out_chunk) in wave_in[chan].as_ref().chunks(self.fft_size_in).zip(
+                    self.output_buffers[chan][self.saved_frames..].chunks_mut(self.fft_size_out),
+                ) {
+                    self.resampler
+                        .resample_unit(in_chunk, out_chunk, &mut self.overlaps[chan]);
+                }
             }
         }
         let processed_frames =
             self.saved_frames + self.fft_size_out * (self.frames_needed / self.fft_size_in);
 
-        // save extra frames for next round
-        self.saved_frames = processed_frames - self.chunk_size_out;
-        if processed_frames > self.chunk_size_out {
-            for n in used_channels.iter() {
-                self.output_buffers[*n][0..self.saved_frames].copy_from_slice(
-                    &wave_out[*n][self.chunk_size_out..(self.chunk_size_out + self.saved_frames)],
-                );
+        // copy to output, and save extra frames for next round
+        if processed_frames >= self.chunk_size_out {
+            self.saved_frames = processed_frames - self.chunk_size_out;
+            for (chan, active) in self.channel_mask.iter().enumerate() {
+                if *active {
+                    wave_out[chan][..]
+                        .copy_from_slice(&self.output_buffers[chan][0..self.chunk_size_out]);
+                    self.output_buffers[chan].copy_within(
+                        self.chunk_size_out..(self.chunk_size_out + self.saved_frames),
+                        0,
+                    );
+                }
             }
-        }
-        for n in used_channels.iter() {
-            wave_out[*n].truncate(self.chunk_size_out);
+        } else {
+            self.saved_frames = processed_frames;
         }
         //calculate number of needed frames from next round
         let frames_needed_out = if self.chunk_size_out > self.saved_frames {
@@ -412,7 +420,11 @@ where
         };
         let chunks_needed = (frames_needed_out as f32 / self.fft_size_out as f32).ceil() as usize;
         self.frames_needed = chunks_needed * self.fft_size_in;
-        Ok(wave_out)
+        Ok(())
+    }
+
+    fn get_max_output_size(&self) -> (usize, usize) {
+        (self.nbr_channels, self.chunk_size_out)
     }
 
     /// Update the resample ratio. This is not supported by this resampler and
@@ -464,6 +476,8 @@ where
         let input_buffers: Vec<Vec<T>> =
             vec![vec![T::zero(); chunk_size_in + fft_size_out]; nbr_channels];
 
+        let channel_mask = vec![true; nbr_channels];
+
         let saved_frames = 0;
 
         FftFixedIn {
@@ -475,6 +489,7 @@ where
             input_buffers,
             saved_frames,
             resampler,
+            channel_mask,
         }
     }
 }
@@ -488,78 +503,63 @@ where
         self.chunk_size_in
     }
 
-    /// Resample a chunk of audio. The required input length is provided by
-    /// the "nbr_frames_needed" function, and the output length is fixed.
-    /// If the waveform for a channel is empty, this channel will be ignored and produce a
-    /// corresponding empty output waveform.
-    /// # Errors
-    ///
-    /// The function returns an error if the length of the input data is not
-    /// equal to the number of channels defined when creating the instance,
-    /// and the number of audio frames given by "nbr_frames_needed".
-    fn process<V: AsRef<[T]>>(&mut self, wave_in: &[V]) -> ResampleResult<Vec<Vec<T>>> {
-        if wave_in.len() != self.nbr_channels {
-            return Err(ResampleError::WrongNumberOfChannels {
-                expected: self.nbr_channels,
-                actual: wave_in.len(),
-            });
-        }
-        let mut used_channels = Vec::new();
-        for (chan, wave) in wave_in.iter().enumerate() {
-            let wave = wave.as_ref();
-            if !wave.is_empty() {
-                used_channels.push(chan);
-                if wave.len() != self.chunk_size_in {
-                    return Err(ResampleError::WrongNumberOfFrames {
-                        channel: chan,
-                        expected: self.chunk_size_in,
-                        actual: wave.len(),
-                    });
-                }
-            }
-        }
+    fn process_into_buffer<V: AsRef<[T]>>(
+        &mut self,
+        wave_in: &[V],
+        wave_out: &mut [Vec<T>],
+        active_channels_mask: Option<&[bool]>,
+    ) -> ResampleResult<()> {
+        if let Some(mask) = active_channels_mask {
+            self.channel_mask.copy_from_slice(mask);
+        } else {
+            update_mask_from_buffers(wave_in, &mut self.channel_mask);
+        };
 
-        let mut input_temp = vec![Vec::new(); self.nbr_channels];
-        for chan in used_channels.iter() {
-            input_temp[*chan] = vec![T::zero(); self.saved_frames + self.chunk_size_in];
-        }
+        validate_buffers(
+            wave_in,
+            wave_out,
+            &self.channel_mask,
+            self.nbr_channels,
+            self.chunk_size_in,
+        )?;
 
         // copy new samples to input buffer
-        for n in used_channels.iter() {
-            for (input, buffer) in self.input_buffers[*n]
-                .iter()
-                .take(self.saved_frames)
-                .zip(input_temp[*n].iter_mut())
-            {
-                *buffer = *input;
-            }
-        }
-        for n in used_channels.iter() {
-            for (input, buffer) in wave_in[*n].as_ref().iter().zip(
-                input_temp[*n]
-                    .iter_mut()
-                    .skip(self.saved_frames)
-                    .take(self.chunk_size_in),
-            ) {
-                *buffer = *input;
+        for (chan, active) in self.channel_mask.iter().enumerate() {
+            if *active {
+                for (input, buffer) in wave_in[chan].as_ref().iter().zip(
+                    self.input_buffers[chan]
+                        .iter_mut()
+                        .skip(self.saved_frames)
+                        .take(self.chunk_size_in),
+                ) {
+                    *buffer = *input;
+                }
             }
         }
         self.saved_frames += self.chunk_size_in;
 
         let nbr_chunks_ready =
             (self.saved_frames as f32 / self.fft_size_in as f32).floor() as usize;
-        let mut wave_out = vec![Vec::new(); self.nbr_channels];
-        for chan in used_channels.iter() {
-            wave_out[*chan] = vec![T::zero(); nbr_chunks_ready * self.fft_size_out];
-        }
-        for n in used_channels.iter() {
-            for (in_chunk, out_chunk) in input_temp[*n]
-                .chunks(self.fft_size_in)
-                .take(nbr_chunks_ready)
-                .zip(wave_out[*n].chunks_mut(self.fft_size_out))
-            {
-                self.resampler
-                    .resample_unit(in_chunk, out_chunk, &mut self.overlaps[*n]);
+        let needed_len = nbr_chunks_ready * self.fft_size_out;
+        for (chan, active) in self.channel_mask.iter().enumerate() {
+            if *active {
+                if needed_len > wave_out[chan].capacity() {
+                    trace!(
+                        "Allocating more space for channel {}, old capacity: {}, new: {}",
+                        chan,
+                        wave_out[chan].capacity(),
+                        needed_len
+                    );
+                }
+                wave_out[chan].resize(needed_len, T::zero());
+                for (in_chunk, out_chunk) in self.input_buffers[chan]
+                    .chunks(self.fft_size_in)
+                    .take(nbr_chunks_ready)
+                    .zip(wave_out[chan].chunks_mut(self.fft_size_out))
+                {
+                    self.resampler
+                        .resample_unit(in_chunk, out_chunk, &mut self.overlaps[chan]);
+                }
             }
         }
 
@@ -568,19 +568,21 @@ where
         let extra = self.saved_frames - frames_in_used;
 
         if self.saved_frames > frames_in_used {
-            for n in used_channels.iter() {
-                for (input, buffer) in input_temp[*n]
-                    .iter()
-                    .skip(frames_in_used)
-                    .take(extra)
-                    .zip(self.input_buffers[*n].iter_mut())
-                {
-                    *buffer = *input;
+            for (chan, active) in self.channel_mask.iter().enumerate() {
+                if *active {
+                    self.input_buffers[chan].copy_within(frames_in_used..self.saved_frames, 0);
                 }
             }
         }
         self.saved_frames = extra;
-        Ok(wave_out)
+        Ok(())
+    }
+
+    fn get_max_output_size(&self) -> (usize, usize) {
+        (
+            self.nbr_channels,
+            self.chunk_size_in * (self.fft_size_out / self.fft_size_in + 1),
+        )
     }
 
     /// Update the resample ratio. This is not supported by this resampler and
@@ -628,7 +630,7 @@ mod tests {
         let mut resampler = FftFixedInOut::<f64>::new(44100, 48000, 1024, 2);
         let frames = resampler.nbr_frames_needed();
         let waves = vec![vec![0.0f64; frames]; 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 1120);
     }
@@ -639,7 +641,7 @@ mod tests {
         let mut resampler = FftFixedInOut::<f64>::new(44100, 48000, 1024, 2);
         let frames = resampler.nbr_frames_needed();
         let waves = vec![vec![0.0f64; frames], Vec::new()];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 1120);
         assert!(out[1].is_empty());
@@ -651,7 +653,7 @@ mod tests {
         let frames = resampler.nbr_frames_needed();
         assert_eq!(frames, 294);
         let waves = vec![vec![0.0f64; frames]; 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 1024);
     }
@@ -662,7 +664,7 @@ mod tests {
         let frames = resampler.nbr_frames_needed();
         assert_eq!(frames, 294);
         let waves = vec![vec![0.0f64; frames], Vec::new()];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 1024);
         assert!(out[1].is_empty());
@@ -674,7 +676,7 @@ mod tests {
         let frames = resampler.nbr_frames_needed();
         assert_eq!(frames, 294);
         let waves = vec![Vec::new(); 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert!(out[0].is_empty());
         assert!(out[1].is_empty());
@@ -686,7 +688,22 @@ mod tests {
         let frames = resampler.nbr_frames_needed();
         assert_eq!(frames, 1024);
         let waves = vec![vec![0.0f64; frames]; 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].len(), 640);
+    }
+
+    #[test]
+    fn make_resampler_fi_noalloc() {
+        let mut resampler = FftFixedIn::<f64>::new(44100, 48000, 1024, 2, 2);
+        let frames = resampler.nbr_frames_needed();
+        assert_eq!(frames, 1024);
+        let waves = vec![vec![0.0f64; frames]; 2];
+        let mut out = vec![vec![0.0f64; 2 * frames]; 2];
+        let mask = vec![true; 2];
+        resampler
+            .process_into_buffer(&waves, &mut out, Some(&mask))
+            .unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 640);
     }
@@ -697,7 +714,7 @@ mod tests {
         let frames = resampler.nbr_frames_needed();
         assert_eq!(frames, 1200);
         let waves = vec![vec![0.0f64; frames]; 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 400);
     }
@@ -708,7 +725,7 @@ mod tests {
         let frames = resampler.nbr_frames_needed();
         assert_eq!(frames, 1024);
         let waves = vec![vec![0.0f64; frames], Vec::new()];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 640);
         assert!(out[1].is_empty());
@@ -720,7 +737,7 @@ mod tests {
         let frames = resampler.nbr_frames_needed();
         assert_eq!(frames, 1024);
         let waves = vec![Vec::new(); 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert!(out[0].is_empty());
         assert!(out[1].is_empty());
@@ -732,7 +749,7 @@ mod tests {
         let mut resampler = FftFixedInOut::<f64>::new(44100, 44110, 1024, 2);
         let frames = resampler.nbr_frames_needed();
         let waves = vec![vec![0.0f64; frames]; 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 4411);
     }
@@ -743,7 +760,7 @@ mod tests {
         let frames = resampler.nbr_frames_needed();
         assert_eq!(frames, 4410);
         let waves = vec![vec![0.0f64; frames]; 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 1024);
     }

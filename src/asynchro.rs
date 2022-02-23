@@ -8,8 +8,8 @@ use crate::interpolator_neon::NeonInterpolator;
 use crate::interpolator_sse::SseInterpolator;
 use crate::sinc::make_sincs;
 use crate::windows::WindowFunction;
+use crate::{update_mask_from_buffers, validate_buffers, Resampler, Sample};
 use crate::{InterpolationParameters, InterpolationType};
-use crate::{Resampler, Sample};
 
 /// Functions for making the scalar product with a sinc
 pub trait SincInterpolator<T>: Send {
@@ -121,6 +121,13 @@ where
 ///
 /// The resampling is done by creating a number of intermediate points (defined by oversampling_factor)
 /// by sinc interpolation. The new samples are then calculated by interpolating between these points.
+///
+/// The resampling ratio can be freely adjusted.
+/// The allowed range is from 10% to 1000% of the original ratio (a factor of 10 in each direction).
+/// Adjusting the ratio does not recalculate the sinc functions used by the anti-aliasing filter.
+/// This causes no issue when increasing the ratio (which slows down the output).
+/// However when decreasing more than a few percent (or speeding up the output),
+/// the filters can no longer suppress all aliasing and this may lead to some artefacts.
 pub struct SincFixedIn<T> {
     nbr_channels: usize,
     chunk_size: usize,
@@ -130,6 +137,7 @@ pub struct SincFixedIn<T> {
     interpolator: Box<dyn SincInterpolator<T>>,
     buffer: Vec<Vec<T>>,
     interpolation: InterpolationType,
+    channel_mask: Vec<bool>,
 }
 
 /// An asynchronous resampler that return a fixed number of audio frames.
@@ -137,6 +145,13 @@ pub struct SincFixedIn<T> {
 ///
 /// The resampling is done by creating a number of intermediate points (defined by oversampling_factor)
 /// by sinc interpolation. The new samples are then calculated by interpolating between these points.
+///
+/// The resampling ratio can be freely adjusted.
+/// The allowed range is from 10% to 1000% of the original ratio (a factor of 10 in each direction).
+/// Adjusting the ratio does not recalculate the sinc functions used by the anti-aliasing filter.
+/// This causes no issue when increasing the ratio (which slows down the output).
+/// However when decreasing more than a few percent (i.e. speeding up the output),
+/// the filters can no longer suppress all aliasing and this may lead to some artefacts.
 pub struct SincFixedOut<T> {
     nbr_channels: usize,
     chunk_size: usize,
@@ -148,6 +163,7 @@ pub struct SincFixedOut<T> {
     interpolator: Box<dyn SincInterpolator<T>>,
     buffer: Vec<Vec<T>>,
     interpolation: InterpolationType,
+    channel_mask: Vec<bool>,
 }
 
 pub fn make_interpolator<T>(
@@ -277,6 +293,8 @@ where
     ) -> Self {
         let buffer = vec![vec![T::zero(); chunk_size + 2 * interpolator.len()]; nbr_channels];
 
+        let channel_mask = vec![true; nbr_channels];
+
         SincFixedIn {
             nbr_channels,
             chunk_size,
@@ -286,6 +304,7 @@ where
             interpolator,
             buffer,
             interpolation: interpolation_type,
+            channel_mask,
         }
     }
 }
@@ -294,53 +313,52 @@ impl<T> Resampler<T> for SincFixedIn<T>
 where
     T: Sample,
 {
-    /// Resample a chunk of audio. The input length is fixed, and the output varies in length.
-    /// If the waveform for a channel is empty, this channel will be ignored and produce a
-    /// corresponding empty output waveform.
-    /// # Errors
-    ///
-    /// The function returns an error if the length of the input data is not equal
-    /// to the number of channels and chunk size defined when creating the instance.
-    fn process<V: AsRef<[T]>>(&mut self, wave_in: &[V]) -> ResampleResult<Vec<Vec<T>>> {
-        if wave_in.len() != self.nbr_channels {
-            return Err(ResampleError::WrongNumberOfChannels {
-                expected: self.nbr_channels,
-                actual: wave_in.len(),
-            });
-        }
-        let mut used_channels = Vec::new();
-        for (chan, wave) in wave_in.iter().enumerate() {
-            let wave = wave.as_ref();
-            if !wave.is_empty() {
-                used_channels.push(chan);
-                if wave.len() != self.chunk_size {
-                    return Err(ResampleError::WrongNumberOfFrames {
-                        channel: chan,
-                        expected: self.chunk_size,
-                        actual: wave.len(),
-                    });
-                }
-            }
-        }
+    fn process_into_buffer<V: AsRef<[T]>>(
+        &mut self,
+        wave_in: &[V],
+        wave_out: &mut [Vec<T>],
+        active_channels_mask: Option<&[bool]>,
+    ) -> ResampleResult<()> {
+        if let Some(mask) = active_channels_mask {
+            self.channel_mask.copy_from_slice(mask);
+        } else {
+            update_mask_from_buffers(wave_in, &mut self.channel_mask);
+        };
+
+        validate_buffers(
+            wave_in,
+            wave_out,
+            &self.channel_mask,
+            self.nbr_channels,
+            self.chunk_size,
+        )?;
+
         let sinc_len = self.interpolator.len();
         let oversampling_factor = self.interpolator.nbr_sincs();
         let t_ratio = 1.0 / self.resample_ratio as f64;
         let end_idx = self.chunk_size as isize - (sinc_len as isize + 1) - t_ratio.ceil() as isize;
+
         //update buffer with new data
-        for wav in self.buffer.iter_mut() {
-            for idx in 0..(2 * sinc_len) {
-                wav[idx] = wav[idx + self.chunk_size];
-            }
+        for buf in self.buffer.iter_mut() {
+            buf.copy_within(self.chunk_size..self.chunk_size + 2 * sinc_len, 0);
         }
 
-        let mut wave_out = vec![Vec::new(); self.nbr_channels];
-
-        for chan in used_channels.iter() {
-            for (idx, sample) in wave_in[*chan].as_ref().iter().enumerate() {
-                self.buffer[*chan][idx + 2 * sinc_len] = *sample;
+        let needed_len = (self.chunk_size as f64 * self.resample_ratio + 10.0) as usize;
+        for (chan, active) in self.channel_mask.iter().enumerate() {
+            if *active {
+                self.buffer[chan][2 * sinc_len..2 * sinc_len + self.chunk_size]
+                    .copy_from_slice(wave_in[chan].as_ref());
+                // Set length to chunksize*ratio plus a safety margin of 10 elements.
+                if needed_len > wave_out[chan].capacity() {
+                    trace!(
+                        "Allocating more space for channel {}, old capacity: {}, new: {}",
+                        chan,
+                        wave_out[chan].capacity(),
+                        needed_len
+                    );
+                }
+                wave_out[chan].resize(needed_len, T::zero());
             }
-            wave_out[*chan] =
-                vec![T::zero(); (self.chunk_size as f64 * self.resample_ratio + 10.0) as usize];
         }
 
         let mut idx = self.last_index;
@@ -357,16 +375,18 @@ where
                     let frac = idx * oversampling_factor as f64
                         - (idx * oversampling_factor as f64).floor();
                     let frac_offset = T::coerce(frac);
-                    for chan in used_channels.iter() {
-                        let buf = &self.buffer[*chan];
-                        for (n, p) in nearest.iter().zip(points.iter_mut()) {
-                            *p = self.interpolator.get_sinc_interpolated(
-                                buf,
-                                (n.0 + 2 * sinc_len as isize) as usize,
-                                n.1 as usize,
-                            );
+                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                        if *active {
+                            let buf = &self.buffer[chan];
+                            for (n, p) in nearest.iter().zip(points.iter_mut()) {
+                                *p = self.interpolator.get_sinc_interpolated(
+                                    buf,
+                                    (n.0 + 2 * sinc_len as isize) as usize,
+                                    n.1 as usize,
+                                );
+                            }
+                            wave_out[chan][n] = interp_cubic(frac_offset, &points);
                         }
-                        wave_out[*chan][n] = interp_cubic(frac_offset, &points);
                     }
                     n += 1;
                 }
@@ -380,16 +400,18 @@ where
                     let frac = idx * oversampling_factor as f64
                         - (idx * oversampling_factor as f64).floor();
                     let frac_offset = T::coerce(frac);
-                    for chan in used_channels.iter() {
-                        let buf = &self.buffer[*chan];
-                        for (n, p) in nearest.iter().zip(points.iter_mut()) {
-                            *p = self.interpolator.get_sinc_interpolated(
-                                buf,
-                                (n.0 + 2 * sinc_len as isize) as usize,
-                                n.1 as usize,
-                            );
+                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                        if *active {
+                            let buf = &self.buffer[chan];
+                            for (n, p) in nearest.iter().zip(points.iter_mut()) {
+                                *p = self.interpolator.get_sinc_interpolated(
+                                    buf,
+                                    (n.0 + 2 * sinc_len as isize) as usize,
+                                    n.1 as usize,
+                                );
+                            }
+                            wave_out[chan][n] = interp_lin(frac_offset, &points);
                         }
-                        wave_out[*chan][n] = interp_lin(frac_offset, &points);
                     }
                     n += 1;
                 }
@@ -400,14 +422,16 @@ where
                 while idx < end_idx as f64 {
                     idx += t_ratio;
                     nearest = get_nearest_time(idx, oversampling_factor as isize);
-                    for chan in used_channels.iter() {
-                        let buf = &self.buffer[*chan];
-                        point = self.interpolator.get_sinc_interpolated(
-                            buf,
-                            (nearest.0 + 2 * sinc_len as isize) as usize,
-                            nearest.1 as usize,
-                        );
-                        wave_out[*chan][n] = point;
+                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                        if *active {
+                            let buf = &self.buffer[chan];
+                            point = self.interpolator.get_sinc_interpolated(
+                                buf,
+                                (nearest.0 + 2 * sinc_len as isize) as usize,
+                                nearest.1 as usize,
+                            );
+                            wave_out[chan][n] = point;
+                        }
                     }
                     n += 1;
                 }
@@ -416,17 +440,26 @@ where
 
         // store last index for next iteration
         self.last_index = idx - self.chunk_size as f64;
-        for chan in used_channels.iter() {
-            //for w in wave_out.iter_mut() {
-            wave_out[*chan].truncate(n);
+        for (chan, active) in self.channel_mask.iter().enumerate() {
+            if *active {
+                wave_out[chan].truncate(n);
+            }
         }
         trace!(
             "Resampling channels {:?}, {} frames in, {} frames out",
-            used_channels,
+            active_channels_mask,
             self.chunk_size,
             n,
         );
-        Ok(wave_out)
+        Ok(())
+    }
+
+    fn get_max_output_size(&self) -> (usize, usize) {
+        // Set length to chunksize*ratio plus a safety margin of 10 elements.
+        (
+            self.nbr_channels,
+            (self.chunk_size as f64 * self.resample_ratio + 10.0) as usize,
+        )
     }
 
     /// Query for the number of frames needed for the next call to "process".
@@ -435,11 +468,11 @@ where
         self.chunk_size
     }
 
-    /// Update the resample ratio. New value must be within +-10% of the original one
+    /// Update the resample ratio. New value must be within a factor 10 of the original one.
     fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()> {
         trace!("Change resample ratio to {}", new_ratio);
-        if (new_ratio / self.resample_ratio_original > 0.9)
-            && (new_ratio / self.resample_ratio_original < 1.1)
+        if (new_ratio / self.resample_ratio_original >= 0.1)
+            && (new_ratio / self.resample_ratio_original <= 10.0)
         {
             self.resample_ratio = new_ratio;
             Ok(())
@@ -447,7 +480,8 @@ where
             Err(ResampleError::BadRatioUpdate)
         }
     }
-    /// Update the resample ratio relative to the original one
+    /// Update the resample ratio relative to the original one.
+    /// New value must be in the range 0.1 to 10.
     fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> ResampleResult<()> {
         let new_ratio = self.resample_ratio_original * rel_ratio;
         self.set_resample_ratio(new_ratio)
@@ -510,7 +544,8 @@ where
         let needed_input_size =
             (chunk_size as f64 / resample_ratio).ceil() as usize + 2 + interpolator.len() / 2;
         let buffer =
-            vec![vec![T::zero(); 3 * needed_input_size / 2 + 2 * interpolator.len()]; nbr_channels];
+            vec![vec![T::zero(); 11 * needed_input_size + 2 * interpolator.len()]; nbr_channels];
+        let channel_mask = vec![true; nbr_channels];
 
         SincFixedOut {
             nbr_channels,
@@ -523,6 +558,7 @@ where
             interpolator,
             buffer,
             interpolation: interpolation_type,
+            channel_mask,
         }
     }
 }
@@ -536,53 +572,50 @@ where
         self.needed_input_size
     }
 
-    /// Resample a chunk of audio. The required input length is provided by
-    /// the "nbr_frames_needed" function, and the output length is fixed.
-    /// If the waveform for a channel is empty, this channel will be ignored and produce a
-    /// corresponding empty output waveform.
-    /// # Errors
-    ///
-    /// The function returns an error if the length of the input data is not
-    /// equal to the number of channels defined when creating the instance,
-    /// and the number of audio frames given by "nbr_frames_needed".
-    fn process<V: AsRef<[T]>>(&mut self, wave_in: &[V]) -> ResampleResult<Vec<Vec<T>>> {
-        //update buffer with new data
-        if wave_in.len() != self.nbr_channels {
-            return Err(ResampleError::WrongNumberOfChannels {
-                expected: self.nbr_channels,
-                actual: wave_in.len(),
-            });
-        }
+    fn process_into_buffer<V: AsRef<[T]>>(
+        &mut self,
+        wave_in: &[V],
+        wave_out: &mut [Vec<T>],
+        active_channels_mask: Option<&[bool]>,
+    ) -> ResampleResult<()> {
+        if let Some(mask) = active_channels_mask {
+            self.channel_mask.copy_from_slice(mask);
+        } else {
+            update_mask_from_buffers(wave_in, &mut self.channel_mask);
+        };
+
+        validate_buffers(
+            wave_in,
+            wave_out,
+            &self.channel_mask,
+            self.nbr_channels,
+            self.needed_input_size,
+        )?;
         let sinc_len = self.interpolator.len();
         let oversampling_factor = self.interpolator.nbr_sincs();
-        let mut used_channels = Vec::new();
-        for (chan, wave) in wave_in.iter().enumerate() {
-            let wave = wave.as_ref();
-            if !wave.is_empty() {
-                used_channels.push(chan);
-                if wave.len() != self.needed_input_size {
-                    return Err(ResampleError::WrongNumberOfFrames {
-                        channel: chan,
-                        expected: self.needed_input_size,
-                        actual: wave.len(),
-                    });
-                }
-            }
-        }
-        for wav in self.buffer.iter_mut() {
-            for idx in 0..(2 * sinc_len) {
-                wav[idx] = wav[idx + self.current_buffer_fill];
-            }
+
+        for buf in self.buffer.iter_mut() {
+            buf.copy_within(
+                self.current_buffer_fill..self.current_buffer_fill + 2 * sinc_len,
+                0,
+            );
         }
         self.current_buffer_fill = self.needed_input_size;
 
-        let mut wave_out = vec![Vec::new(); self.nbr_channels];
-
-        for chan in used_channels.iter() {
-            for (idx, sample) in wave_in[*chan].as_ref().iter().enumerate() {
-                self.buffer[*chan][idx + 2 * sinc_len] = *sample;
+        for (chan, active) in self.channel_mask.iter().enumerate() {
+            if *active {
+                self.buffer[chan][2 * sinc_len..2 * sinc_len + wave_in[chan].as_ref().len()]
+                    .copy_from_slice(wave_in[chan].as_ref());
+                if self.chunk_size > wave_out[chan].capacity() {
+                    trace!(
+                        "Allocating more space for channel {}, old capacity: {}, new: {}",
+                        chan,
+                        wave_out[chan].capacity(),
+                        self.chunk_size
+                    );
+                }
+                wave_out[chan].resize(self.chunk_size, T::zero());
             }
-            wave_out[*chan] = vec![T::zero(); self.chunk_size];
         }
 
         let mut idx = self.last_index;
@@ -598,16 +631,18 @@ where
                     let frac = idx * oversampling_factor as f64
                         - (idx * oversampling_factor as f64).floor();
                     let frac_offset = T::coerce(frac);
-                    for chan in used_channels.iter() {
-                        let buf = &self.buffer[*chan];
-                        for (n, p) in nearest.iter().zip(points.iter_mut()) {
-                            *p = self.interpolator.get_sinc_interpolated(
-                                buf,
-                                (n.0 + 2 * sinc_len as isize) as usize,
-                                n.1 as usize,
-                            );
+                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                        if *active {
+                            let buf = &self.buffer[chan];
+                            for (n, p) in nearest.iter().zip(points.iter_mut()) {
+                                *p = self.interpolator.get_sinc_interpolated(
+                                    buf,
+                                    (n.0 + 2 * sinc_len as isize) as usize,
+                                    n.1 as usize,
+                                );
+                            }
+                            wave_out[chan][n] = interp_cubic(frac_offset, &points);
                         }
-                        wave_out[*chan][n] = interp_cubic(frac_offset, &points);
                     }
                 }
             }
@@ -620,16 +655,18 @@ where
                     let frac = idx * oversampling_factor as f64
                         - (idx * oversampling_factor as f64).floor();
                     let frac_offset = T::coerce(frac);
-                    for chan in used_channels.iter() {
-                        let buf = &self.buffer[*chan];
-                        for (n, p) in nearest.iter().zip(points.iter_mut()) {
-                            *p = self.interpolator.get_sinc_interpolated(
-                                buf,
-                                (n.0 + 2 * sinc_len as isize) as usize,
-                                n.1 as usize,
-                            );
+                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                        if *active {
+                            let buf = &self.buffer[chan];
+                            for (n, p) in nearest.iter().zip(points.iter_mut()) {
+                                *p = self.interpolator.get_sinc_interpolated(
+                                    buf,
+                                    (n.0 + 2 * sinc_len as isize) as usize,
+                                    n.1 as usize,
+                                );
+                            }
+                            wave_out[chan][n] = interp_lin(frac_offset, &points);
                         }
-                        wave_out[*chan][n] = interp_lin(frac_offset, &points);
                     }
                 }
             }
@@ -639,20 +676,21 @@ where
                 for n in 0..self.chunk_size {
                     idx += t_ratio;
                     nearest = get_nearest_time(idx, oversampling_factor as isize);
-                    for chan in used_channels.iter() {
-                        let buf = &self.buffer[*chan];
-                        point = self.interpolator.get_sinc_interpolated(
-                            buf,
-                            (nearest.0 + 2 * sinc_len as isize) as usize,
-                            nearest.1 as usize,
-                        );
-                        wave_out[*chan][n] = point;
+                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                        if *active {
+                            let buf = &self.buffer[chan];
+                            point = self.interpolator.get_sinc_interpolated(
+                                buf,
+                                (nearest.0 + 2 * sinc_len as isize) as usize,
+                                nearest.1 as usize,
+                            );
+                            wave_out[chan][n] = point;
+                        }
                     }
                 }
             }
         }
 
-        let prev_input_len = self.needed_input_size;
         // store last index for next iteration
         self.last_index = idx - self.current_buffer_fill as f64;
         self.needed_input_size = (self.last_index as f32
@@ -662,20 +700,24 @@ where
             + 2;
         trace!(
             "Resampling channels {:?}, {} frames in, {} frames out. Next needed length: {} frames, last index {}",
-            used_channels,
-            prev_input_len,
+            active_channels_mask,
+            self.current_buffer_fill,
             self.chunk_size,
             self.needed_input_size,
             self.last_index
         );
-        Ok(wave_out)
+        Ok(())
     }
 
-    /// Update the resample ratio. New value must be within +-10% of the original one
+    fn get_max_output_size(&self) -> (usize, usize) {
+        (self.nbr_channels, self.chunk_size)
+    }
+
+    /// Update the resample ratio. New value must be within a factor 10 from the original one.
     fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()> {
         trace!("Change resample ratio to {}", new_ratio);
-        if (new_ratio / self.resample_ratio_original > 0.9)
-            && (new_ratio / self.resample_ratio_original < 1.1)
+        if (new_ratio / self.resample_ratio_original >= 0.1)
+            && (new_ratio / self.resample_ratio_original <= 10.0)
         {
             self.resample_ratio = new_ratio;
             self.needed_input_size = (self.last_index as f32
@@ -689,7 +731,8 @@ where
         }
     }
 
-    /// Update the resample ratio relative to the original one
+    /// Update the resample ratio relative to the original one.
+    /// New value must be in the range 0.1 to 10.
     fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> ResampleResult<()> {
         let new_ratio = self.resample_ratio_original * rel_ratio;
         self.set_resample_ratio(new_ratio)
@@ -826,7 +869,7 @@ mod tests {
         };
         let mut resampler = SincFixedIn::<f64>::new(1.2, params, 1024, 2);
         let waves = vec![vec![0.0f64; 1024]; 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
         assert!(
             out[0].len() > 1150 && out[0].len() < 1229,
@@ -835,7 +878,7 @@ mod tests {
             1229,
             out[0].len()
         );
-        let out2 = resampler.process(&waves).unwrap();
+        let out2 = resampler.process(&waves, None).unwrap();
         assert_eq!(out2.len(), 2, "Expected {} channels, got {}", 2, out2.len());
         assert!(
             out2[0].len() > 1226 && out2[0].len() < 1232,
@@ -857,7 +900,7 @@ mod tests {
         };
         let mut resampler = SincFixedIn::<f32>::new(1.2, params, 1024, 2);
         let waves = vec![vec![0.0f32; 1024]; 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
         assert!(
             out[0].len() > 1150 && out[0].len() < 1229,
@@ -866,7 +909,7 @@ mod tests {
             1229,
             out[0].len()
         );
-        let out2 = resampler.process(&waves).unwrap();
+        let out2 = resampler.process(&waves, None).unwrap();
         assert_eq!(out2.len(), 2, "Expected {} channels, got {}", 2, out2.len());
         assert!(
             out2[0].len() > 1226 && out2[0].len() < 1232,
@@ -888,12 +931,12 @@ mod tests {
         };
         let mut resampler = SincFixedIn::<f64>::new(1.2, params, 1024, 2);
         let waves = vec![vec![0.0f64; 1024], Vec::new()];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert!(out[0].len() > 1150 && out[0].len() < 1250);
         assert!(out[1].is_empty());
         let waves = vec![Vec::new(), vec![0.0f64; 1024]];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert!(out[1].len() > 1150 && out[0].len() < 1250);
         assert!(out[0].is_empty());
@@ -911,7 +954,7 @@ mod tests {
         };
         let mut resampler = SincFixedIn::<f64>::new(16000 as f64 / 96000 as f64, params, 1024, 2);
         let waves = vec![vec![0.0f64; 1024]; 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
         assert!(
             out[0].len() > 140 && out[0].len() < 200,
@@ -920,7 +963,7 @@ mod tests {
             200,
             out[0].len()
         );
-        let out2 = resampler.process(&waves).unwrap();
+        let out2 = resampler.process(&waves, None).unwrap();
         assert_eq!(out2.len(), 2, "Expected {} channels, got {}", 2, out2.len());
         assert!(
             out2[0].len() > 167 && out2[0].len() < 173,
@@ -943,7 +986,7 @@ mod tests {
         };
         let mut resampler = SincFixedIn::<f64>::new(192000 as f64 / 44100 as f64, params, 1024, 2);
         let waves = vec![vec![0.0f64; 1024]; 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
         assert!(
             out[0].len() > 3800 && out[0].len() < 4458,
@@ -952,7 +995,7 @@ mod tests {
             4458,
             out[0].len()
         );
-        let out2 = resampler.process(&waves).unwrap();
+        let out2 = resampler.process(&waves, None).unwrap();
         assert_eq!(out2.len(), 2, "Expected {} channels, got {}", 2, out2.len());
         assert!(
             out2[0].len() > 4455 && out2[0].len() < 4461,
@@ -977,7 +1020,7 @@ mod tests {
         println!("{}", frames);
         assert!(frames > 800 && frames < 900);
         let waves = vec![vec![0.0f64; frames]; 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 1024);
     }
@@ -996,7 +1039,7 @@ mod tests {
         println!("{}", frames);
         assert!(frames > 800 && frames < 900);
         let waves = vec![vec![0.0f32; frames]; 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 1024);
     }
@@ -1016,7 +1059,7 @@ mod tests {
         assert!(frames > 800 && frames < 900);
         let mut waves = vec![vec![0.0f64; frames], Vec::new()];
         waves[0][100] = 3.0;
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 1024);
         assert!(out[1].is_empty());
@@ -1029,7 +1072,7 @@ mod tests {
         let frames = resampler.nbr_frames_needed();
         let mut waves = vec![Vec::new(), vec![0.0f64; frames]];
         waves[1][10] = 3.0;
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[1].len(), 1024);
         assert!(out[0].is_empty());
@@ -1058,7 +1101,7 @@ mod tests {
             frames
         );
         let waves = vec![vec![0.0f64; frames]; 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
         assert_eq!(
             out[0].len(),
@@ -1076,7 +1119,7 @@ mod tests {
             frames2
         );
         let waves2 = vec![vec![0.0f64; frames2]; 2];
-        let out2 = resampler.process(&waves2).unwrap();
+        let out2 = resampler.process(&waves2, None).unwrap();
         assert_eq!(
             out2[0].len(),
             1024,
@@ -1106,7 +1149,7 @@ mod tests {
             frames
         );
         let waves = vec![vec![0.0f64; frames]; 2];
-        let out = resampler.process(&waves).unwrap();
+        let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
         assert_eq!(
             out[0].len(),
@@ -1124,7 +1167,7 @@ mod tests {
             frames2
         );
         let waves2 = vec![vec![0.0f64; frames2]; 2];
-        let out2 = resampler.process(&waves2).unwrap();
+        let out2 = resampler.process(&waves2, None).unwrap();
         assert_eq!(
             out2[0].len(),
             1024,
