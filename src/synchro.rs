@@ -1,3 +1,4 @@
+use crate::error::ResamplerConstructionError;
 use crate::sinc::make_sincs;
 use crate::windows::WindowFunction;
 use num_complex::Complex;
@@ -75,6 +76,13 @@ pub struct FftFixedInOut<T> {
     channel_mask: Vec<bool>,
     overlaps: Vec<Vec<T>>,
     resampler: FftResampler<T>,
+}
+
+fn validate_sample_rates(input: usize, output: usize) -> Result<(), ResamplerConstructionError> {
+    if input == 0 || output == 0 {
+        return Err(ResamplerConstructionError::InvalidSampleRate { input, output });
+    }
+    Ok(())
 }
 
 impl<T> FftResampler<T>
@@ -185,22 +193,29 @@ where
     /// Create a new FftFixedInOut
     ///
     /// Parameters are:
-    /// - `fs_in`: Input sample rate.
-    /// - `fs_out`: Output sample rate.
+    /// - `sample_rate_input`: Input sample rate.
+    /// - `sample_rate_output`: Output sample rate.
     /// - `chunk_size_in`: desired length of input data in frames, actual value may be different.
     /// - `nbr_channels`: number of channels in input/output.
-    pub fn new(fs_in: usize, fs_out: usize, chunk_size_in: usize, nbr_channels: usize) -> Self {
+    pub fn new(
+        sample_rate_input: usize,
+        sample_rate_output: usize,
+        chunk_size_in: usize,
+        nbr_channels: usize,
+    ) -> Result<Self, ResamplerConstructionError> {
+        validate_sample_rates(sample_rate_input, sample_rate_output)?;
+
         debug!(
-            "Create new FftFixedInOut, fs_in: {}, fs_out: {} chunk_size_in: {}, channels: {}",
-            fs_in, fs_out, chunk_size_in, nbr_channels
+            "Create new FftFixedInOut, sample_rate_input: {}, sample_rate_output: {} chunk_size_in: {}, channels: {}",
+            sample_rate_input, sample_rate_output, chunk_size_in, nbr_channels
         );
 
-        let gcd = integer::gcd(fs_in, fs_out);
-        let min_chunk_out = fs_out / gcd;
+        let gcd = integer::gcd(sample_rate_input, sample_rate_output);
+        let min_chunk_out = sample_rate_output / gcd;
         let wanted = chunk_size_in;
         let fft_chunks = (wanted as f32 / min_chunk_out as f32).ceil() as usize;
-        let fft_size_out = fft_chunks * fs_out / gcd;
-        let fft_size_in = fft_chunks * fs_in / gcd;
+        let fft_size_out = fft_chunks * sample_rate_output / gcd;
+        let fft_size_in = fft_chunks * sample_rate_input / gcd;
 
         let resampler = FftResampler::<T>::new(fft_size_in, fft_size_out);
 
@@ -208,7 +223,7 @@ where
 
         let channel_mask = vec![true; nbr_channels];
 
-        FftFixedInOut {
+        Ok(FftFixedInOut {
             nbr_channels,
             chunk_size_in: fft_size_in,
             chunk_size_out: fft_size_out,
@@ -216,7 +231,7 @@ where
             overlaps,
             resampler,
             channel_mask,
-        }
+        })
     }
 }
 
@@ -302,30 +317,32 @@ where
     /// Create a new FftFixedOut
     ///
     /// Parameters are:
-    /// - `fs_in`: Input sample rate.
-    /// - `fs_out`: Output sample rate.
+    /// - `sample_rate_input`: Input sample rate.
+    /// - `sample_rate_output`: Output sample rate.
     /// - `chunk_size_out`: length of output data in frames.
     /// - `sub_chunks`: desired number of subchunks for processing, actual number may be different.
     /// - `nbr_channels`: number of channels in input/output.
     pub fn new(
-        fs_in: usize,
-        fs_out: usize,
+        sample_rate_input: usize,
+        sample_rate_output: usize,
         chunk_size_out: usize,
         sub_chunks: usize,
         nbr_channels: usize,
-    ) -> Self {
-        let gcd = integer::gcd(fs_in, fs_out);
-        let min_chunk_out = fs_out / gcd;
+    ) -> Result<Self, ResamplerConstructionError> {
+        validate_sample_rates(sample_rate_input, sample_rate_output)?;
+
+        let gcd = integer::gcd(sample_rate_input, sample_rate_output);
+        let min_chunk_out = sample_rate_output / gcd;
         let wanted_subsize = chunk_size_out / sub_chunks;
         let fft_chunks = (wanted_subsize as f32 / min_chunk_out as f32).ceil() as usize;
-        let fft_size_out = fft_chunks * fs_out / gcd;
-        let fft_size_in = fft_chunks * fs_in / gcd;
+        let fft_size_out = fft_chunks * sample_rate_output / gcd;
+        let fft_size_in = fft_chunks * sample_rate_input / gcd;
 
         let resampler = FftResampler::<T>::new(fft_size_in, fft_size_out);
 
         debug!(
-            "Create new FftFixedOut, fs_in: {}, fs_out: {} chunk_size_in: {}, channels: {}, fft_size_in: {}, fft_size_out: {}",
-            fs_in, fs_out, chunk_size_out, nbr_channels, fft_size_in, fft_size_out
+            "Create new FftFixedOut, sample_rate_input: {}, sample_rate_output: {} chunk_size_in: {}, channels: {}, fft_size_in: {}, fft_size_out: {}",
+            sample_rate_input, sample_rate_output, chunk_size_out, nbr_channels, fft_size_in, fft_size_out
         );
 
         let overlaps: Vec<Vec<T>> = vec![vec![T::zero(); fft_size_out]; nbr_channels];
@@ -338,7 +355,7 @@ where
         let chunks_needed = (chunk_size_out as f32 / fft_size_out as f32).ceil() as usize;
         let frames_needed = chunks_needed * fft_size_in;
 
-        FftFixedOut {
+        Ok(FftFixedOut {
             nbr_channels,
             chunk_size_out,
             fft_size_in,
@@ -349,7 +366,7 @@ where
             frames_needed,
             resampler,
             channel_mask,
-        }
+        })
     }
 }
 
@@ -463,29 +480,31 @@ where
     /// Create a new FftFixedOut
     ///
     /// Parameters are:
-    /// - `fs_in`: Input sample rate.
-    /// - `fs_out`: Output sample rate.
+    /// - `sample_rate_input`: Input sample rate.
+    /// - `sample_rate_output`: Output sample rate.
     /// - `chunk_size_out`: length of output data in frames.
     /// - `sub_chunks`: desired number of subchunks for processing, actual number used may be different.
     /// - `nbr_channels`: number of channels in input/output.
     pub fn new(
-        fs_in: usize,
-        fs_out: usize,
+        sample_rate_input: usize,
+        sample_rate_output: usize,
         chunk_size_in: usize,
         sub_chunks: usize,
         nbr_channels: usize,
-    ) -> Self {
-        let gcd = integer::gcd(fs_in, fs_out);
-        let min_chunk_in = fs_in / gcd;
+    ) -> Result<Self, ResamplerConstructionError> {
+        validate_sample_rates(sample_rate_input, sample_rate_output)?;
+
+        let gcd = integer::gcd(sample_rate_input, sample_rate_output);
+        let min_chunk_in = sample_rate_input / gcd;
         let wanted_subsize = chunk_size_in / sub_chunks;
         let fft_chunks = (wanted_subsize as f32 / min_chunk_in as f32).ceil() as usize;
-        let fft_size_out = fft_chunks * fs_out / gcd;
-        let fft_size_in = fft_chunks * fs_in / gcd;
+        let fft_size_out = fft_chunks * sample_rate_output / gcd;
+        let fft_size_in = fft_chunks * sample_rate_input / gcd;
 
         let resampler = FftResampler::<T>::new(fft_size_in, fft_size_out);
         debug!(
-            "Create new FftFixedOut, fs_in: {}, fs_out: {} chunk_size_in: {}, channels: {}, fft_size_in: {}, fft_size_out: {}",
-            fs_in, fs_out, chunk_size_in, nbr_channels, fft_size_in, fft_size_out
+            "Create new FftFixedOut, sample_rate_input: {}, sample_rate_output: {} chunk_size_in: {}, channels: {}, fft_size_in: {}, fft_size_out: {}",
+            sample_rate_input, sample_rate_output, chunk_size_in, nbr_channels, fft_size_in, fft_size_out
         );
 
         let overlaps: Vec<Vec<T>> = vec![vec![T::zero(); fft_size_out]; nbr_channels];
@@ -496,7 +515,7 @@ where
 
         let saved_frames = 0;
 
-        FftFixedIn {
+        Ok(FftFixedIn {
             nbr_channels,
             chunk_size_in,
             fft_size_in,
@@ -506,7 +525,7 @@ where
             saved_frames,
             resampler,
             channel_mask,
-        }
+        })
     }
 }
 
@@ -648,7 +667,7 @@ mod tests {
     #[test]
     fn make_resampler_fio() {
         // asking for 1024 give the nearest which is 1029 -> 1120
-        let mut resampler = FftFixedInOut::<f64>::new(44100, 48000, 1024, 2);
+        let mut resampler = FftFixedInOut::<f64>::new(44100, 48000, 1024, 2).unwrap();
         let frames = resampler.nbr_frames_needed();
         let waves = vec![vec![0.0f64; frames]; 2];
         let out = resampler.process(&waves, None).unwrap();
@@ -659,7 +678,7 @@ mod tests {
     #[test]
     fn make_resampler_fio_skipped() {
         // asking for 1024 give the nearest which is 1029 -> 1120
-        let mut resampler = FftFixedInOut::<f64>::new(44100, 48000, 1024, 2);
+        let mut resampler = FftFixedInOut::<f64>::new(44100, 48000, 1024, 2).unwrap();
         let frames = resampler.nbr_frames_needed();
         let waves = vec![vec![0.0f64; frames], Vec::new()];
         let out = resampler.process(&waves, None).unwrap();
@@ -670,7 +689,7 @@ mod tests {
 
     #[test]
     fn make_resampler_fo() {
-        let mut resampler = FftFixedOut::<f64>::new(44100, 192000, 1024, 2, 2);
+        let mut resampler = FftFixedOut::<f64>::new(44100, 192000, 1024, 2, 2).unwrap();
         let frames = resampler.nbr_frames_needed();
         assert_eq!(frames, 294);
         let waves = vec![vec![0.0f64; frames]; 2];
@@ -681,7 +700,7 @@ mod tests {
 
     #[test]
     fn make_resampler_fo_skipped() {
-        let mut resampler = FftFixedOut::<f64>::new(44100, 192000, 1024, 2, 2);
+        let mut resampler = FftFixedOut::<f64>::new(44100, 192000, 1024, 2, 2).unwrap();
         let frames = resampler.nbr_frames_needed();
         assert_eq!(frames, 294);
         let waves = vec![vec![0.0f64; frames], Vec::new()];
@@ -693,7 +712,7 @@ mod tests {
 
     #[test]
     fn make_resampler_fo_empty() {
-        let mut resampler = FftFixedOut::<f64>::new(44100, 192000, 1024, 2, 2);
+        let mut resampler = FftFixedOut::<f64>::new(44100, 192000, 1024, 2, 2).unwrap();
         let frames = resampler.nbr_frames_needed();
         assert_eq!(frames, 294);
         let waves = vec![Vec::new(); 2];
@@ -705,7 +724,7 @@ mod tests {
 
     #[test]
     fn make_resampler_fi() {
-        let mut resampler = FftFixedIn::<f64>::new(44100, 48000, 1024, 2, 2);
+        let mut resampler = FftFixedIn::<f64>::new(44100, 48000, 1024, 2, 2).unwrap();
         let frames = resampler.nbr_frames_needed();
         assert_eq!(frames, 1024);
         let waves = vec![vec![0.0f64; frames]; 2];
@@ -716,7 +735,7 @@ mod tests {
 
     #[test]
     fn make_resampler_fi_noalloc() {
-        let mut resampler = FftFixedIn::<f64>::new(44100, 48000, 1024, 2, 2);
+        let mut resampler = FftFixedIn::<f64>::new(44100, 48000, 1024, 2, 2).unwrap();
         let frames = resampler.nbr_frames_needed();
         assert_eq!(frames, 1024);
         let waves = vec![vec![0.0f64; frames]; 2];
@@ -731,7 +750,7 @@ mod tests {
 
     #[test]
     fn make_resampler_fi_downsample() {
-        let mut resampler = FftFixedIn::<f64>::new(48000, 16000, 1200, 2, 2);
+        let mut resampler = FftFixedIn::<f64>::new(48000, 16000, 1200, 2, 2).unwrap();
         let frames = resampler.nbr_frames_needed();
         assert_eq!(frames, 1200);
         let waves = vec![vec![0.0f64; frames]; 2];
@@ -742,7 +761,7 @@ mod tests {
 
     #[test]
     fn make_resampler_fi_skipped() {
-        let mut resampler = FftFixedIn::<f64>::new(44100, 48000, 1024, 2, 2);
+        let mut resampler = FftFixedIn::<f64>::new(44100, 48000, 1024, 2, 2).unwrap();
         let frames = resampler.nbr_frames_needed();
         assert_eq!(frames, 1024);
         let waves = vec![vec![0.0f64; frames], Vec::new()];
@@ -754,7 +773,7 @@ mod tests {
 
     #[test]
     fn make_resampler_fi_empty() {
-        let mut resampler = FftFixedIn::<f64>::new(44100, 48000, 1024, 2, 2);
+        let mut resampler = FftFixedIn::<f64>::new(44100, 48000, 1024, 2, 2).unwrap();
         let frames = resampler.nbr_frames_needed();
         assert_eq!(frames, 1024);
         let waves = vec![Vec::new(); 2];
@@ -767,7 +786,7 @@ mod tests {
     #[test]
     fn make_resampler_fio_unusualratio() {
         // asking for 1024 give the nearest which is 1029 -> 1120
-        let mut resampler = FftFixedInOut::<f64>::new(44100, 44110, 1024, 2);
+        let mut resampler = FftFixedInOut::<f64>::new(44100, 44110, 1024, 2).unwrap();
         let frames = resampler.nbr_frames_needed();
         let waves = vec![vec![0.0f64; frames]; 2];
         let out = resampler.process(&waves, None).unwrap();
@@ -777,7 +796,7 @@ mod tests {
 
     #[test]
     fn make_resampler_fo_unusualratio() {
-        let mut resampler = FftFixedOut::<f64>::new(44100, 44110, 1024, 2, 2);
+        let mut resampler = FftFixedOut::<f64>::new(44100, 44110, 1024, 2, 2).unwrap();
         let frames = resampler.nbr_frames_needed();
         assert_eq!(frames, 4410);
         let waves = vec![vec![0.0f64; frames]; 2];

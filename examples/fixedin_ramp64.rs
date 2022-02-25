@@ -169,7 +169,8 @@ fn main() {
 
     let chunksize = 1024;
     let target_ratio = final_ratio / 100.0;
-    let mut resampler = SincFixedIn::<f64>::new(f_ratio, target_ratio, params, chunksize, channels);
+    let mut resampler =
+        SincFixedIn::<f64>::new(f_ratio, target_ratio, params, chunksize, channels).unwrap();
 
     let num_chunks = f_in_ram.len() / (8 * channels * chunksize);
     let mut output_time = 0.0;

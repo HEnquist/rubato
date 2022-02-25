@@ -96,7 +96,7 @@
 //!     params,
 //!     1024,
 //!     2,
-//! );
+//! ).unwrap();
 //!
 //! let waves_in = vec![vec![0.0f64; 1024];2];
 //! let waves_out = resampler.process(&waves_in, None).unwrap();
@@ -153,7 +153,9 @@ mod synchro;
 mod windows;
 
 pub use crate::asynchro::{ScalarInterpolator, SincFixedIn, SincFixedOut};
-pub use crate::error::{CpuFeature, MissingCpuFeature, ResampleError, ResampleResult};
+pub use crate::error::{
+    CpuFeature, MissingCpuFeature, ResampleError, ResampleResult, ResamplerConstructionError,
+};
 pub use crate::sample::Sample;
 pub use crate::synchro::{FftFixedIn, FftFixedInOut, FftFixedOut};
 pub use crate::windows::WindowFunction;
@@ -355,7 +357,7 @@ pub trait Resampler<T>: Send {
 /// This allows it to be made into a trait object like this:
 /// ```
 /// # use rubato::{FftFixedIn, VecResampler};
-/// let boxed: Box<dyn VecResampler<f64>> = Box::new(FftFixedIn::<f64>::new(44100, 88200, 1024, 2, 2));
+/// let boxed: Box<dyn VecResampler<f64>> = Box::new(FftFixedIn::<f64>::new(44100, 88200, 1024, 2, 2).unwrap());
 /// ```
 /// Use this implementation as an example if you need to fix the input type to something else.
 pub trait VecResampler<T>: Send {
@@ -516,7 +518,7 @@ mod tests {
     #[test]
     fn boxed_resampler() {
         let boxed: Box<dyn VecResampler<f64>> =
-            Box::new(FftFixedIn::<f64>::new(44100, 88200, 1024, 2, 2));
+            Box::new(FftFixedIn::<f64>::new(44100, 88200, 1024, 2, 2).unwrap());
         let result = process_with_boxed(boxed);
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].len(), 2048);

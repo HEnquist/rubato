@@ -155,7 +155,7 @@ fn main() {
     //    window: WindowFunction::BlackmanHarris2,
     //};
 
-    let mut resampler = SincFixedIn::<f64>::new(f_ratio, 2.0, params, 1024, channels);
+    let mut resampler = SincFixedIn::<f64>::new(f_ratio, 2.0, params, 1024, channels).unwrap();
 
     let num_chunks = f_in_ram.len() / (8 * channels * 1024);
     let start = Instant::now();

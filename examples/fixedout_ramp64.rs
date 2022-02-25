@@ -121,7 +121,8 @@ fn main() {
 
     let chunksize = 1024;
     let target_ratio = final_ratio / 100.0;
-    let mut resampler = SincFixedOut::<f64>::new(f_ratio, target_ratio, params, chunksize, channels);
+    let mut resampler =
+        SincFixedOut::<f64>::new(f_ratio, target_ratio, params, chunksize, channels).unwrap();
 
     let start = Instant::now();
     let mut output_time = 0.0;

@@ -78,6 +78,37 @@ impl fmt::Display for MissingCpuFeature {
 
 impl error::Error for MissingCpuFeature {}
 
+/// The error type returned when constructing [Resampler](crate::Resampler)
+pub enum ResamplerConstructionError {
+    InvalidSampleRate { input: usize, output: usize },
+    InvalidRelativeRatio(f64),
+    InvalidRatio(f64),
+}
+
+impl fmt::Display for ResamplerConstructionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            Self::InvalidSampleRate{input, output} => write!(formatter,
+                "Input and output sample rates must both be > 0. Provided input: {}, provided output: {}", input, output
+            ),
+            Self::InvalidRatio(provided) => write!(formatter,
+                "Invalid resample_ratio provided: {}. resample_ratio must be > 0", provided
+            ),
+            Self::InvalidRelativeRatio(provided) => write!(formatter,
+                "Invalid max_resample_ratio_relative provided: {}. max_resample_ratio_relative must be >= 1", provided
+            ),
+        }
+    }
+}
+
+impl fmt::Debug for ResamplerConstructionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}", self)
+    }
+}
+
+impl error::Error for ResamplerConstructionError {}
+
 /// The error type used by `rubato`.
 #[derive(Debug)]
 pub enum ResampleError {
