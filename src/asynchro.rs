@@ -122,12 +122,12 @@ where
 /// The resampling is done by creating a number of intermediate points (defined by oversampling_factor)
 /// by sinc interpolation. The new samples are then calculated by interpolating between these points.
 ///
-/// The resampling ratio can be freely adjusted.
-/// The allowed range is from 10% to 1000% of the original ratio (a factor of 10 in each direction).
+/// The resampling ratio can be freely adjusted within the range specified to the constructor.
 /// Adjusting the ratio does not recalculate the sinc functions used by the anti-aliasing filter.
 /// This causes no issue when increasing the ratio (which slows down the output).
 /// However when decreasing more than a few percent (or speeding up the output),
 /// the filters can no longer suppress all aliasing and this may lead to some artefacts.
+/// Higher maximum ratios require more memory to be allocated by [Resampler::allocate_output_buffer].
 pub struct SincFixedIn<T> {
     nbr_channels: usize,
     chunk_size: usize,
@@ -147,12 +147,12 @@ pub struct SincFixedIn<T> {
 /// The resampling is done by creating a number of intermediate points (defined by oversampling_factor)
 /// by sinc interpolation. The new samples are then calculated by interpolating between these points.
 ///
-/// The resampling ratio can be freely adjusted.
-/// The allowed range is from 10% to 1000% of the original ratio (a factor of 10 in each direction).
+/// The resampling ratio can be freely adjusted within the range specified to the constructor.
 /// Adjusting the ratio does not recalculate the sinc functions used by the anti-aliasing filter.
 /// This causes no issue when increasing the ratio (which slows down the output).
 /// However when decreasing more than a few percent (i.e. speeding up the output),
 /// the filters can no longer suppress all aliasing and this may lead to some artefacts.
+/// Higher maximum ratios require more memory to be allocated by [Resampler::allocate_input_buffer] and an internal buffer.
 pub struct SincFixedOut<T> {
     nbr_channels: usize,
     chunk_size: usize,
@@ -246,12 +246,14 @@ where
     /// Create a new SincFixedIn
     ///
     /// Parameters are:
-    /// - `resample_ratio`: Ratio between output and input sample rates.
+    /// - `resample_ratio`: Starting ratio between output and input sample rates.
+    /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Resampler::set_resample_ratio] relative to `resample_ratio`. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio * 10.0` and `resample_ratio / 10.0`.
     /// - `parameters`: Parameters for interpolation, see `InterpolationParameters`
     /// - `chunk_size`: size of input data in frames
     /// - `nbr_channels`: number of channels in input/output
     pub fn new(
         resample_ratio: f64,
+        max_resample_ratio_relative: f64,
         parameters: InterpolationParameters,
         chunk_size: usize,
         nbr_channels: usize,
@@ -271,6 +273,7 @@ where
 
         Self::new_with_interpolator(
             resample_ratio,
+            max_resample_ratio_relative,
             parameters.interpolation,
             interpolator,
             chunk_size,
@@ -281,13 +284,15 @@ where
     /// Create a new SincFixedIn using an existing Interpolator
     ///
     /// Parameters are:
-    /// - `resample_ratio`: Ratio between output and input sample rates.
+    /// - `resample_ratio`: Starting ratio between output and input sample rates.
+    /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Resampler::set_resample_ratio] relative to `resample_ratio`. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio` * 10.0 and `resample_ratio` / 10.0.
     /// - `interpolation_type`: Parameters for interpolation, see `InterpolationParameters`
     /// - `interpolator`:  The interpolator to use
     /// - `chunk_size`: size of output data in frames
     /// - `nbr_channels`: number of channels in input/output
     pub fn new_with_interpolator(
         resample_ratio: f64,
+        max_resample_ratio_relative: f64,
         interpolation_type: InterpolationType,
         interpolator: Box<dyn SincInterpolator<T>>,
         chunk_size: usize,
@@ -303,7 +308,7 @@ where
             last_index: -((interpolator.len() / 2) as f64),
             resample_ratio,
             resample_ratio_original: resample_ratio,
-            max_relative_ratio: 10.0,
+            max_relative_ratio: max_resample_ratio_relative,
             interpolator,
             buffer,
             interpolation: interpolation_type,
@@ -504,12 +509,14 @@ where
     /// Create a new SincFixedOut
     ///
     /// Parameters are:
-    /// - `resample_ratio`: Ratio between output and input sample rates.
+    /// - `resample_ratio`: Starting ratio between output and input sample rates.
+    /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Resampler::set_resample_ratio] relative to `resample_ratio`. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio * 10.0` and `resample_ratio / 10.0`.
     /// - `parameters`: Parameters for interpolation, see `InterpolationParameters`
     /// - `chunk_size`: size of output data in frames
     /// - `nbr_channels`: number of channels in input/output
     pub fn new(
         resample_ratio: f64,
+        max_resample_ratio_relative: f64,
         parameters: InterpolationParameters,
         chunk_size: usize,
         nbr_channels: usize,
@@ -528,6 +535,7 @@ where
 
         Self::new_with_interpolator(
             resample_ratio,
+            max_resample_ratio_relative,
             parameters.interpolation,
             interpolator,
             chunk_size,
@@ -538,13 +546,15 @@ where
     /// Create a new SincFixedOut using an existing Interpolator
     ///
     /// Parameters are:
-    /// - `resample_ratio`: Ratio between output and input sample rates.
+    /// - `resample_ratio`: Starting ratio between output and input sample rates.
+    /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Resampler::set_resample_ratio] relative to `resample_ratio`. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio` * 10.0 and `resample_ratio` / 10.0.
     /// - `interpolation_type`: Parameters for interpolation, see `InterpolationParameters`
     /// - `interpolator`:  The interpolator to use
     /// - `chunk_size`: size of output data in frames
     /// - `nbr_channels`: number of channels in input/output
     pub fn new_with_interpolator(
         resample_ratio: f64,
+        max_resample_ratio_relative: f64,
         interpolation_type: InterpolationType,
         interpolator: Box<dyn SincInterpolator<T>>,
         chunk_size: usize,
@@ -552,8 +562,10 @@ where
     ) -> Self {
         let needed_input_size =
             (chunk_size as f64 / resample_ratio).ceil() as usize + 2 + interpolator.len() / 2;
-        let buffer =
-            vec![vec![T::zero(); 11 * needed_input_size + 2 * interpolator.len()]; nbr_channels];
+        let buffer_channel_length = ((max_resample_ratio_relative + 1.0) * needed_input_size as f64)
+            as usize
+            + 2 * interpolator.len();
+        let buffer = vec![vec![T::zero(); buffer_channel_length]; nbr_channels];
         let channel_mask = vec![true; nbr_channels];
 
         SincFixedOut {
@@ -564,7 +576,7 @@ where
             current_buffer_fill: needed_input_size,
             resample_ratio,
             resample_ratio_original: resample_ratio,
-            max_relative_ratio: 10.0,
+            max_relative_ratio: max_resample_ratio_relative,
             interpolator,
             buffer,
             interpolation: interpolation_type,
@@ -828,7 +840,7 @@ mod tests {
             oversampling_factor: 16,
             window: WindowFunction::BlackmanHarris2,
         };
-        let _resampler = SincFixedIn::<f64>::new(1.2, params, 1024, 2);
+        let _resampler = SincFixedIn::<f64>::new(1.2, 1.0, params, 1024, 2);
         let yvals = [0.0f64, 2.0f64, 4.0f64, 6.0f64];
         let interp = interp_cubic(0.5f64, &yvals);
         assert_eq!(interp, 3.0f64);
@@ -843,7 +855,7 @@ mod tests {
             oversampling_factor: 16,
             window: WindowFunction::BlackmanHarris2,
         };
-        let _resampler = SincFixedIn::<f32>::new(1.2, params, 1024, 2);
+        let _resampler = SincFixedIn::<f32>::new(1.2, 1.0, params, 1024, 2);
         let yvals = [1.0f32, 5.0f32];
         let interp = interp_lin(0.25f32, &yvals);
         assert_eq!(interp, 2.0f32);
@@ -858,7 +870,7 @@ mod tests {
             oversampling_factor: 16,
             window: WindowFunction::BlackmanHarris2,
         };
-        let _resampler = SincFixedIn::<f32>::new(1.2, params, 1024, 2);
+        let _resampler = SincFixedIn::<f32>::new(1.2, 1.0, params, 1024, 2);
         let yvals = [0.0f32, 2.0f32, 4.0f32, 6.0f32];
         let interp = interp_cubic(0.5f32, &yvals);
         assert_eq!(interp, 3.0f32);
@@ -873,7 +885,7 @@ mod tests {
             oversampling_factor: 16,
             window: WindowFunction::BlackmanHarris2,
         };
-        let _resampler = SincFixedIn::<f64>::new(1.2, params, 1024, 2);
+        let _resampler = SincFixedIn::<f64>::new(1.2, 1.0, params, 1024, 2);
         let yvals = [1.0f64, 5.0f64];
         let interp = interp_lin(0.25f64, &yvals);
         assert_eq!(interp, 2.0f64);
@@ -888,7 +900,7 @@ mod tests {
             oversampling_factor: 16,
             window: WindowFunction::BlackmanHarris2,
         };
-        let mut resampler = SincFixedIn::<f64>::new(1.2, params, 1024, 2);
+        let mut resampler = SincFixedIn::<f64>::new(1.2, 1.0, params, 1024, 2);
         let waves = vec![vec![0.0f64; 1024]; 2];
         let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
@@ -919,7 +931,7 @@ mod tests {
             oversampling_factor: 16,
             window: WindowFunction::BlackmanHarris2,
         };
-        let mut resampler = SincFixedIn::<f32>::new(1.2, params, 1024, 2);
+        let mut resampler = SincFixedIn::<f32>::new(1.2, 1.0, params, 1024, 2);
         let waves = vec![vec![0.0f32; 1024]; 2];
         let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
@@ -950,7 +962,7 @@ mod tests {
             oversampling_factor: 16,
             window: WindowFunction::BlackmanHarris2,
         };
-        let mut resampler = SincFixedIn::<f64>::new(1.2, params, 1024, 2);
+        let mut resampler = SincFixedIn::<f64>::new(1.2, 1.0, params, 1024, 2);
         let waves = vec![vec![0.0f64; 1024], Vec::new()];
         let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
@@ -973,7 +985,7 @@ mod tests {
             oversampling_factor: 160,
             window: WindowFunction::BlackmanHarris2,
         };
-        let mut resampler = SincFixedIn::<f64>::new(16000 as f64 / 96000 as f64, params, 1024, 2);
+        let mut resampler = SincFixedIn::<f64>::new(16000 as f64 / 96000 as f64, 1.0, params, 1024, 2);
         let waves = vec![vec![0.0f64; 1024]; 2];
         let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
@@ -1005,7 +1017,7 @@ mod tests {
             oversampling_factor: 160,
             window: WindowFunction::BlackmanHarris2,
         };
-        let mut resampler = SincFixedIn::<f64>::new(192000 as f64 / 44100 as f64, params, 1024, 2);
+        let mut resampler = SincFixedIn::<f64>::new(192000 as f64 / 44100 as f64, 1.0, params, 1024, 2);
         let waves = vec![vec![0.0f64; 1024]; 2];
         let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
@@ -1036,7 +1048,7 @@ mod tests {
             oversampling_factor: 16,
             window: WindowFunction::BlackmanHarris2,
         };
-        let mut resampler = SincFixedOut::<f64>::new(1.2, params, 1024, 2);
+        let mut resampler = SincFixedOut::<f64>::new(1.2, 1.0, params, 1024, 2);
         let frames = resampler.nbr_frames_needed();
         println!("{}", frames);
         assert!(frames > 800 && frames < 900);
@@ -1055,7 +1067,7 @@ mod tests {
             oversampling_factor: 16,
             window: WindowFunction::BlackmanHarris2,
         };
-        let mut resampler = SincFixedOut::<f32>::new(1.2, params, 1024, 2);
+        let mut resampler = SincFixedOut::<f32>::new(1.2, 1.0, params, 1024, 2);
         let frames = resampler.nbr_frames_needed();
         println!("{}", frames);
         assert!(frames > 800 && frames < 900);
@@ -1074,7 +1086,7 @@ mod tests {
             oversampling_factor: 16,
             window: WindowFunction::BlackmanHarris2,
         };
-        let mut resampler = SincFixedOut::<f64>::new(1.2, params, 1024, 2);
+        let mut resampler = SincFixedOut::<f64>::new(1.2, 1.0, params, 1024, 2);
         let frames = resampler.nbr_frames_needed();
         println!("{}", frames);
         assert!(frames > 800 && frames < 900);
@@ -1111,7 +1123,7 @@ mod tests {
             oversampling_factor: 160,
             window: WindowFunction::BlackmanHarris2,
         };
-        let mut resampler = SincFixedOut::<f64>::new(0.125, params, 1024, 2);
+        let mut resampler = SincFixedOut::<f64>::new(0.125, 1.0, params, 1024, 2);
         let frames = resampler.nbr_frames_needed();
         println!("{}", frames);
         assert!(
@@ -1159,7 +1171,7 @@ mod tests {
             oversampling_factor: 160,
             window: WindowFunction::BlackmanHarris2,
         };
-        let mut resampler = SincFixedOut::<f64>::new(8.0, params, 1024, 2);
+        let mut resampler = SincFixedOut::<f64>::new(8.0, 1.0, params, 1024, 2);
         let frames = resampler.nbr_frames_needed();
         println!("{}", frames);
         assert!(

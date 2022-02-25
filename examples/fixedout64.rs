@@ -106,7 +106,7 @@ fn main() {
         window: WindowFunction::Blackman2,
     };
 
-    let mut resampler = SincFixedOut::<f64>::new(f_ratio, params, 1024, channels);
+    let mut resampler = SincFixedOut::<f64>::new(f_ratio, 2.0, params, 1024, channels);
 
     let start = Instant::now();
     loop {

@@ -120,11 +120,11 @@ fn main() {
     };
 
     let chunksize = 1024;
-    let mut resampler = SincFixedOut::<f64>::new(f_ratio, params, chunksize, channels);
+    let target_ratio = final_ratio / 100.0;
+    let mut resampler = SincFixedOut::<f64>::new(f_ratio, target_ratio, params, chunksize, channels);
 
     let start = Instant::now();
     let mut output_time = 0.0;
-    let target_ratio = final_ratio / 100.0;
     loop {
         let nbr_frames = resampler.nbr_frames_needed();
         let waves = read_frames(&mut f_in, nbr_frames, channels);

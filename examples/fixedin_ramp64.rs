@@ -168,11 +168,11 @@ fn main() {
     //};
 
     let chunksize = 1024;
-    let mut resampler = SincFixedIn::<f64>::new(f_ratio, params, chunksize, channels);
+    let target_ratio = final_ratio / 100.0;
+    let mut resampler = SincFixedIn::<f64>::new(f_ratio, target_ratio, params, chunksize, channels);
 
     let num_chunks = f_in_ram.len() / (8 * channels * chunksize);
     let mut output_time = 0.0;
-    let target_ratio = final_ratio / 100.0;
     let start = Instant::now();
     for _chunk in 0..num_chunks {
         let waves = read_frames(&mut f_in, chunksize, channels);

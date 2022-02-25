@@ -92,6 +92,7 @@
 //! };
 //! let mut resampler = SincFixedIn::<f64>::new(
 //!     48000 as f64 / 44100 as f64,
+//!     2.0,
 //!     params,
 //!     1024,
 //!     2,
