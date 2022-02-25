@@ -110,7 +110,6 @@ impl fmt::Debug for ResamplerConstructionError {
 impl error::Error for ResamplerConstructionError {}
 
 /// The error type used by `rubato`.
-#[derive(Debug)]
 pub enum ResampleError {
     /// Error raised when Resample::set_resample_ratio is called with a ratio
     /// that deviates for more than 10% of the original.
@@ -174,6 +173,12 @@ impl fmt::Display for ResampleError {
                 )
             }
         }
+    }
+}
+
+impl fmt::Debug for ResampleError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}", self)
     }
 }
 
