@@ -193,8 +193,8 @@ where
     /// Create a new FftFixedInOut
     ///
     /// Parameters are:
-    /// - `sample_rate_input`: Input sample rate.
-    /// - `sample_rate_output`: Output sample rate.
+    /// - `sample_rate_input`: Input sample rate, must be > 0.
+    /// - `sample_rate_output`: Output sample rate, must be > 0.
     /// - `chunk_size_in`: desired length of input data in frames, actual value may be different.
     /// - `nbr_channels`: number of channels in input/output.
     pub fn new(
@@ -317,8 +317,8 @@ where
     /// Create a new FftFixedOut
     ///
     /// Parameters are:
-    /// - `sample_rate_input`: Input sample rate.
-    /// - `sample_rate_output`: Output sample rate.
+    /// - `sample_rate_input`: Input sample rate, must be > 0.
+    /// - `sample_rate_output`: Output sample rate, must be > 0.
     /// - `chunk_size_out`: length of output data in frames.
     /// - `sub_chunks`: desired number of subchunks for processing, actual number may be different.
     /// - `nbr_channels`: number of channels in input/output.
@@ -480,8 +480,8 @@ where
     /// Create a new FftFixedOut
     ///
     /// Parameters are:
-    /// - `sample_rate_input`: Input sample rate.
-    /// - `sample_rate_output`: Output sample rate.
+    /// - `sample_rate_input`: Input sample rate, must be > 0.
+    /// - `sample_rate_output`: Output sample rate, must be > 0.
     /// - `chunk_size_out`: length of output data in frames.
     /// - `sub_chunks`: desired number of subchunks for processing, actual number used may be different.
     /// - `nbr_channels`: number of channels in input/output.
