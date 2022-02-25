@@ -318,7 +318,7 @@ pub trait Resampler<T>: Send {
     /// Get the max number of output frames per channel.
     fn get_max_output_frames(&self) -> usize;
 
-    /// Get the maximum number of channels this Resampler can process
+    /// Get the maximum number of channels this Resampler is configured for
     fn nbr_channels(&self) -> usize;
 
     /// Query for the number of frames needed for the next call to "process".
