@@ -507,7 +507,11 @@ where
             self.resample_ratio = new_ratio;
             Ok(())
         } else {
-            Err(ResampleError::BadRatioUpdate)
+            Err(ResampleError::RatioOutOfBounds {
+                provided: new_ratio,
+                original: self.resample_ratio_original,
+                max_relative_ratio: self.max_relative_ratio,
+            })
         }
     }
     /// Update the resample ratio relative to the original one.
@@ -778,7 +782,11 @@ where
                 + 2;
             Ok(())
         } else {
-            Err(ResampleError::BadRatioUpdate)
+            Err(ResampleError::RatioOutOfBounds {
+                provided: new_ratio,
+                original: self.resample_ratio_original,
+                max_relative_ratio: self.max_relative_ratio,
+            })
         }
     }
 

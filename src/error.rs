@@ -113,7 +113,11 @@ impl error::Error for ResamplerConstructionError {}
 pub enum ResampleError {
     /// Error raised when Resample::set_resample_ratio is called with a ratio
     /// that deviates for more than 10% of the original.
-    BadRatioUpdate,
+    RatioOutOfBounds {
+        provided: f64,
+        original: f64,
+        max_relative_ratio: f64,
+    },
     /// Error raised when trying to adjust a synchronous resampler.
     SyncNotAdjustable,
     /// Error raised when the number of channels of the input buffer doesn't match expected.
@@ -134,8 +138,13 @@ pub enum ResampleError {
 impl fmt::Display for ResampleError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::BadRatioUpdate => {
-                write!(f, "New resample ratio is too far off from original")
+            Self::RatioOutOfBounds {
+                provided,
+                original,
+                max_relative_ratio,
+            } => {
+                write!(f, "New resample ratio out of bounds. Provided ratio {}, original resample ratio {}, maximum relative ratio {}, allowed absolute range {} to {}",
+                provided, original, max_relative_ratio, original / max_relative_ratio, original * max_relative_ratio)
             }
             Self::SyncNotAdjustable { .. } => {
                 write!(f, "Not possible to adjust a synchronous resampler")
