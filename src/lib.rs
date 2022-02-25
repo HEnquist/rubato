@@ -302,10 +302,9 @@ pub trait Resampler<T>: Send {
         active_channels_mask: Option<&[bool]>,
     ) -> ResampleResult<()>;
 
-    /// Convenience method for allocating an output buffer suitable for use with `process_into_buffer`.
-    /// For the Resamplers with variable output sizes ([FftFixedIn] and [SincFixedIn]),
-    /// the buffer size is only guaranteed to be sufficient to prevent allocation
-    /// within [Resampler::process_into_buffer] until the resampling ratio is changed.
+    /// Convenience method for allocating an output buffer suitable for use with
+    /// `process_into_buffer`. The buffer's capacity is big enough to prevent allocating
+    /// additional heap memory during `process_into_buffer`.
     fn allocate_output_buffer(&self) -> Vec<Vec<T>> {
         let frames = self.get_max_output_frames();
         let channels = self.nbr_channels();
@@ -317,9 +316,6 @@ pub trait Resampler<T>: Send {
     }
 
     /// Get the max number of output frames per channel.
-    /// For the Resamplers with variable output sizes ([FftFixedIn] and [SincFixedIn]),
-    /// the max output size is only guaranteed to be sufficient to prevent allocation
-    /// within [Resampler::process_into_buffer] until the resampling ratio is changed.
     fn get_max_output_frames(&self) -> usize;
 
     /// Get the maximum number of channels this Resampler can process

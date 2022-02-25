@@ -134,6 +134,7 @@ pub struct SincFixedIn<T> {
     last_index: f64,
     resample_ratio: f64,
     resample_ratio_original: f64,
+    max_relative_ratio: f64,
     interpolator: Box<dyn SincInterpolator<T>>,
     buffer: Vec<Vec<T>>,
     interpolation: InterpolationType,
@@ -302,6 +303,7 @@ where
             last_index: -((interpolator.len() / 2) as f64),
             resample_ratio,
             resample_ratio_original: resample_ratio,
+            max_relative_ratio: 10.0,
             interpolator,
             buffer,
             interpolation: interpolation_type,
@@ -457,7 +459,8 @@ where
 
     fn get_max_output_frames(&self) -> usize {
         // Set length to chunksize*ratio plus a safety margin of 10 elements.
-        (self.chunk_size as f64 * self.resample_ratio + 10.0) as usize
+        (self.chunk_size as f64 * self.resample_ratio_original * self.max_relative_ratio + 10.0)
+            as usize
     }
 
     fn nbr_channels(&self) -> usize {
@@ -477,8 +480,8 @@ where
     /// Update the resample ratio. New value must be within a factor 10 of the original one.
     fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()> {
         trace!("Change resample ratio to {}", new_ratio);
-        if (new_ratio / self.resample_ratio_original >= 0.1)
-            && (new_ratio / self.resample_ratio_original <= 10.0)
+        if (new_ratio / self.resample_ratio_original >= 1.0 / self.max_relative_ratio)
+            && (new_ratio / self.resample_ratio_original <= self.max_relative_ratio)
         {
             self.resample_ratio = new_ratio;
             Ok(())
