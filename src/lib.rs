@@ -6,6 +6,13 @@
 //! Implementations are available that accept a fixed length input
 //! while returning a variable length output, and vice versa.
 //!
+//! Rubato can be used in realtime applications without any allocation during
+//! processing by preallocating a [Resampler] and using its
+//! [allocate_input_buffer](Resampler::allocate_input_buffer) and
+//! [allocate_output_buffer](Resampler::allocate_output_buffer) methods before
+//! beginning processing. The [log feature](#log-enable-logging) feature should be disabled
+//! for realtime use (it is disabled by default).
+//!
 //! ### Input and output data format
 //!
 //! Input and output data is stored non-interleaved.
