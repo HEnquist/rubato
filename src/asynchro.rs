@@ -497,7 +497,7 @@ where
         Ok(wave_out)
     }
 
-    fn max_output_frames(&self) -> usize {
+    fn output_frames_max(&self) -> usize {
         // Set length to chunksize*ratio plus a safety margin of 10 elements.
         (self.chunk_size as f64 * self.resample_ratio_original * self.max_relative_ratio + 10.0)
             as usize
@@ -509,11 +509,11 @@ where
 
     /// Query for the number of frames needed for the next call to "process".
     /// Will always return the chunk_size defined when creating the instance.
-    fn nbr_frames_needed(&self) -> usize {
+    fn input_frames_next(&self) -> usize {
         self.chunk_size
     }
 
-    fn max_nbr_frames_needed(&self) -> usize {
+    fn input_frames_max(&self) -> usize {
         self.chunk_size
     }
 
@@ -631,11 +631,11 @@ where
     T: Sample,
 {
     /// Query for the number of frames needed for the next call to "process".
-    fn nbr_frames_needed(&self) -> usize {
+    fn input_frames_next(&self) -> usize {
         self.needed_input_size
     }
 
-    fn max_nbr_frames_needed(&self) -> usize {
+    fn input_frames_max(&self) -> usize {
         (self.chunk_size as f64 * self.resample_ratio_original * self.max_relative_ratio).ceil()
             as usize
             + 2
@@ -779,7 +779,7 @@ where
         Ok(())
     }
 
-    fn max_output_frames(&self) -> usize {
+    fn output_frames_max(&self) -> usize {
         self.chunk_size
     }
 
@@ -1096,7 +1096,7 @@ mod tests {
             window: WindowFunction::BlackmanHarris2,
         };
         let mut resampler = SincFixedOut::<f64>::new(1.2, 1.0, params, 1024, 2).unwrap();
-        let frames = resampler.nbr_frames_needed();
+        let frames = resampler.input_frames_next();
         println!("{}", frames);
         assert!(frames > 800 && frames < 900);
         let waves = vec![vec![0.0f64; frames]; 2];
@@ -1115,7 +1115,7 @@ mod tests {
             window: WindowFunction::BlackmanHarris2,
         };
         let mut resampler = SincFixedOut::<f32>::new(1.2, 1.0, params, 1024, 2).unwrap();
-        let frames = resampler.nbr_frames_needed();
+        let frames = resampler.input_frames_next();
         println!("{}", frames);
         assert!(frames > 800 && frames < 900);
         let waves = vec![vec![0.0f32; frames]; 2];
@@ -1134,7 +1134,7 @@ mod tests {
             window: WindowFunction::BlackmanHarris2,
         };
         let mut resampler = SincFixedOut::<f64>::new(1.2, 1.0, params, 1024, 2).unwrap();
-        let frames = resampler.nbr_frames_needed();
+        let frames = resampler.input_frames_next();
         println!("{}", frames);
         assert!(frames > 800 && frames < 900);
         let mut waves = vec![vec![0.0f64; frames], Vec::new()];
@@ -1149,7 +1149,7 @@ mod tests {
         assert!(summed < 4.0);
         assert!(summed > 2.0);
 
-        let frames = resampler.nbr_frames_needed();
+        let frames = resampler.input_frames_next();
         let mut waves = vec![Vec::new(), vec![0.0f64; frames]];
         waves[1][10] = 3.0;
         let out = resampler.process(&waves, None).unwrap();
@@ -1171,7 +1171,7 @@ mod tests {
             window: WindowFunction::BlackmanHarris2,
         };
         let mut resampler = SincFixedOut::<f64>::new(0.125, 1.0, params, 1024, 2).unwrap();
-        let frames = resampler.nbr_frames_needed();
+        let frames = resampler.input_frames_next();
         println!("{}", frames);
         assert!(
             frames > 8192 && frames < 9000,
@@ -1190,7 +1190,7 @@ mod tests {
             1024,
             out[0].len()
         );
-        let frames2 = resampler.nbr_frames_needed();
+        let frames2 = resampler.input_frames_next();
         assert!(
             frames2 > 8189 && frames2 < 8195,
             "expected {}..{} samples, got {}",
@@ -1219,7 +1219,7 @@ mod tests {
             window: WindowFunction::BlackmanHarris2,
         };
         let mut resampler = SincFixedOut::<f64>::new(8.0, 1.0, params, 1024, 2).unwrap();
-        let frames = resampler.nbr_frames_needed();
+        let frames = resampler.input_frames_next();
         println!("{}", frames);
         assert!(
             frames > 128 && frames < 300,
@@ -1238,7 +1238,7 @@ mod tests {
             1024,
             out[0].len()
         );
-        let frames2 = resampler.nbr_frames_needed();
+        let frames2 = resampler.input_frames_next();
         assert!(
             frames2 > 125 && frames2 < 131,
             "expected {}..{} samples, got {}",

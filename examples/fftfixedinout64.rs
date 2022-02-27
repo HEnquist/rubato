@@ -97,7 +97,7 @@ fn main() {
     let mut f_out = Cursor::new(&mut f_out_ram);
 
     let mut resampler = FftFixedInOut::<f64>::new(fs_in, fs_out, 1024, channels).unwrap();
-    let chunksize = resampler.nbr_frames_needed();
+    let chunksize = resampler.input_frames_next();
 
     let num_chunks = f_in_ram.len() / (8 * channels * chunksize);
     let start = Instant::now();

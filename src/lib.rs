@@ -316,7 +316,7 @@ pub trait Resampler<T>: Send {
     /// `process_into_buffer`. The buffer's capacity is big enough to prevent allocating
     /// additional heap memory during `process_into_buffer`.
     fn allocate_output_buffer(&self) -> Vec<Vec<T>> {
-        let frames = self.max_output_frames();
+        let frames = self.output_frames_max();
         let channels = self.nbr_channels();
         let mut buffer = Vec::with_capacity(channels);
         for _ in 0..channels {
@@ -326,22 +326,22 @@ pub trait Resampler<T>: Send {
     }
 
     /// Get the max number of output frames per channel.
-    fn max_output_frames(&self) -> usize;
+    fn output_frames_max(&self) -> usize;
 
     /// Get the maximum number of channels this Resampler is configured for
     fn nbr_channels(&self) -> usize;
 
     /// Query for the number of frames needed for the next call to "process".
-    fn nbr_frames_needed(&self) -> usize;
+    fn input_frames_next(&self) -> usize;
 
     /// Get the maximum number of input frames the resampler could require
-    fn max_nbr_frames_needed(&self) -> usize;
+    fn input_frames_max(&self) -> usize;
 
     /// Convenience method for allocating an input buffer large enough to be passed to
     /// [Resampler::process_into_buffer] or [Resampler::process] without needing to
     /// allocate when filling the buffer.
     fn allocate_input_buffer(&self) -> Vec<Vec<T>> {
-        let frames = self.max_nbr_frames_needed();
+        let frames = self.input_frames_max();
         let channels = self.nbr_channels();
         let mut buffer = Vec::with_capacity(channels);
         for _ in 0..channels {
@@ -392,16 +392,16 @@ pub trait VecResampler<T>: Send {
 
     /// Get the max number of output frames per channel.
     /// Note that when adjusting the ratio of an asynchronous resampler, the maximum size can change.
-    fn max_output_frames(&self) -> usize;
+    fn output_frames_max(&self) -> usize;
 
     /// Get the maximum number of channels this Resampler can process
     fn nbr_channels(&self) -> usize;
 
     /// Query for the number of frames needed for the next call to "process".
-    fn nbr_frames_needed(&self) -> usize;
+    fn input_frames_next(&self) -> usize;
 
     /// Get the maximum number of input frames the resampler could require
-    fn max_nbr_frames_needed(&self) -> usize;
+    fn input_frames_max(&self) -> usize;
 
     /// Convenience method for allocating an input buffer large enough to be passed to
     /// [VecResampler::process_into_buffer] or [VecResampler::process] and never get a
@@ -440,20 +440,20 @@ where
         Resampler::allocate_output_buffer(self)
     }
 
-    fn max_output_frames(&self) -> usize {
-        Resampler::max_output_frames(self)
+    fn output_frames_max(&self) -> usize {
+        Resampler::output_frames_max(self)
     }
 
-    fn nbr_frames_needed(&self) -> usize {
-        Resampler::nbr_frames_needed(self)
+    fn input_frames_next(&self) -> usize {
+        Resampler::input_frames_next(self)
     }
 
     fn nbr_channels(&self) -> usize {
         Resampler::nbr_channels(self)
     }
 
-    fn max_nbr_frames_needed(&self) -> usize {
-        Resampler::max_nbr_frames_needed(self)
+    fn input_frames_max(&self) -> usize {
+        Resampler::input_frames_max(self)
     }
 
     fn allocate_input_buffer(&self) -> Vec<Vec<T>> {
@@ -533,7 +533,7 @@ mod tests {
     }
 
     fn process_with_boxed(mut resampler: Box<dyn VecResampler<f64>>) -> Vec<Vec<f64>> {
-        let frames = resampler.nbr_frames_needed();
+        let frames = resampler.input_frames_next();
         let waves = vec![vec![0.0f64; frames]; 2];
         resampler.process(&waves, None).unwrap()
     }

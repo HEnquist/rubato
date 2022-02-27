@@ -244,11 +244,11 @@ where
     }
 
     /// Query for the number of frames needed for the next call to "process".
-    fn nbr_frames_needed(&self) -> usize {
+    fn input_frames_next(&self) -> usize {
         self.fft_size_in
     }
 
-    fn max_nbr_frames_needed(&self) -> usize {
+    fn input_frames_max(&self) -> usize {
         self.fft_size_in
     }
 
@@ -293,7 +293,7 @@ where
         Ok(())
     }
 
-    fn max_output_frames(&self) -> usize {
+    fn output_frames_max(&self) -> usize {
         self.chunk_size_out
     }
 
@@ -379,11 +379,11 @@ where
     }
 
     /// Query for the number of frames needed for the next call to "process".
-    fn nbr_frames_needed(&self) -> usize {
+    fn input_frames_next(&self) -> usize {
         self.frames_needed
     }
 
-    fn max_nbr_frames_needed(&self) -> usize {
+    fn input_frames_max(&self) -> usize {
         (self.chunk_size_out as f32 / self.fft_size_out as f32).ceil() as usize * self.fft_size_in
     }
 
@@ -456,7 +456,7 @@ where
         Ok(())
     }
 
-    fn max_output_frames(&self) -> usize {
+    fn output_frames_max(&self) -> usize {
         self.chunk_size_out
     }
 
@@ -538,11 +538,11 @@ where
     }
 
     /// Query for the number of frames needed for the next call to "process".
-    fn nbr_frames_needed(&self) -> usize {
+    fn input_frames_next(&self) -> usize {
         self.chunk_size_in
     }
 
-    fn max_nbr_frames_needed(&self) -> usize {
+    fn input_frames_max(&self) -> usize {
         self.chunk_size_in
     }
 
@@ -621,7 +621,7 @@ where
         Ok(())
     }
 
-    fn max_output_frames(&self) -> usize {
+    fn output_frames_max(&self) -> usize {
         self.chunk_size_in * (self.fft_size_out / self.fft_size_in + 1)
     }
 
@@ -668,7 +668,7 @@ mod tests {
     fn make_resampler_fio() {
         // asking for 1024 give the nearest which is 1029 -> 1120
         let mut resampler = FftFixedInOut::<f64>::new(44100, 48000, 1024, 2).unwrap();
-        let frames = resampler.nbr_frames_needed();
+        let frames = resampler.input_frames_next();
         let waves = vec![vec![0.0f64; frames]; 2];
         let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
@@ -679,7 +679,7 @@ mod tests {
     fn make_resampler_fio_skipped() {
         // asking for 1024 give the nearest which is 1029 -> 1120
         let mut resampler = FftFixedInOut::<f64>::new(44100, 48000, 1024, 2).unwrap();
-        let frames = resampler.nbr_frames_needed();
+        let frames = resampler.input_frames_next();
         let waves = vec![vec![0.0f64; frames], Vec::new()];
         let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
@@ -690,7 +690,7 @@ mod tests {
     #[test]
     fn make_resampler_fo() {
         let mut resampler = FftFixedOut::<f64>::new(44100, 192000, 1024, 2, 2).unwrap();
-        let frames = resampler.nbr_frames_needed();
+        let frames = resampler.input_frames_next();
         assert_eq!(frames, 294);
         let waves = vec![vec![0.0f64; frames]; 2];
         let out = resampler.process(&waves, None).unwrap();
@@ -701,7 +701,7 @@ mod tests {
     #[test]
     fn make_resampler_fo_skipped() {
         let mut resampler = FftFixedOut::<f64>::new(44100, 192000, 1024, 2, 2).unwrap();
-        let frames = resampler.nbr_frames_needed();
+        let frames = resampler.input_frames_next();
         assert_eq!(frames, 294);
         let waves = vec![vec![0.0f64; frames], Vec::new()];
         let out = resampler.process(&waves, None).unwrap();
@@ -713,7 +713,7 @@ mod tests {
     #[test]
     fn make_resampler_fo_empty() {
         let mut resampler = FftFixedOut::<f64>::new(44100, 192000, 1024, 2, 2).unwrap();
-        let frames = resampler.nbr_frames_needed();
+        let frames = resampler.input_frames_next();
         assert_eq!(frames, 294);
         let waves = vec![Vec::new(); 2];
         let out = resampler.process(&waves, None).unwrap();
@@ -725,7 +725,7 @@ mod tests {
     #[test]
     fn make_resampler_fi() {
         let mut resampler = FftFixedIn::<f64>::new(44100, 48000, 1024, 2, 2).unwrap();
-        let frames = resampler.nbr_frames_needed();
+        let frames = resampler.input_frames_next();
         assert_eq!(frames, 1024);
         let waves = vec![vec![0.0f64; frames]; 2];
         let out = resampler.process(&waves, None).unwrap();
@@ -736,7 +736,7 @@ mod tests {
     #[test]
     fn make_resampler_fi_noalloc() {
         let mut resampler = FftFixedIn::<f64>::new(44100, 48000, 1024, 2, 2).unwrap();
-        let frames = resampler.nbr_frames_needed();
+        let frames = resampler.input_frames_next();
         assert_eq!(frames, 1024);
         let waves = vec![vec![0.0f64; frames]; 2];
         let mut out = vec![vec![0.0f64; 2 * frames]; 2];
@@ -751,7 +751,7 @@ mod tests {
     #[test]
     fn make_resampler_fi_downsample() {
         let mut resampler = FftFixedIn::<f64>::new(48000, 16000, 1200, 2, 2).unwrap();
-        let frames = resampler.nbr_frames_needed();
+        let frames = resampler.input_frames_next();
         assert_eq!(frames, 1200);
         let waves = vec![vec![0.0f64; frames]; 2];
         let out = resampler.process(&waves, None).unwrap();
@@ -762,7 +762,7 @@ mod tests {
     #[test]
     fn make_resampler_fi_skipped() {
         let mut resampler = FftFixedIn::<f64>::new(44100, 48000, 1024, 2, 2).unwrap();
-        let frames = resampler.nbr_frames_needed();
+        let frames = resampler.input_frames_next();
         assert_eq!(frames, 1024);
         let waves = vec![vec![0.0f64; frames], Vec::new()];
         let out = resampler.process(&waves, None).unwrap();
@@ -774,7 +774,7 @@ mod tests {
     #[test]
     fn make_resampler_fi_empty() {
         let mut resampler = FftFixedIn::<f64>::new(44100, 48000, 1024, 2, 2).unwrap();
-        let frames = resampler.nbr_frames_needed();
+        let frames = resampler.input_frames_next();
         assert_eq!(frames, 1024);
         let waves = vec![Vec::new(); 2];
         let out = resampler.process(&waves, None).unwrap();
@@ -787,7 +787,7 @@ mod tests {
     fn make_resampler_fio_unusualratio() {
         // asking for 1024 give the nearest which is 1029 -> 1120
         let mut resampler = FftFixedInOut::<f64>::new(44100, 44110, 1024, 2).unwrap();
-        let frames = resampler.nbr_frames_needed();
+        let frames = resampler.input_frames_next();
         let waves = vec![vec![0.0f64; frames]; 2];
         let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
@@ -797,7 +797,7 @@ mod tests {
     #[test]
     fn make_resampler_fo_unusualratio() {
         let mut resampler = FftFixedOut::<f64>::new(44100, 44110, 1024, 2, 2).unwrap();
-        let frames = resampler.nbr_frames_needed();
+        let frames = resampler.input_frames_next();
         assert_eq!(frames, 4410);
         let waves = vec![vec![0.0f64; frames]; 2];
         let out = resampler.process(&waves, None).unwrap();

@@ -111,7 +111,7 @@ fn main() {
     let start = Instant::now();
     loop {
         //let start2 = Instant::now();
-        let nbr_frames = resampler.nbr_frames_needed();
+        let nbr_frames = resampler.input_frames_next();
         let waves = read_frames(&mut f_in, nbr_frames, channels);
         //println!("Read took: {:?}", start2.elapsed());
         if waves[0].len() < nbr_frames {

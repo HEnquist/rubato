@@ -127,7 +127,7 @@ fn main() {
     let start = Instant::now();
     let mut output_time = 0.0;
     loop {
-        let nbr_frames = resampler.nbr_frames_needed();
+        let nbr_frames = resampler.input_frames_next();
         let waves = read_frames(&mut f_in, nbr_frames, channels);
         if waves[0].len() < nbr_frames {
             break;
