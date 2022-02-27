@@ -8,8 +8,8 @@
 //!
 //! Rubato can be used in realtime applications without any allocation during
 //! processing by preallocating a [Resampler] and using its
-//! [allocate_input_buffer](Resampler::allocate_input_buffer) and
-//! [allocate_output_buffer](Resampler::allocate_output_buffer) methods before
+//! [input_buffer_allocate](Resampler::input_buffer_allocate) and
+//! [output_buffer_allocate](Resampler::output_buffer_allocate) methods before
 //! beginning processing. The [log feature](#log-enable-logging) feature should be disabled
 //! for realtime use (it is disabled by default).
 //!
@@ -286,7 +286,7 @@ pub trait Resampler<T>: Send {
         wave_in: &[V],
         active_channels_mask: Option<&[bool]>,
     ) -> ResampleResult<Vec<Vec<T>>> {
-        let mut wave_out = self.allocate_output_buffer();
+        let mut wave_out = self.output_buffer_allocate();
         self.process_into_buffer(wave_in, &mut wave_out, active_channels_mask)?;
         Ok(wave_out)
     }
@@ -315,7 +315,7 @@ pub trait Resampler<T>: Send {
     /// Convenience method for allocating an output buffer suitable for use with
     /// `process_into_buffer`. The buffer's capacity is big enough to prevent allocating
     /// additional heap memory during `process_into_buffer`.
-    fn allocate_output_buffer(&self) -> Vec<Vec<T>> {
+    fn output_buffer_allocate(&self) -> Vec<Vec<T>> {
         let frames = self.output_frames_max();
         let channels = self.nbr_channels();
         let mut buffer = Vec::with_capacity(channels);
@@ -340,7 +340,7 @@ pub trait Resampler<T>: Send {
     /// Convenience method for allocating an input buffer large enough to be passed to
     /// [Resampler::process_into_buffer] or [Resampler::process] without needing to
     /// allocate when filling the buffer.
-    fn allocate_input_buffer(&self) -> Vec<Vec<T>> {
+    fn input_buffer_allocate(&self) -> Vec<Vec<T>> {
         let frames = self.input_frames_max();
         let channels = self.nbr_channels();
         let mut buffer = Vec::with_capacity(channels);
@@ -388,7 +388,7 @@ pub trait VecResampler<T>: Send {
     ) -> ResampleResult<()>;
 
     /// Convenience method for allocating an output buffer suitable for use with `process_into_buffer`.
-    fn allocate_output_buffer(&self) -> Vec<Vec<T>>;
+    fn output_buffer_allocate(&self) -> Vec<Vec<T>>;
 
     /// Get the max number of output frames per channel.
     /// Note that when adjusting the ratio of an asynchronous resampler, the maximum size can change.
@@ -406,7 +406,7 @@ pub trait VecResampler<T>: Send {
     /// Convenience method for allocating an input buffer large enough to be passed to
     /// [VecResampler::process_into_buffer] or [VecResampler::process] and never get a
     /// [ResampleError::WrongNumberOfInputFrames].
-    fn allocate_input_buffer(&self) -> Vec<Vec<T>>;
+    fn input_buffer_allocate(&self) -> Vec<Vec<T>>;
 
     /// Update the resample ratio.
     fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()>;
@@ -436,8 +436,8 @@ where
         Resampler::process_into_buffer(self, wave_in, wave_out, active_channels_mask)
     }
 
-    fn allocate_output_buffer(&self) -> Vec<Vec<T>> {
-        Resampler::allocate_output_buffer(self)
+    fn output_buffer_allocate(&self) -> Vec<Vec<T>> {
+        Resampler::output_buffer_allocate(self)
     }
 
     fn output_frames_max(&self) -> usize {
@@ -456,8 +456,8 @@ where
         Resampler::input_frames_max(self)
     }
 
-    fn allocate_input_buffer(&self) -> Vec<Vec<T>> {
-        Resampler::allocate_input_buffer(self)
+    fn input_buffer_allocate(&self) -> Vec<Vec<T>> {
+        Resampler::input_buffer_allocate(self)
     }
 
     fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()> {

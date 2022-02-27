@@ -127,7 +127,7 @@ where
 /// This causes no issue when increasing the ratio (which slows down the output).
 /// However when decreasing more than a few percent (or speeding up the output),
 /// the filters can no longer suppress all aliasing and this may lead to some artefacts.
-/// Higher maximum ratios require more memory to be allocated by [Resampler::allocate_output_buffer].
+/// Higher maximum ratios require more memory to be allocated by [Resampler::output_buffer_allocate].
 pub struct SincFixedIn<T> {
     nbr_channels: usize,
     chunk_size: usize,
@@ -152,7 +152,7 @@ pub struct SincFixedIn<T> {
 /// This causes no issue when increasing the ratio (which slows down the output).
 /// However when decreasing more than a few percent (i.e. speeding up the output),
 /// the filters can no longer suppress all aliasing and this may lead to some artefacts.
-/// Higher maximum ratios require more memory to be allocated by [Resampler::allocate_input_buffer] and an internal buffer.
+/// Higher maximum ratios require more memory to be allocated by [Resampler::input_buffer_allocate] and an internal buffer.
 pub struct SincFixedOut<T> {
     nbr_channels: usize,
     chunk_size: usize,
