@@ -316,7 +316,7 @@ pub trait Resampler<T>: Send {
     /// `process_into_buffer`. The buffer's capacity is big enough to prevent allocating
     /// additional heap memory during `process_into_buffer`.
     fn allocate_output_buffer(&self) -> Vec<Vec<T>> {
-        let frames = self.get_max_output_frames();
+        let frames = self.max_output_frames();
         let channels = self.nbr_channels();
         let mut buffer = Vec::with_capacity(channels);
         for _ in 0..channels {
@@ -326,7 +326,7 @@ pub trait Resampler<T>: Send {
     }
 
     /// Get the max number of output frames per channel.
-    fn get_max_output_frames(&self) -> usize;
+    fn max_output_frames(&self) -> usize;
 
     /// Get the maximum number of channels this Resampler is configured for
     fn nbr_channels(&self) -> usize;
@@ -392,7 +392,7 @@ pub trait VecResampler<T>: Send {
 
     /// Get the max number of output frames per channel.
     /// Note that when adjusting the ratio of an asynchronous resampler, the maximum size can change.
-    fn get_max_output_frames(&self) -> usize;
+    fn max_output_frames(&self) -> usize;
 
     /// Get the maximum number of channels this Resampler can process
     fn nbr_channels(&self) -> usize;
@@ -440,8 +440,8 @@ where
         Resampler::allocate_output_buffer(self)
     }
 
-    fn get_max_output_frames(&self) -> usize {
-        Resampler::get_max_output_frames(self)
+    fn max_output_frames(&self) -> usize {
+        Resampler::max_output_frames(self)
     }
 
     fn nbr_frames_needed(&self) -> usize {

@@ -293,7 +293,7 @@ where
         Ok(())
     }
 
-    fn get_max_output_frames(&self) -> usize {
+    fn max_output_frames(&self) -> usize {
         self.chunk_size_out
     }
 
@@ -456,7 +456,7 @@ where
         Ok(())
     }
 
-    fn get_max_output_frames(&self) -> usize {
+    fn max_output_frames(&self) -> usize {
         self.chunk_size_out
     }
 
@@ -621,7 +621,7 @@ where
         Ok(())
     }
 
-    fn get_max_output_frames(&self) -> usize {
+    fn max_output_frames(&self) -> usize {
         self.chunk_size_in * (self.fft_size_out / self.fft_size_in + 1)
     }
 

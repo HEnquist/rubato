@@ -497,7 +497,7 @@ where
         Ok(wave_out)
     }
 
-    fn get_max_output_frames(&self) -> usize {
+    fn max_output_frames(&self) -> usize {
         // Set length to chunksize*ratio plus a safety margin of 10 elements.
         (self.chunk_size as f64 * self.resample_ratio_original * self.max_relative_ratio + 10.0)
             as usize
@@ -779,7 +779,7 @@ where
         Ok(())
     }
 
-    fn get_max_output_frames(&self) -> usize {
+    fn max_output_frames(&self) -> usize {
         self.chunk_size
     }
 
