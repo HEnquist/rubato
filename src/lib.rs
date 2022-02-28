@@ -262,6 +262,9 @@ pub enum InterpolationType {
 
 /// A resampler that us used to resample a chunk of audio to a new sample rate.
 /// For asynchronous resamplers, the rate can be adjusted as required.
+///
+/// This trait is not object safe. If you need an object safe resampler,
+/// use the [VecResampler] wrapper trait.
 pub trait Resampler<T>: Send {
     /// This is a convenience wrapper for [process_into_buffer](Resampler::process_into_buffer)
     /// that allocates the output buffer with each call. For realtime applications, use
