@@ -95,13 +95,13 @@ fn main() {
     let mut f_in = Cursor::new(&f_in_ram);
     let mut f_out = Cursor::new(&mut f_out_ram);
 
-    let mut resampler = FftFixedOut::<f64>::new(fs_in, fs_out, 1024, 2, channels);
-    let chunksize = resampler.nbr_frames_needed();
+    let mut resampler = FftFixedOut::<f64>::new(fs_in, fs_out, 1024, 2, channels).unwrap();
+    let chunksize = resampler.input_frames_next();
 
     let num_chunks = f_in_ram.len() / (8 * channels * chunksize);
     let start = Instant::now();
     for _chunk in 0..num_chunks {
-        let nbr_frames = resampler.nbr_frames_needed();
+        let nbr_frames = resampler.input_frames_next();
         let waves = read_frames(&mut f_in, nbr_frames, channels);
         if waves[0].len() < nbr_frames {
             break;

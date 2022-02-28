@@ -106,12 +106,12 @@ fn main() {
         window: WindowFunction::Blackman2,
     };
 
-    let mut resampler = SincFixedOut::<f64>::new(f_ratio, params, 1024, channels);
+    let mut resampler = SincFixedOut::<f64>::new(f_ratio, 2.0, params, 1024, channels).unwrap();
 
     let start = Instant::now();
     loop {
         //let start2 = Instant::now();
-        let nbr_frames = resampler.nbr_frames_needed();
+        let nbr_frames = resampler.input_frames_next();
         let waves = read_frames(&mut f_in, nbr_frames, channels);
         //println!("Read took: {:?}", start2.elapsed());
         if waves[0].len() < nbr_frames {
