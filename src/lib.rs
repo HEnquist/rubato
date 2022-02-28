@@ -332,7 +332,6 @@ pub trait Resampler<T>: Send {
     /// [process_into_buffer](Resampler::process_into_buffer) or [process](Resampler::process)
     fn input_frames_next(&self) -> usize;
 
-
     /// Get the maximum number of channels this Resampler is configured for
     fn nbr_channels(&self) -> usize;
 

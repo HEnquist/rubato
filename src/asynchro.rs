@@ -748,10 +748,6 @@ where
         Ok(())
     }
 
-    fn input_frames_next(&self) -> usize {
-        self.needed_input_size
-    }
-
     fn input_frames_max(&self) -> usize {
         (self.chunk_size as f64 * self.resample_ratio_original * self.max_relative_ratio).ceil()
             as usize
@@ -759,15 +755,19 @@ where
             + self.interpolator.len() / 2
     }
 
+    fn input_frames_next(&self) -> usize {
+        self.needed_input_size
+    }
+
     fn nbr_channels(&self) -> usize {
         self.nbr_channels
     }
 
-    fn output_frames_next(&self) -> usize {
+    fn output_frames_max(&self) -> usize {
         self.chunk_size
     }
 
-    fn output_frames_max(&self) -> usize {
+    fn output_frames_next(&self) -> usize {
         self.chunk_size
     }
 
