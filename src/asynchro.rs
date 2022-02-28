@@ -142,7 +142,8 @@ pub struct SincFixedIn<T> {
 }
 
 /// An asynchronous resampler that return a fixed number of audio frames.
-/// The number of input frames required is given by the frames_needed function.
+/// The number of input frames required is given by the
+/// [input_frames_next](Resampler::input_frames_next) function.
 ///
 /// The resampling is done by creating a number of intermediate points (defined by oversampling_factor)
 /// by sinc interpolation. The new samples are then calculated by interpolating between these points.
@@ -152,7 +153,8 @@ pub struct SincFixedIn<T> {
 /// This causes no issue when increasing the ratio (which slows down the output).
 /// However when decreasing more than a few percent (i.e. speeding up the output),
 /// the filters can no longer suppress all aliasing and this may lead to some artefacts.
-/// Higher maximum ratios require more memory to be allocated by [Resampler::input_buffer_allocate] and an internal buffer.
+/// Higher maximum ratios require more memory to be allocated by
+/// [input_buffer_allocate](Resampler::input_buffer_allocate) and an internal buffer.
 pub struct SincFixedOut<T> {
     nbr_channels: usize,
     chunk_size: usize,
