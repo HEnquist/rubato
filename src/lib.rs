@@ -377,6 +377,9 @@ pub trait Resampler<T>: Send {
     /// resampling ratio that was provided to the constructor. Trying to set the ratio
     /// outside these bounds will return [ResampleError::RatioOutOfBounds].
     ///
+    /// Higher ratios above 1.0 slow down the output and lower the pitch. Lower ratios
+    /// below 1.0 speed up the output and raise the pitch.
+    ///
     /// For synchronous resamplers, this will always return [ResampleError::SyncNotAdjustable].
     fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> ResampleResult<()>;
 }
