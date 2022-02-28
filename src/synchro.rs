@@ -293,6 +293,10 @@ where
         Ok(())
     }
 
+    fn output_frames_next(&self) -> usize {
+        self.output_frames_max()
+    }
+
     fn output_frames_max(&self) -> usize {
         self.chunk_size_out
     }
@@ -454,6 +458,10 @@ where
         let chunks_needed = (frames_needed_out as f32 / self.fft_size_out as f32).ceil() as usize;
         self.frames_needed = chunks_needed * self.fft_size_in;
         Ok(())
+    }
+
+    fn output_frames_next(&self) -> usize {
+        self.output_frames_max()
     }
 
     fn output_frames_max(&self) -> usize {
@@ -619,6 +627,10 @@ where
         }
         self.saved_frames = extra;
         Ok(())
+    }
+
+    fn output_frames_next(&self) -> usize {
+        (self.saved_frames as f32 / self.fft_size_in as f32).floor() as usize * self.fft_size_out
     }
 
     fn output_frames_max(&self) -> usize {

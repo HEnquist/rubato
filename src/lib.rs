@@ -286,7 +286,12 @@ pub trait Resampler<T>: Send {
         wave_in: &[V],
         active_channels_mask: Option<&[bool]>,
     ) -> ResampleResult<Vec<Vec<T>>> {
-        let mut wave_out = self.output_buffer_allocate();
+        let frames = self.output_frames_next();
+        let channels = self.nbr_channels();
+        let mut wave_out = Vec::with_capacity(channels);
+        for _ in 0..channels {
+            wave_out.push(Vec::with_capacity(frames));
+        }
         self.process_into_buffer(wave_in, &mut wave_out, active_channels_mask)?;
         Ok(wave_out)
     }
@@ -324,6 +329,10 @@ pub trait Resampler<T>: Send {
         }
         buffer
     }
+
+    /// Get the number of frames that will be output from the next call to
+    // [Resampler::process_into_buffer] or [Resampler::process]
+    fn output_frames_next(&self) -> usize;
 
     /// Get the max number of output frames per channel.
     fn output_frames_max(&self) -> usize;
@@ -390,6 +399,10 @@ pub trait VecResampler<T>: Send {
     /// Convenience method for allocating an output buffer suitable for use with `process_into_buffer`.
     fn output_buffer_allocate(&self) -> Vec<Vec<T>>;
 
+    /// Get the number of frames that will be output from the next call to
+    /// [process_into_buffer](Resampler::process_into_buffer) or [process](Resampler::process)
+    fn output_frames_next(&self) -> usize;
+
     /// Get the max number of output frames per channel.
     /// Note that when adjusting the ratio of an asynchronous resampler, the maximum size can change.
     fn output_frames_max(&self) -> usize;
@@ -438,6 +451,10 @@ where
 
     fn output_buffer_allocate(&self) -> Vec<Vec<T>> {
         Resampler::output_buffer_allocate(self)
+    }
+
+    fn output_frames_next(&self) -> usize {
+        Resampler::output_frames_next(self)
     }
 
     fn output_frames_max(&self) -> usize {

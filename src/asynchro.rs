@@ -478,23 +478,8 @@ where
         Ok(())
     }
 
-    // The default implementation of this method uses allocate_output_buffer which
-    // would waste memory allocating a buffer for the maximum resampling ratio, so
-    // reimplement this using the current resampling ratio to determine the allocated
-    // buffer size.
-    fn process<V: AsRef<[T]>>(
-        &mut self,
-        wave_in: &[V],
-        active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<Vec<Vec<T>>> {
-        let frames = (self.chunk_size as f64 * self.resample_ratio + 10.0) as usize;
-        let channels = self.nbr_channels();
-        let mut wave_out = Vec::with_capacity(channels);
-        for _ in 0..channels {
-            wave_out.push(Vec::with_capacity(frames));
-        }
-        self.process_into_buffer(wave_in, &mut wave_out, active_channels_mask)?;
-        Ok(wave_out)
+    fn output_frames_next(&self) -> usize {
+        (self.chunk_size as f64 * self.resample_ratio + 10.0) as usize
     }
 
     fn output_frames_max(&self) -> usize {
@@ -777,6 +762,10 @@ where
             self.last_index
         );
         Ok(())
+    }
+
+    fn output_frames_next(&self) -> usize {
+        self.chunk_size
     }
 
     fn output_frames_max(&self) -> usize {
