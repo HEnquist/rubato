@@ -310,6 +310,32 @@ pub trait Resampler<T>: Send {
         active_channels_mask: Option<&[bool]>,
     ) -> ResampleResult<()>;
 
+    /// Convenience method for allocating an input buffer suitable for use with
+    /// [process_into_buffer](Resampler::process_into_buffer). The buffer's capacity
+    /// is big enough to prevent allocating additional heap memory before any call to
+    /// [process_into_buffer](Resampler::process_into_buffer) regardless of the current
+    /// resampling ratio.
+    fn input_buffer_allocate(&self) -> Vec<Vec<T>> {
+        let frames = self.input_frames_max();
+        let channels = self.nbr_channels();
+        let mut buffer = Vec::with_capacity(channels);
+        for _ in 0..channels {
+            buffer.push(Vec::with_capacity(frames));
+        }
+        buffer
+    }
+
+    /// Get the maximum number of input frames per channel the resampler could require
+    fn input_frames_max(&self) -> usize;
+
+    /// Get the number of frames per channel needed for the next call to
+    /// [process_into_buffer](Resampler::process_into_buffer) or [process](Resampler::process)
+    fn input_frames_next(&self) -> usize;
+
+
+    /// Get the maximum number of channels this Resampler is configured for
+    fn nbr_channels(&self) -> usize;
+
     /// Convenience method for allocating an output buffer suitable for use with
     /// [process_into_buffer](Resampler::process_into_buffer). The buffer's capacity
     /// is big enough to prevent allocating additional heap memory during any call to
@@ -325,37 +351,12 @@ pub trait Resampler<T>: Send {
         buffer
     }
 
-    /// Get the number of frames per channel that will be output from the next call to
-    /// [process_into_buffer](Resampler::process_into_buffer) or [process](Resampler::process)
-    fn output_frames_next(&self) -> usize;
-
     /// Get the max number of output frames per channel
     fn output_frames_max(&self) -> usize;
 
-    /// Get the maximum number of channels this Resampler is configured for
-    fn nbr_channels(&self) -> usize;
-
-    /// Get the number of frames per channel needed for the next call to
+    /// Get the number of frames per channel that will be output from the next call to
     /// [process_into_buffer](Resampler::process_into_buffer) or [process](Resampler::process)
-    fn input_frames_next(&self) -> usize;
-
-    /// Get the maximum number of input frames per channel the resampler could require
-    fn input_frames_max(&self) -> usize;
-
-    /// Convenience method for allocating an input buffer suitable for use with
-    /// [process_into_buffer](Resampler::process_into_buffer). The buffer's capacity
-    /// is big enough to prevent allocating additional heap memory before any call to
-    /// [process_into_buffer](Resampler::process_into_buffer) regardless of the current
-    /// resampling ratio.
-    fn input_buffer_allocate(&self) -> Vec<Vec<T>> {
-        let frames = self.input_frames_max();
-        let channels = self.nbr_channels();
-        let mut buffer = Vec::with_capacity(channels);
-        for _ in 0..channels {
-            buffer.push(Vec::with_capacity(frames));
-        }
-        buffer
-    }
+    fn output_frames_next(&self) -> usize;
 
     /// Update the resample ratio
     ///
@@ -404,26 +405,26 @@ pub trait VecResampler<T>: Send {
         active_channels_mask: Option<&[bool]>,
     ) -> ResampleResult<()>;
 
-    /// Refer to [Resampler::output_buffer_allocate]
-    fn output_buffer_allocate(&self) -> Vec<Vec<T>>;
-
-    /// Refer to [Resampler::output_frames_next]
-    fn output_frames_next(&self) -> usize;
-
-    /// Refer to [Resampler::output_frames_max]
-    fn output_frames_max(&self) -> usize;
-
-    /// Refer to [Resampler::nbr_channels]
-    fn nbr_channels(&self) -> usize;
-
-    /// Refer to [Resampler::input_frames_next]
-    fn input_frames_next(&self) -> usize;
+    /// Refer to [Resampler::input_buffer_allocate]
+    fn input_buffer_allocate(&self) -> Vec<Vec<T>>;
 
     /// Refer to [Resampler::input_frames_max]
     fn input_frames_max(&self) -> usize;
 
-    /// Refer to [Resampler::input_buffer_allocate]
-    fn input_buffer_allocate(&self) -> Vec<Vec<T>>;
+    /// Refer to [Resampler::input_frames_next]
+    fn input_frames_next(&self) -> usize;
+
+    /// Refer to [Resampler::nbr_channels]
+    fn nbr_channels(&self) -> usize;
+
+    /// Refer to [Resampler::output_buffer_allocate]
+    fn output_buffer_allocate(&self) -> Vec<Vec<T>>;
+
+    /// Refer to [Resampler::output_frames_max]
+    fn output_frames_max(&self) -> usize;
+
+    /// Refer to [Resampler::output_frames_next]
+    fn output_frames_next(&self) -> usize;
 
     /// Refer to [Resampler::set_resample_ratio]
     fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()>;

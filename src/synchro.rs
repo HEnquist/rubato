@@ -239,19 +239,6 @@ impl<T> Resampler<T> for FftFixedInOut<T>
 where
     T: Sample,
 {
-    fn nbr_channels(&self) -> usize {
-        self.nbr_channels
-    }
-
-    /// Query for the number of frames needed for the next call to "process".
-    fn input_frames_next(&self) -> usize {
-        self.fft_size_in
-    }
-
-    fn input_frames_max(&self) -> usize {
-        self.fft_size_in
-    }
-
     fn process_into_buffer<V: AsRef<[T]>>(
         &mut self,
         wave_in: &[V],
@@ -293,14 +280,25 @@ where
         Ok(())
     }
 
-    fn output_frames_next(&self) -> usize {
-        self.output_frames_max()
+    fn input_frames_max(&self) -> usize {
+        self.fft_size_in
+    }
+
+    fn input_frames_next(&self) -> usize {
+        self.fft_size_in
+    }
+
+    fn nbr_channels(&self) -> usize {
+        self.nbr_channels
     }
 
     fn output_frames_max(&self) -> usize {
         self.chunk_size_out
     }
 
+    fn output_frames_next(&self) -> usize {
+        self.output_frames_max()
+    }
 
     /// Update the resample ratio. This is not supported by this resampler and
     /// always returns an [ResampleError::SyncNotAdjustable].
@@ -379,19 +377,6 @@ impl<T> Resampler<T> for FftFixedOut<T>
 where
     T: Sample,
 {
-    fn nbr_channels(&self) -> usize {
-        self.nbr_channels
-    }
-
-    /// Query for the number of frames needed for the next call to "process".
-    fn input_frames_next(&self) -> usize {
-        self.frames_needed
-    }
-
-    fn input_frames_max(&self) -> usize {
-        (self.chunk_size_out as f32 / self.fft_size_out as f32).ceil() as usize * self.fft_size_in
-    }
-
     fn process_into_buffer<V: AsRef<[T]>>(
         &mut self,
         wave_in: &[V],
@@ -461,12 +446,24 @@ where
         Ok(())
     }
 
-    fn output_frames_next(&self) -> usize {
-        self.output_frames_max()
+    fn input_frames_max(&self) -> usize {
+        (self.chunk_size_out as f32 / self.fft_size_out as f32).ceil() as usize * self.fft_size_in
+    }
+
+    fn input_frames_next(&self) -> usize {
+        self.frames_needed
+    }
+
+    fn nbr_channels(&self) -> usize {
+        self.nbr_channels
     }
 
     fn output_frames_max(&self) -> usize {
         self.chunk_size_out
+    }
+
+    fn output_frames_next(&self) -> usize {
+        self.output_frames_max()
     }
 
     /// Update the resample ratio. This is not supported by this resampler and
@@ -542,19 +539,6 @@ impl<T> Resampler<T> for FftFixedIn<T>
 where
     T: Sample,
 {
-    fn nbr_channels(&self) -> usize {
-        self.nbr_channels
-    }
-
-    /// Query for the number of frames needed for the next call to "process".
-    fn input_frames_next(&self) -> usize {
-        self.chunk_size_in
-    }
-
-    fn input_frames_max(&self) -> usize {
-        self.chunk_size_in
-    }
-
     fn process_into_buffer<V: AsRef<[T]>>(
         &mut self,
         wave_in: &[V],
@@ -630,12 +614,24 @@ where
         Ok(())
     }
 
-    fn output_frames_next(&self) -> usize {
-        (self.saved_frames as f32 / self.fft_size_in as f32).floor() as usize * self.fft_size_out
+    fn input_frames_max(&self) -> usize {
+        self.chunk_size_in
+    }
+
+    fn input_frames_next(&self) -> usize {
+        self.chunk_size_in
+    }
+
+    fn nbr_channels(&self) -> usize {
+        self.nbr_channels
     }
 
     fn output_frames_max(&self) -> usize {
         self.chunk_size_in * (self.fft_size_out / self.fft_size_in + 1)
+    }
+
+    fn output_frames_next(&self) -> usize {
+        (self.saved_frames as f32 / self.fft_size_in as f32).floor() as usize * self.fft_size_out
     }
 
     /// Update the resample ratio. This is not supported by this resampler and
