@@ -496,13 +496,10 @@ where
         self.chunk_size
     }
 
-    /// Query for the number of frames needed for the next call to "process".
-    /// Will always return the chunk_size defined when creating the instance.
     fn input_frames_next(&self) -> usize {
         self.chunk_size
     }
 
-    /// Update the resample ratio. New value must be within a factor 10 of the original one.
     fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()> {
         trace!("Change resample ratio to {}", new_ratio);
         if (new_ratio / self.resample_ratio_original >= 1.0 / self.max_relative_ratio)
@@ -519,8 +516,6 @@ where
         }
     }
 
-    /// Update the resample ratio relative to the original one.
-    /// New value must be in the range 0.1 to 10.
     fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> ResampleResult<()> {
         let new_ratio = self.resample_ratio_original * rel_ratio;
         self.set_resample_ratio(new_ratio)
@@ -753,7 +748,6 @@ where
         Ok(())
     }
 
-    /// Query for the number of frames needed for the next call to "process".
     fn input_frames_next(&self) -> usize {
         self.needed_input_size
     }
@@ -777,7 +771,6 @@ where
         self.chunk_size
     }
 
-    /// Update the resample ratio. New value must be within a factor 10 from the original one.
     fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()> {
         trace!("Change resample ratio to {}", new_ratio);
         if (new_ratio / self.resample_ratio_original >= 1.0 / self.max_relative_ratio)
@@ -799,8 +792,6 @@ where
         }
     }
 
-    /// Update the resample ratio relative to the original one.
-    /// New value must be in the range 0.1 to 10.
     fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> ResampleResult<()> {
         let new_ratio = self.resample_ratio_original * rel_ratio;
         self.set_resample_ratio(new_ratio)
