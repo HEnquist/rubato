@@ -111,14 +111,16 @@ impl error::Error for ResamplerConstructionError {}
 
 /// The error type used by `rubato`.
 pub enum ResampleError {
-    /// Error raised when Resample::set_resample_ratio is called with a ratio
-    /// that deviates for more than 10% of the original.
+    /// Error raised when [Resampler::set_resample_ratio](crate::Resampler::set_resample_ratio)
+    /// is called with a ratio outside the maximum range specified when
+    /// the resampler was constructed.
     RatioOutOfBounds {
         provided: f64,
         original: f64,
         max_relative_ratio: f64,
     },
-    /// Error raised when trying to adjust a synchronous resampler.
+    /// Error raised when calling [Resampler::set_resample_ratio](crate::Resampler::set_resample_ratio)
+    /// on a synchronous resampler.
     SyncNotAdjustable,
     /// Error raised when the number of channels of the input buffer doesn't match expected.
     WrongNumberOfInputChannels { expected: usize, actual: usize },
