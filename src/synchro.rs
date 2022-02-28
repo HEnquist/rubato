@@ -631,7 +631,9 @@ where
     }
 
     fn output_frames_next(&self) -> usize {
-        (self.saved_frames as f32 / self.fft_size_in as f32).floor() as usize * self.fft_size_out
+        (((self.saved_frames + self.chunk_size_in) as f32) / self.fft_size_in as f32).floor()
+            as usize
+            * self.fft_size_out
     }
 
     /// Update the resample ratio. This is not supported by this resampler and
