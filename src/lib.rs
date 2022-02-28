@@ -434,7 +434,7 @@ pub trait VecResampler<T>: Send {
     /// Refer to [Resampler::set_resample_ratio]
     fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()>;
 
-    /// Refer to [Resampler::set_resample_ratio]
+    /// Refer to [Resampler::set_resample_ratio_relative]
     fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> ResampleResult<()>;
 }
 
