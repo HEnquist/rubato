@@ -483,12 +483,12 @@ impl<T> FftFixedIn<T>
 where
     T: Sample,
 {
-    /// Create a new FftFixedOut
+    /// Create a new FftFixedIn
     ///
     /// Parameters are:
     /// - `sample_rate_input`: Input sample rate, must be > 0.
     /// - `sample_rate_output`: Output sample rate, must be > 0.
-    /// - `chunk_size_out`: length of output data in frames.
+    /// - `chunk_size_in`: length of input data in frames.
     /// - `sub_chunks`: desired number of subchunks for processing, actual number used may be different.
     /// - `nbr_channels`: number of channels in input/output.
     pub fn new(
