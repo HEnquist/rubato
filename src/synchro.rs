@@ -515,7 +515,7 @@ where
 
         let overlaps: Vec<Vec<T>> = vec![vec![T::zero(); fft_size_out]; nbr_channels];
         let input_buffers: Vec<Vec<T>> =
-            vec![vec![T::zero(); chunk_size_in + fft_size_out]; nbr_channels];
+            vec![vec![T::zero(); chunk_size_in + fft_size_in]; nbr_channels];
 
         let channel_mask = vec![true; nbr_channels];
 
