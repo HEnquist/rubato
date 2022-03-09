@@ -105,6 +105,18 @@
 //! ## Compatibility
 //!
 //! The `rubato` crate requires rustc version 1.40 or newer.
+//!
+//! ## Changelog
+//!
+//! - v0.11.0
+//!   - New api to allow use in realtime applications.
+//!   - Configurable adjust range of asynchronous resamplers.
+//! - v0.10.1
+//!   - Fix compiling with neon feature after changes in latest nightly.
+//! - v0.10.0
+//!   - Add an object-safe wrapper trait for Resampler.
+//! - v0.9.0
+//!   - Accept any AsRef<[T]> as input.
 
 #![cfg_attr(feature = "neon", feature(aarch64_target_feature))]
 #![cfg_attr(feature = "neon", feature(stdsimd))]
