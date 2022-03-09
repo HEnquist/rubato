@@ -93,7 +93,7 @@ where
     pub fn new(fft_size_in: usize, fft_size_out: usize) -> Self {
         // calculate antialiasing cutoff
         let cutoff = if fft_size_in > fft_size_out {
-            0.4f32.powf(16.0 / fft_size_in as f32) * fft_size_out as f32 / fft_size_in as f32
+            0.4f32.powf(16.0 / fft_size_out as f32) * fft_size_out as f32 / fft_size_in as f32
         } else {
             0.4f32.powf(16.0 / fft_size_in as f32)
         };
@@ -152,25 +152,24 @@ where
             .process_with_scratch(&mut self.input_buf, &mut self.input_f, &mut self.scratch_fw)
             .unwrap();
 
-        // multiply with filter FT
-        self.input_f
-            .iter_mut()
-            .take(self.fft_size_in + 1)
-            .zip(self.filter_f.iter())
-            .for_each(|(spec, filt)| *spec *= filt);
         let new_len = if self.fft_size_in < self.fft_size_out {
             self.fft_size_in + 1
         } else {
             self.fft_size_out
         };
 
+        // multiply with filter FT
+        self.input_f
+            .iter_mut()
+            .take(new_len)
+            .zip(self.filter_f.iter())
+            .for_each(|(spec, filt)| *spec *= filt);
+
         // copy to modified spectrum
         self.output_f[0..new_len].copy_from_slice(&self.input_f[0..new_len]);
         for val in self.output_f[new_len..].iter_mut() {
             *val = Complex::zero();
         }
-        //self.output_f[self.fft_size_out] = self.input_f[self.fft_size_in];
-
         // IFFT result, store result and overlap
         self.ifft
             .process_with_scratch(

@@ -41,6 +41,8 @@ def plot_spect(indata, window=True):
         #plt.subplot(2,1,2)
         plt.figure(2)
         plt.plot(wf)
+        plt.figure(3)
+        plt.plot(np.diff(wf,5))
     plt.show()
 
 file_in = sys.argv[1]
