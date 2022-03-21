@@ -40,7 +40,7 @@ pub trait NeonSample: Sized + Send {
 impl NeonSample for f32 {
     type Sinc = float32x4_t;
 
-    #[target_feature(enable = "fp, "enable = "neon")]
+    #[target_feature(enable = "fp", enable = "neon")]
     unsafe fn pack_sincs(sincs: Vec<Vec<Self>>) -> Vec<Vec<Self::Sinc>> {
         let mut packed_sincs = Vec::new();
         for sinc in sincs.iter() {
@@ -54,7 +54,7 @@ impl NeonSample for f32 {
         packed_sincs
     }
 
-    #[target_feature(enable = "fp, "enable = "neon")]
+    #[target_feature(enable = "fp", enable = "neon")]
     unsafe fn get_sinc_interpolated_unsafe(
         wave: &[f32],
         index: usize,
@@ -89,7 +89,7 @@ impl NeonSample for f32 {
 impl NeonSample for f64 {
     type Sinc = float64x2_t;
 
-    #[target_feature(enable = "fp, "enable = "neon")]
+    #[target_feature(enable = "fp", enable = "neon")]
     unsafe fn pack_sincs(sincs: Vec<Vec<f64>>) -> Vec<Vec<Self::Sinc>> {
         let mut packed_sincs = Vec::new();
         for sinc in sincs.iter() {
@@ -103,7 +103,7 @@ impl NeonSample for f64 {
         packed_sincs
     }
 
-    #[target_feature(enable = "fp, "enable = "neon")]
+    #[target_feature(enable = "fp", enable = "neon")]
     unsafe fn get_sinc_interpolated_unsafe(
         wave: &[f64],
         index: usize,
