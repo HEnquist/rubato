@@ -96,26 +96,12 @@ jobs:
           use-cross: true
           args: --target aarch64-unknown-linux-gnu
 
-      - name: Run cargo check with neon
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-          use-cross: true
-          args: --target aarch64-unknown-linux-gnu --features neon
-
       - name: Run cargo test for arm
         uses: actions-rs/cargo@v1
         with:
           command: test
           use-cross: true
           args: --target aarch64-unknown-linux-gnu
-
-      - name: Run cargo test for arm with neon
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          use-cross: true
-          args: --target aarch64-unknown-linux-gnu --features neon
 
   check_test_wasm32:
     name: Check and test wasm32
