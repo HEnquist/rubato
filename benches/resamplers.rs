@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 extern crate rubato;
 
 use rubato::ScalarInterpolator;
@@ -17,7 +17,7 @@ fn bench_fftfixedin(c: &mut Criterion) {
     let mut resampler = FftFixedIn::<f64>::new(44100, 192000, 1024, 2, 1).unwrap();
     let waveform = vec![vec![0.0 as f64; chunksize]; 1];
     c.bench_function("FftFixedIn f64", |b| {
-        b.iter(|| resampler.process(&waveform, None).unwrap())
+        b.iter(|| resampler.process(black_box(&waveform), None).unwrap())
     });
 }
 
@@ -26,7 +26,7 @@ fn bench_fftfixedin_32(c: &mut Criterion) {
     let mut resampler = FftFixedIn::<f32>::new(44100, 192000, 1024, 2, 1).unwrap();
     let waveform = vec![vec![0.0 as f32; chunksize]; 1];
     c.bench_function("FftFixedIn f32", |b| {
-        b.iter(|| resampler.process(&waveform, None).unwrap())
+        b.iter(|| resampler.process(black_box(&waveform), None).unwrap())
     });
 }
 
@@ -68,7 +68,7 @@ macro_rules! bench_async_resampler {
                 1,
             ).unwrap();
             let waveform = vec![vec![0.0 as $ft; chunksize]; 1];
-            c.bench_function($desc, |b| b.iter(|| resampler.process(&waveform, None).unwrap()));
+            c.bench_function($desc, |b| b.iter(|| resampler.process(black_box(&waveform), None).unwrap()));
         }
     };
 }
