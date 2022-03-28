@@ -95,7 +95,7 @@ The `rubato` crate requires rustc version 1.61 or newer.
 ### Changelog
 
 - v0.12.0
-  - Always enable all simd acceleration (and remove Cargo features).
+  - Always enable all simd acceleration (and remove the simd Cargo features).
 - v0.11.0
   - New api to allow use in realtime applications.
   - Configurable adjust range of asynchronous resamplers.
