@@ -1,8 +1,8 @@
 use crate::error::{ResampleError, ResampleResult, ResamplerConstructionError};
 use crate::interpolation::*;
-#[cfg(all(target_arch = "x86_64", feature = "avx"))]
+#[cfg(target_arch = "x86_64")]
 use crate::interpolator_avx::AvxInterpolator;
-#[cfg(all(target_arch = "aarch64", feature = "neon"))]
+#[cfg(target_arch = "aarch64")]
 use crate::interpolator_neon::NeonInterpolator;
 #[cfg(target_arch = "x86_64")]
 use crate::interpolator_sse::SseInterpolator;
@@ -187,7 +187,7 @@ where
         f_cutoff * resample_ratio as f32
     };
 
-    #[cfg(all(target_arch = "x86_64", feature = "avx"))]
+    #[cfg(target_arch = "x86_64")]
     if let Ok(interpolator) =
         AvxInterpolator::<T>::new(sinc_len, oversampling_factor, f_cutoff, window)
     {
@@ -201,7 +201,7 @@ where
         return Box::new(interpolator);
     }
 
-    #[cfg(all(target_arch = "aarch64", feature = "neon"))]
+    #[cfg(target_arch = "aarch64")]
     if let Ok(interpolator) =
         NeonInterpolator::<T>::new(sinc_len, oversampling_factor, f_cutoff, window)
     {

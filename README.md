@@ -42,35 +42,19 @@ This type of resampler is considerably faster but doesn't support changing the r
 
 ##### Asynchronous resampling
 
-The asynchronous resampler is designed to benefit from auto-vectorization, meaning that the Rust compiler
-can recognize calculations that can be done in parallel. It will then use SIMD instructions for those.
-This works quite well, but there is still room for improvement.
-To address this, it also has optimized SIMD support.
-This gets enabled at runtime by checking the SIMD support of the CPU.
+The asynchronous resampler supports SIMD on x86_64 and on aarch64.
+The SIMD capabilities of the CPU are determined at runtime.
+If no supported SIMD instruction set is available, it falls back to a scalar implementation.
 
-On x86_64 it will try to use SSE3. The speed benefit compared to auto-vectorization
-depends on the CPU, but tends to be in the range 20-30% for 64-bit data, and 50-100% for 32-bit data.
-There is also optional support for AVX on x86_64, and Neon on aarch64 via Cargo features.
+On x86_64 it will try to use AVX. If AVX isn't available, it will instead try SSE3.
+
+On aarch64 (64-bit Arm) it will use Neon if available.
 
 ##### Synchronous resampling
 
 The synchronous resamplers benefit from the SIMD support of the RustFFT library.
 
 #### Cargo features
-
-###### `avx`: AVX on x86_64
-
-The `avx` feature is enabled by default, and enables the use of AVX when it's available.
-The speed increase compared to SSE depends on the CPU, and tends to range from zero to 50%.
-On other architectures than x86_64 the `avx` feature does nothing.
-
-###### `neon`: Experimental Neon support on aarch64
-
-Experimental support for Neon is available for aarch64 (64-bit Arm) by enabling the `neon` feature.
-This requires the use of a nightly compiler, as the Neon support in Rust is still experimental.
-On a Raspberry Pi 4, this gives a boost of about 10% for 64-bit floats and 50% for 32-bit floats when
-compared to the auto-vectorized implementation.
-Note that this only works on a full 64-bit operating system.
 
 ###### `log`: Enable logging
 
@@ -106,10 +90,12 @@ let waves_out = resampler.process(&waves_in, None).unwrap();
 
 ### Compatibility
 
-The `rubato` crate requires rustc version 1.40 or newer.
+The `rubato` crate requires rustc version 1.61 or newer.
 
 ### Changelog
 
+- v0.12.0
+  - Always enable all simd acceleration (and remove the simd Cargo features).
 - v0.11.0
   - New api to allow use in realtime applications.
   - Configurable adjust range of asynchronous resamplers.

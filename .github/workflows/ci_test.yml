@@ -10,11 +10,11 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v2
 
-      - name: Install stable toolchain
+      - name: Install nightly toolchain
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: stable
+          toolchain: nightly
           override: true
 
       - name: Run cargo check
@@ -35,11 +35,11 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v2
 
-      - name: Install stable toolchain
+      - name: Install nightly toolchain
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: stable
+          toolchain: nightly
           override: true
 
       - name: Run cargo test
@@ -54,11 +54,11 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v2
 
-      - name: Install stable toolchain
+      - name: Install nightly toolchain
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: stable
+          toolchain: nightly
           override: true
           components: rustfmt, clippy
 
@@ -96,26 +96,12 @@ jobs:
           use-cross: true
           args: --target aarch64-unknown-linux-gnu
 
-      - name: Run cargo check with neon
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-          use-cross: true
-          args: --target aarch64-unknown-linux-gnu --features neon
-
       - name: Run cargo test for arm
         uses: actions-rs/cargo@v1
         with:
           command: test
           use-cross: true
           args: --target aarch64-unknown-linux-gnu
-
-      - name: Run cargo test for arm with neon
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          use-cross: true
-          args: --target aarch64-unknown-linux-gnu --features neon
 
   check_test_wasm32:
     name: Check and test wasm32
@@ -124,11 +110,11 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v2
 
-      - name: Install stable toolchain
+      - name: Install nightly toolchain
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: stable
+          toolchain: nightly
           target: wasm32-unknown-unknown
           override: true
 
