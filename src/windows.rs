@@ -11,9 +11,9 @@ pub enum WindowFunction {
     BlackmanHarris,
     /// Squared Blackman-Harris. Slower rolloff but better attenuation than Blackman-Harris.
     BlackmanHarris2,
-    /// Hann, fast rolloff but not very high attenuation
+    /// Hann. Fast rolloff but not very high attenuation.
     Hann,
-    /// Squared Hann, slower rolloff and higher attenuation than simple Hann
+    /// Squared Hann. Slower rolloff and higher attenuation than simple Hann.
     Hann2,
 }
 
