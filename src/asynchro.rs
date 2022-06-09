@@ -265,9 +265,9 @@ where
     /// Parameters are:
     /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
     /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Resampler::set_resample_ratio] relative to `resample_ratio`, must be >= 1.0. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio * 10.0` and `resample_ratio / 10.0`.
-    /// - `parameters`: Parameters for interpolation, see `InterpolationParameters`
-    /// - `chunk_size`: size of input data in frames
-    /// - `nbr_channels`: number of channels in input/output
+    /// - `parameters`: Parameters for interpolation, see `InterpolationParameters`.
+    /// - `chunk_size`: Size of input data in frames.
+    /// - `nbr_channels`: Number of channels in input/output.
     pub fn new(
         resample_ratio: f64,
         max_resample_ratio_relative: f64,
@@ -303,10 +303,10 @@ where
     /// Parameters are:
     /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
     /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Resampler::set_resample_ratio] relative to `resample_ratio`, must be >= 1.0. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio` * 10.0 and `resample_ratio` / 10.0.
-    /// - `interpolation_type`: Parameters for interpolation, see `InterpolationParameters`
-    /// - `interpolator`:  The interpolator to use
-    /// - `chunk_size`: size of output data in frames
-    /// - `nbr_channels`: number of channels in input/output
+    /// - `interpolation_type`: Parameters for interpolation, see `InterpolationParameters`.
+    /// - `interpolator`: The interpolator to use.
+    /// - `chunk_size`: Size of output data in frames.
+    /// - `nbr_channels`: Number of channels in input/output.
     pub fn new_with_interpolator(
         resample_ratio: f64,
         max_resample_ratio_relative: f64,
@@ -533,9 +533,9 @@ where
     /// Parameters are:
     /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
     /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Resampler::set_resample_ratio] relative to `resample_ratio`, must be >= 1.0. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio * 10.0` and `resample_ratio / 10.0`.
-    /// - `parameters`: Parameters for interpolation, see `InterpolationParameters`
-    /// - `chunk_size`: size of output data in frames
-    /// - `nbr_channels`: number of channels in input/output
+    /// - `parameters`: Parameters for interpolation, see `InterpolationParameters`.
+    /// - `chunk_size`: Size of output data in frames.
+    /// - `nbr_channels`: Number of channels in input/output.
     pub fn new(
         resample_ratio: f64,
         max_resample_ratio_relative: f64,
@@ -570,10 +570,10 @@ where
     /// Parameters are:
     /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
     /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Resampler::set_resample_ratio] relative to `resample_ratio`, must be >= 1.0. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio` * 10.0 and `resample_ratio` / 10.0.
-    /// - `interpolation_type`: Parameters for interpolation, see `InterpolationParameters`
-    /// - `interpolator`:  The interpolator to use
-    /// - `chunk_size`: size of output data in frames
-    /// - `nbr_channels`: number of channels in input/output
+    /// - `interpolation_type`: Parameters for interpolation, see `InterpolationParameters`.
+    /// - `interpolator`: The interpolator to use.
+    /// - `chunk_size`: Size of output data in frames.
+    /// - `nbr_channels`: Number of channels in input/output.
     pub fn new_with_interpolator(
         resample_ratio: f64,
         max_resample_ratio_relative: f64,
