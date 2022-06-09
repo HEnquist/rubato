@@ -568,7 +568,7 @@ where
     /// Create a new SincFixedOut using an existing Interpolator
     ///
     /// Parameters are:
-    /// - `resample_ratio`: starting ratio between output and input sample rates, must be > 0.
+    /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
     /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Resampler::set_resample_ratio] relative to `resample_ratio`, must be >= 1.0. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio` * 10.0 and `resample_ratio` / 10.0.
     /// - `interpolation_type`: Parameters for interpolation, see `InterpolationParameters`.
     /// - `interpolator`: The interpolator to use.
