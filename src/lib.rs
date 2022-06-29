@@ -139,8 +139,8 @@ macro_rules! error { ($($x:tt)*) => (
     }
 ) }
 
-mod asynchro_sinc;
 mod asynchro_fast;
+mod asynchro_sinc;
 mod error;
 mod interpolation;
 mod sample;
@@ -148,8 +148,8 @@ mod sinc;
 mod synchro;
 mod windows;
 
-pub use crate::asynchro_sinc::{ScalarInterpolator, SincFixedIn, SincFixedOut};
 pub use crate::asynchro_fast::{FastFixedIn, FastFixedOut};
+pub use crate::asynchro_sinc::{ScalarInterpolator, SincFixedIn, SincFixedOut};
 pub use crate::error::{
     CpuFeature, MissingCpuFeature, ResampleError, ResampleResult, ResamplerConstructionError,
 };

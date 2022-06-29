@@ -1,6 +1,6 @@
 use crate::error::{ResampleError, ResampleResult, ResamplerConstructionError};
-use crate::{update_mask_from_buffers, validate_buffers, Resampler, Sample};
 use crate::InterpolationType;
+use crate::{update_mask_from_buffers, validate_buffers, Resampler, Sample};
 
 /// Get the starting index for the time points to use for polynomial fitting.
 pub fn get_start_index(t: f64, offset: isize) -> isize {
@@ -59,7 +59,6 @@ pub struct FastFixedOut<T> {
     interpolation: InterpolationType,
     channel_mask: Vec<bool>,
 }
-
 
 /// Perform cubic polynomial interpolation to get value at x.
 /// Input points are assumed to be at x = -1, 0, 1, 2
@@ -122,7 +121,8 @@ where
     ) -> Result<Self, ResamplerConstructionError> {
         debug!(
             "Create new FastFixedIn, ratio: {}, chunk_size: {}, channels: {}, parameters: {:?}",
-            resample_ratio, chunk_size, nbr_channels, parameters);
+            resample_ratio, chunk_size, nbr_channels, parameters
+        );
 
         validate_ratios(resample_ratio, max_resample_ratio_relative)?;
 
@@ -208,7 +208,8 @@ where
                     let frac_offset = T::coerce(frac);
                     for (chan, active) in self.channel_mask.iter().enumerate() {
                         if *active {
-                            let buf = &self.buffer[chan][(start_idx+4) as usize..(start_idx+8) as usize];
+                            let buf = &self.buffer[chan]
+                                [(start_idx + 8) as usize..(start_idx + 12) as usize];
                             wave_out[chan][n] = interp_cubic(frac_offset, buf);
                         }
                     }
@@ -223,7 +224,8 @@ where
                     let frac_offset = T::coerce(frac);
                     for (chan, active) in self.channel_mask.iter().enumerate() {
                         if *active {
-                            let buf = &self.buffer[chan][(start_idx+4) as usize..(start_idx+6) as usize];
+                            let buf = &self.buffer[chan]
+                                [(start_idx + 8) as usize..(start_idx + 10) as usize];
                             wave_out[chan][n] = interp_lin(frac_offset, buf);
                         }
                     }
@@ -236,7 +238,7 @@ where
                     let start_idx = get_start_index(idx, 0);
                     for (chan, active) in self.channel_mask.iter().enumerate() {
                         if *active {
-                            let point = self.buffer[chan][(start_idx+4) as usize];
+                            let point = self.buffer[chan][(start_idx + 8) as usize];
                             wave_out[chan][n] = point;
                         }
                     }
@@ -330,11 +332,9 @@ where
         );
         validate_ratios(resample_ratio, max_resample_ratio_relative)?;
 
-        let needed_input_size =
-            (chunk_size as f64 / resample_ratio).ceil() as usize + 2 + 4 / 2;
-        let buffer_channel_length = ((max_resample_ratio_relative + 1.0) * needed_input_size as f64)
-            as usize
-            + 8;
+        let needed_input_size = (chunk_size as f64 / resample_ratio).ceil() as usize + 2 + 4 / 2;
+        let buffer_channel_length =
+            ((max_resample_ratio_relative + 1.0) * needed_input_size as f64) as usize + 8;
         let buffer = vec![vec![T::zero(); buffer_channel_length]; nbr_channels];
         let channel_mask = vec![true; nbr_channels];
 
@@ -415,7 +415,8 @@ where
                     let frac_offset = T::coerce(frac);
                     for (chan, active) in self.channel_mask.iter().enumerate() {
                         if *active {
-                            let buf = &self.buffer[chan][(start_idx+4) as usize..(start_idx+8) as usize];
+                            let buf = &self.buffer[chan]
+                                [(start_idx + 8) as usize..(start_idx + 12) as usize];
                             wave_out[chan][n] = interp_cubic(frac_offset, buf);
                         }
                     }
@@ -429,7 +430,8 @@ where
                     let frac_offset = T::coerce(frac);
                     for (chan, active) in self.channel_mask.iter().enumerate() {
                         if *active {
-                            let buf = &self.buffer[chan][(start_idx+4) as usize..(start_idx+6) as usize];
+                            let buf = &self.buffer[chan]
+                                [(start_idx + 8) as usize..(start_idx + 10) as usize];
                             wave_out[chan][n] = interp_lin(frac_offset, buf);
                         }
                     }
@@ -441,7 +443,7 @@ where
                     let start_idx = get_start_index(idx, 0);
                     for (chan, active) in self.channel_mask.iter().enumerate() {
                         if *active {
-                            let point = self.buffer[chan][(start_idx+4) as usize];
+                            let point = self.buffer[chan][(start_idx + 8) as usize];
                             wave_out[chan][n] = point;
                         }
                     }
@@ -519,18 +521,14 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{interp_cubic, interp_lin};
     use crate::InterpolationType;
     use crate::Resampler;
-    use crate::WindowFunction;
     use crate::{FastFixedIn, FastFixedOut};
-    use num_traits::Float;
-    use rand::Rng;
-
 
     #[test]
     fn make_resampler_fi() {
-        let mut resampler = FastFixedIn::<f64>::new(1.2, 1.0, InterpolationType::Cubic, 1024, 2).unwrap();
+        let mut resampler =
+            FastFixedIn::<f64>::new(1.2, 1.0, InterpolationType::Cubic, 1024, 2).unwrap();
         let waves = vec![vec![0.0f64; 1024]; 2];
         let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
@@ -554,7 +552,8 @@ mod tests {
 
     #[test]
     fn make_resampler_fi_32() {
-        let mut resampler = FastFixedIn::<f32>::new(1.2, 1.0, InterpolationType::Cubic, 1024, 2).unwrap();
+        let mut resampler =
+            FastFixedIn::<f32>::new(1.2, 1.0, InterpolationType::Cubic, 1024, 2).unwrap();
         let waves = vec![vec![0.0f32; 1024]; 2];
         let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
@@ -578,7 +577,8 @@ mod tests {
 
     #[test]
     fn make_resampler_fi_skipped() {
-        let mut resampler = FastFixedIn::<f64>::new(1.2, 1.0, InterpolationType::Cubic, 1024, 2).unwrap();
+        let mut resampler =
+            FastFixedIn::<f64>::new(1.2, 1.0, InterpolationType::Cubic, 1024, 2).unwrap();
         let waves = vec![vec![0.0f64; 1024], Vec::new()];
         let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
@@ -594,8 +594,14 @@ mod tests {
     #[test]
     fn make_resampler_fi_downsample() {
         // Replicate settings from reported issue
-        let mut resampler =
-            FastFixedIn::<f64>::new(16000 as f64 / 96000 as f64, 1.0, InterpolationType::Cubic, 1024, 2).unwrap();
+        let mut resampler = FastFixedIn::<f64>::new(
+            16000 as f64 / 96000 as f64,
+            1.0,
+            InterpolationType::Cubic,
+            1024,
+            2,
+        )
+        .unwrap();
         let waves = vec![vec![0.0f64; 1024]; 2];
         let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
@@ -620,8 +626,14 @@ mod tests {
     #[test]
     fn make_resampler_fi_upsample() {
         // Replicate settings from reported issue
-        let mut resampler =
-            FastFixedIn::<f64>::new(192000 as f64 / 44100 as f64, 1.0, InterpolationType::Cubic, 1024, 2).unwrap();
+        let mut resampler = FastFixedIn::<f64>::new(
+            192000 as f64 / 44100 as f64,
+            1.0,
+            InterpolationType::Cubic,
+            1024,
+            2,
+        )
+        .unwrap();
         let waves = vec![vec![0.0f64; 1024]; 2];
         let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
@@ -645,7 +657,8 @@ mod tests {
 
     #[test]
     fn make_resampler_fo() {
-        let mut resampler = FastFixedOut::<f64>::new(1.2, 1.0, InterpolationType::Cubic, 1024, 2).unwrap();
+        let mut resampler =
+            FastFixedOut::<f64>::new(1.2, 1.0, InterpolationType::Cubic, 1024, 2).unwrap();
         let frames = resampler.input_frames_next();
         println!("{}", frames);
         assert!(frames > 800 && frames < 900);
@@ -657,7 +670,8 @@ mod tests {
 
     #[test]
     fn make_resampler_fo_32() {
-        let mut resampler = FastFixedOut::<f32>::new(1.2, 1.0, InterpolationType::Cubic, 1024, 2).unwrap();
+        let mut resampler =
+            FastFixedOut::<f32>::new(1.2, 1.0, InterpolationType::Cubic, 1024, 2).unwrap();
         let frames = resampler.input_frames_next();
         println!("{}", frames);
         assert!(frames > 800 && frames < 900);
@@ -669,7 +683,8 @@ mod tests {
 
     #[test]
     fn make_resampler_fo_skipped() {
-        let mut resampler = FastFixedOut::<f64>::new(1.2, 1.0, InterpolationType::Cubic, 1024, 2).unwrap();
+        let mut resampler =
+            FastFixedOut::<f64>::new(1.2, 1.0, InterpolationType::Cubic, 1024, 2).unwrap();
         let frames = resampler.input_frames_next();
         println!("{}", frames);
         assert!(frames > 800 && frames < 900);
@@ -699,7 +714,8 @@ mod tests {
 
     #[test]
     fn make_resampler_fo_downsample() {
-        let mut resampler = FastFixedOut::<f64>::new(0.125, 1.0, InterpolationType::Cubic, 1024, 2).unwrap();
+        let mut resampler =
+            FastFixedOut::<f64>::new(0.125, 1.0, InterpolationType::Cubic, 1024, 2).unwrap();
         let frames = resampler.input_frames_next();
         println!("{}", frames);
         assert!(
@@ -740,7 +756,8 @@ mod tests {
 
     #[test]
     fn make_resampler_fo_upsample() {
-        let mut resampler = FastFixedOut::<f64>::new(8.0, 1.0, InterpolationType::Cubic, 1024, 2).unwrap();
+        let mut resampler =
+            FastFixedOut::<f64>::new(8.0, 1.0, InterpolationType::Cubic, 1024, 2).unwrap();
         let frames = resampler.input_frames_next();
         println!("{}", frames);
         assert!(
