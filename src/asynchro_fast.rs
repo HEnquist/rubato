@@ -3,8 +3,8 @@ use crate::{update_mask_from_buffers, validate_buffers, Resampler, Sample};
 use crate::InterpolationType;
 
 /// Get the starting index for the time points to use for polynomial fitting.
-pub fn get_start_index(t: f64, offset: usize) -> usize {
-    let next = t.ceil() as usize;
+pub fn get_start_index(t: f64, offset: isize) -> isize {
+    let next = t.ceil() as isize;
     next - offset
 }
 
@@ -208,7 +208,7 @@ where
                     let frac_offset = T::coerce(frac);
                     for (chan, active) in self.channel_mask.iter().enumerate() {
                         if *active {
-                            let buf = &self.buffer[chan][start_idx..start_idx+4];
+                            let buf = &self.buffer[chan][(start_idx+4) as usize..(start_idx+8) as usize];
                             wave_out[chan][n] = interp_cubic(frac_offset, buf);
                         }
                     }
@@ -223,7 +223,7 @@ where
                     let frac_offset = T::coerce(frac);
                     for (chan, active) in self.channel_mask.iter().enumerate() {
                         if *active {
-                            let buf = &self.buffer[chan][start_idx..start_idx+2];
+                            let buf = &self.buffer[chan][(start_idx+4) as usize..(start_idx+6) as usize];
                             wave_out[chan][n] = interp_lin(frac_offset, buf);
                         }
                     }
@@ -236,7 +236,7 @@ where
                     let start_idx = get_start_index(idx, 0);
                     for (chan, active) in self.channel_mask.iter().enumerate() {
                         if *active {
-                            let point = self.buffer[chan][start_idx];
+                            let point = self.buffer[chan][(start_idx+4) as usize];
                             wave_out[chan][n] = point;
                         }
                     }
@@ -415,7 +415,7 @@ where
                     let frac_offset = T::coerce(frac);
                     for (chan, active) in self.channel_mask.iter().enumerate() {
                         if *active {
-                            let buf = &self.buffer[chan][start_idx..start_idx+4];
+                            let buf = &self.buffer[chan][(start_idx+4) as usize..(start_idx+8) as usize];
                             wave_out[chan][n] = interp_cubic(frac_offset, buf);
                         }
                     }
@@ -429,7 +429,7 @@ where
                     let frac_offset = T::coerce(frac);
                     for (chan, active) in self.channel_mask.iter().enumerate() {
                         if *active {
-                            let buf = &self.buffer[chan][start_idx..start_idx+2];
+                            let buf = &self.buffer[chan][(start_idx+4) as usize..(start_idx+6) as usize];
                             wave_out[chan][n] = interp_lin(frac_offset, buf);
                         }
                     }
@@ -441,7 +441,7 @@ where
                     let start_idx = get_start_index(idx, 0);
                     for (chan, active) in self.channel_mask.iter().enumerate() {
                         if *active {
-                            let point = self.buffer[chan][start_idx];
+                            let point = self.buffer[chan][(start_idx+4) as usize];
                             wave_out[chan][n] = point;
                         }
                     }
