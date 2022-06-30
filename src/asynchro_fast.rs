@@ -4,21 +4,25 @@ use crate::{update_mask_from_buffers, validate_buffers, Resampler, Sample};
 
 /// Get the starting index for the time points to use for polynomial fitting.
 pub fn get_start_index(t: f64, offset: isize) -> isize {
-    let next = t.ceil() as isize;
+    let next = t.floor() as isize + 1;
     next - offset
 }
 
 /// An asynchronous resampler that accepts a fixed number of audio frames for input
 /// and returns a variable number of frames.
 ///
-/// The resampling is done by creating a number of intermediate points (defined by oversampling_factor)
-/// by sinc interpolation. The new samples are then calculated by interpolating between these points.
+/// The resampling is done by interpolating between the input samples.
+/// The interpolation order can selected, and the choices are:
+/// - Cubic: fitting a third order polynomial to the four nearest input samples.
+/// - Linear: linear interpolation between the two nearest input samples.
+/// - Nearest: no interpolation, just pick the nearest input sample.
+/// 
+/// Note that no anti-aliasing filter is used.
+/// This makes it run considerably faster than the corresponding SincFixedIn, which performs anti-aliasing filtering.
+/// The price is that the resampling creates some artefacts in the output, mainly at higher frequencies.
+/// Use SincFixedIn if this can not be tolerated.
 ///
 /// The resampling ratio can be freely adjusted within the range specified to the constructor.
-/// Adjusting the ratio does not recalculate the sinc functions used by the anti-aliasing filter.
-/// This causes no issue when increasing the ratio (which slows down the output).
-/// However when decreasing more than a few percent (or speeding up the output),
-/// the filters can no longer suppress all aliasing and this may lead to some artefacts.
 /// Higher maximum ratios require more memory to be allocated by [Resampler::output_buffer_allocate].
 pub struct FastFixedIn<T> {
     nbr_channels: usize,
@@ -36,14 +40,18 @@ pub struct FastFixedIn<T> {
 /// The number of input frames required is given by the
 /// [input_frames_next](Resampler::input_frames_next) function.
 ///
-/// The resampling is done by creating a number of intermediate points (defined by oversampling_factor)
-/// by sinc interpolation. The new samples are then calculated by interpolating between these points.
-///
+/// The resampling is done by interpolating between the input samples.
+/// The interpolation order can selected, and the choices are:
+/// - Cubic: fitting a third order polynomial to the four nearest input samples.
+/// - Linear: linear interpolation between the two nearest input samples.
+/// - Nearest: no interpolation, just pick the nearest input sample.
+/// 
+/// Note that no anti-aliasing filter is used.
+/// This makes it run considerably faster than the corresponding SincFixedOut, which performs anti-aliasing filtering.
+/// The price is that the resampling creates some artefacts in the output, mainly at higher frequencies.
+/// Use SincFixedOut if this can not be tolerated.
+/// 
 /// The resampling ratio can be freely adjusted within the range specified to the constructor.
-/// Adjusting the ratio does not recalculate the sinc functions used by the anti-aliasing filter.
-/// This causes no issue when increasing the ratio (which slows down the output).
-/// However when decreasing more than a few percent (i.e. speeding up the output),
-/// the filters can no longer suppress all aliasing and this may lead to some artefacts.
 /// Higher maximum ratios require more memory to be allocated by
 /// [input_buffer_allocate](Resampler::input_buffer_allocate) and an internal buffer.
 pub struct FastFixedOut<T> {
@@ -109,7 +117,7 @@ where
     /// Parameters are:
     /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
     /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Resampler::set_resample_ratio] relative to `resample_ratio`, must be >= 1.0. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio * 10.0` and `resample_ratio / 10.0`.
-    /// - `parameters`: Parameters for interpolation, see `InterpolationParameters`.
+    /// - `interpolation_type`: Interpolation type, see `InterpolationType`.
     /// - `chunk_size`: Size of input data in frames.
     /// - `nbr_channels`: Number of channels in input/output.
     pub fn new(
@@ -316,7 +324,7 @@ where
     /// Parameters are:
     /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
     /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Resampler::set_resample_ratio] relative to `resample_ratio`, must be >= 1.0. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio * 10.0` and `resample_ratio / 10.0`.
-    /// - `parameters`: Parameters for interpolation, see `InterpolationParameters`.
+    /// - `interpolation_type`: Interpolation type, see `InterpolationType`.
     /// - `chunk_size`: Size of output data in frames.
     /// - `nbr_channels`: Number of channels in input/output.
     pub fn new(

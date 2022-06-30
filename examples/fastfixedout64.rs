@@ -1,5 +1,5 @@
 extern crate rubato;
-use rubato::{InterpolationType, Resampler, FastFixedIn};
+use rubato::{InterpolationType, Resampler, FastFixedOut};
 use std::convert::TryInto;
 use std::env;
 use std::fs::File;
@@ -13,10 +13,11 @@ use env_logger::Builder;
 use log::LevelFilter;
 
 ///! A resampler app that reads a raw file of little-endian 64 bit floats, and writes the output in the same format.
+///! This version takes a varying number of input samples per chunk, and outputs a fixed number of samples.
 ///! The command line arguments are input filename, output filename, input samplerate, output samplerate, number of channels
 ///! To resample the file `sine_f64_2ch.raw` from 44.1kHz to 192kHz, and assuming the file has two channels, the command is:
 ///! ```
-///! cargo run --release --example fastfixedin64 sine_f64_2ch.raw test.raw 44100 192000 2
+///! cargo run --release --example fastfixedout64 sine_f64_2ch.raw test.raw 44100 192000 2
 ///! ```
 ///! There are two helper python scripts for testing. `makesineraw.py` simply writes a stereo file
 ///! with a 1 second long 1kHz tone (at 44.1kHz). This script takes no aruments. Modify as needed to create other test files.
@@ -26,7 +27,6 @@ use log::LevelFilter;
 ///! python examples/analyze_result.py test.raw 2 192000 64
 ///! ```
 
-/// Helper to read frames from a buffer
 fn read_frames<R: Read + Seek>(inbuffer: &mut R, nbr: usize, channels: usize) -> Vec<Vec<f64>> {
     let mut buffer = vec![0u8; 8];
     let mut wfs = Vec::with_capacity(channels);
@@ -36,7 +36,9 @@ fn read_frames<R: Read + Seek>(inbuffer: &mut R, nbr: usize, channels: usize) ->
     let mut value: f64;
     for _frame in 0..nbr {
         for wf in wfs.iter_mut().take(channels) {
-            inbuffer.read(&mut buffer).unwrap();
+            if inbuffer.read(&mut buffer).unwrap() < 8 {
+                return wfs;
+            }
             value = f64::from_le_bytes(buffer.as_slice().try_into().unwrap()) as f64;
             //idx += 8;
             wf.push(value);
@@ -45,7 +47,6 @@ fn read_frames<R: Read + Seek>(inbuffer: &mut R, nbr: usize, channels: usize) ->
     wfs
 }
 
-/// Helper to write frames to a buffer
 fn write_frames<W: Write + Seek>(waves: Vec<Vec<f64>>, outbuffer: &mut W, channels: usize) {
     let nbr = waves[0].len();
     for frame in 0..nbr {
@@ -84,29 +85,29 @@ fn main() {
     //open files
     let mut f_in_disk = File::open(file_in).expect("Can't open file");
     let mut f_in_ram: Vec<u8> = vec![];
-    //let mut f_out_ram: Vec<u8> = vec![];
+    let mut f_out_ram: Vec<u8> = vec![];
 
     println!("Copy input file to buffer");
     std::io::copy(&mut f_in_disk, &mut f_in_ram).unwrap();
 
-    let file_size = f_in_ram.len();
-    let mut f_out_ram: Vec<u8> =
-        Vec::with_capacity((file_size as f32 * fs_out as f32 / fs_in as f32) as usize);
-
     let mut f_in = Cursor::new(&f_in_ram);
     let mut f_out = Cursor::new(&mut f_out_ram);
 
-    // parameters
-
     let f_ratio = fs_out as f64 / fs_in as f64;
 
-    let mut resampler = FastFixedIn::<f64>::new(f_ratio, 2.0, InterpolationType::Cubic, 1024, channels).unwrap();
+    let mut resampler = FastFixedOut::<f64>::new(f_ratio, 2.0, InterpolationType::Cubic, 1024, channels).unwrap();
 
-    let num_chunks = f_in_ram.len() / (8 * channels * 1024);
     let start = Instant::now();
-    for _chunk in 0..num_chunks {
-        let waves = read_frames(&mut f_in, 1024, channels);
+    loop {
+        //let start2 = Instant::now();
+        let nbr_frames = resampler.input_frames_next();
+        let waves = read_frames(&mut f_in, nbr_frames, channels);
+        //println!("Read took: {:?}", start2.elapsed());
+        if waves[0].len() < nbr_frames {
+            break;
+        }
         let waves_out = resampler.process(&waves, None).unwrap();
+        //println!("got {} frames", waves_out[0].len());
         write_frames(waves_out, &mut f_out, channels);
     }
 

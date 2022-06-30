@@ -27,10 +27,15 @@ Normal vectors can be used since `Vec` implements the `AsRef` trait.
 
 #### Asynchronous resampling
 
-The resampling is based on band-limited interpolation using sinc
+The asynchronous resamplers are available with and without anti-aliasing filters.
+
+Resampling with anti-aliasing is based on band-limited interpolation using sinc
 interpolation filters. The sinc interpolation upsamples by an adjustable factor,
 and then the new sample points are calculated by interpolating between these points.
 The resampling ratio can be updated at any time.
+
+Resampling without anti-aliasing omits the cpu-heavy sinc interpolation.
+This runs much faster but produces a lower quality result.
 
 #### Synchronous resampling
 
@@ -40,7 +45,7 @@ This type of resampler is considerably faster but doesn't support changing the r
 
 #### SIMD acceleration
 
-##### Asynchronous resampling
+##### Asynchronous resampling with anti-aliasing
 
 The asynchronous resampler supports SIMD on x86_64 and on aarch64.
 The SIMD capabilities of the CPU are determined at runtime.
@@ -94,6 +99,8 @@ The `rubato` crate requires rustc version 1.61 or newer.
 
 ### Changelog
 
+- v0.13.0
+  - Add faster (lower quality) asynchronous resamplers.
 - v0.12.0
   - Always enable all simd acceleration (and remove the simd Cargo features).
 - v0.11.0
