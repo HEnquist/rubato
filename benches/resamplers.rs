@@ -10,7 +10,7 @@ use rubato::interpolator_neon::NeonInterpolator;
 #[cfg(target_arch = "x86_64")]
 use rubato::interpolator_sse::SseInterpolator;
 
-use rubato::{FftFixedIn, InterpolationType, Resampler, SincFixedIn, WindowFunction};
+use rubato::{FastFixedIn, FftFixedIn, InterpolationType, Resampler, SincFixedIn, WindowFunction};
 
 fn bench_fftfixedin(c: &mut Criterion) {
     let chunksize = 1024;
@@ -269,11 +269,73 @@ bench_async_resampler!(
     "neon async nearest 64"
 );
 
+macro_rules! bench_fast_async_resampler {
+    ($ft:ty, $ip:expr, $f:ident, $desc:literal) => {
+        fn $f(c: &mut Criterion) {
+            let chunksize = 1024;
+            let interpolation_type = $ip;
+            let resample_ratio = 192000 as f64 / 44100 as f64;
+            let mut resampler = FastFixedIn::<$ft>::new(
+                resample_ratio,
+                1.1,
+                interpolation_type,
+                chunksize,
+                1,
+            ).unwrap();
+            let waveform = vec![vec![0.0 as $ft; chunksize]; 1];
+            c.bench_function($desc, |b| b.iter(|| resampler.process(black_box(&waveform), None).unwrap()));
+        }
+    };
+}
+
+bench_fast_async_resampler!(
+    f32,
+    InterpolationType::Cubic,
+    bench_fast_async_cubic_32,
+    "fast async cubic   32"
+);
+bench_fast_async_resampler!(
+    f32,
+    InterpolationType::Linear,
+    bench_fast_async_linear_32,
+    "fast async linear  32"
+);
+bench_fast_async_resampler!(
+    f32,
+    InterpolationType::Nearest,
+    bench_fast_async_nearest_32,
+    "fast async nearest 32"
+);
+bench_fast_async_resampler!(
+    f64,
+    InterpolationType::Cubic,
+    bench_fast_async_cubic_64,
+    "fast async cubic   64"
+);
+bench_fast_async_resampler!(
+    f64,
+    InterpolationType::Linear,
+    bench_fast_async_linear_64,
+    "fast async linear  64"
+);
+bench_fast_async_resampler!(
+    f64,
+    InterpolationType::Nearest,
+    bench_fast_async_nearest_64,
+    "fast async nearest 64"
+);
+
 #[cfg(target_arch = "x86_64")]
 criterion_group!(
     benches,
     bench_fftfixedin,
     bench_fftfixedin_32,
+    bench_fast_async_cubic_32,
+    bench_fast_async_linear_32,
+    bench_fast_async_nearest_32,
+    bench_fast_async_cubic_64,
+    bench_fast_async_linear_64,
+    bench_fast_async_nearest_64,
     bench_scalar_async_cubic_32,
     bench_scalar_async_linear_32,
     bench_scalar_async_nearest_32,
@@ -299,6 +361,12 @@ criterion_group!(
     benches,
     bench_fftfixedin,
     bench_fftfixedin_32,
+    bench_fast_async_cubic_32,
+    bench_fast_async_linear_32,
+    bench_fast_async_nearest_32,
+    bench_fast_async_cubic_64,
+    bench_fast_async_linear_64,
+    bench_fast_async_nearest_64,
     bench_scalar_async_cubic_32,
     bench_scalar_async_linear_32,
     bench_scalar_async_nearest_32,
