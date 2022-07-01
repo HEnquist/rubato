@@ -275,15 +275,13 @@ macro_rules! bench_fast_async_resampler {
             let chunksize = 1024;
             let interpolation_type = $ip;
             let resample_ratio = 192000 as f64 / 44100 as f64;
-            let mut resampler = FastFixedIn::<$ft>::new(
-                resample_ratio,
-                1.1,
-                interpolation_type,
-                chunksize,
-                1,
-            ).unwrap();
+            let mut resampler =
+                FastFixedIn::<$ft>::new(resample_ratio, 1.1, interpolation_type, chunksize, 1)
+                    .unwrap();
             let waveform = vec![vec![0.0 as $ft; chunksize]; 1];
-            c.bench_function($desc, |b| b.iter(|| resampler.process(black_box(&waveform), None).unwrap()));
+            c.bench_function($desc, |b| {
+                b.iter(|| resampler.process(black_box(&waveform), None).unwrap())
+            });
         }
     };
 }

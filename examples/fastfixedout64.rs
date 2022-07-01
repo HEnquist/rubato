@@ -1,5 +1,5 @@
 extern crate rubato;
-use rubato::{InterpolationType, Resampler, FastFixedOut};
+use rubato::{FastFixedOut, InterpolationType, Resampler};
 use std::convert::TryInto;
 use std::env;
 use std::fs::File;
@@ -95,7 +95,8 @@ fn main() {
 
     let f_ratio = fs_out as f64 / fs_in as f64;
 
-    let mut resampler = FastFixedOut::<f64>::new(f_ratio, 2.0, InterpolationType::Cubic, 1024, channels).unwrap();
+    let mut resampler =
+        FastFixedOut::<f64>::new(f_ratio, 2.0, InterpolationType::Cubic, 1024, channels).unwrap();
 
     let start = Instant::now();
     loop {

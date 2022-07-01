@@ -16,7 +16,7 @@ pub fn get_start_index(t: f64, offset: isize) -> isize {
 /// - Cubic: fitting a third order polynomial to the four nearest input samples.
 /// - Linear: linear interpolation between the two nearest input samples.
 /// - Nearest: no interpolation, just pick the nearest input sample.
-/// 
+///
 /// Note that no anti-aliasing filter is used.
 /// This makes it run considerably faster than the corresponding SincFixedIn, which performs anti-aliasing filtering.
 /// The price is that the resampling creates some artefacts in the output, mainly at higher frequencies.
@@ -45,12 +45,12 @@ pub struct FastFixedIn<T> {
 /// - Cubic: fitting a third order polynomial to the four nearest input samples.
 /// - Linear: linear interpolation between the two nearest input samples.
 /// - Nearest: no interpolation, just pick the nearest input sample.
-/// 
+///
 /// Note that no anti-aliasing filter is used.
 /// This makes it run considerably faster than the corresponding SincFixedOut, which performs anti-aliasing filtering.
 /// The price is that the resampling creates some artefacts in the output, mainly at higher frequencies.
 /// Use SincFixedOut if this can not be tolerated.
-/// 
+///
 /// The resampling ratio can be freely adjusted within the range specified to the constructor.
 /// Higher maximum ratios require more memory to be allocated by
 /// [input_buffer_allocate](Resampler::input_buffer_allocate) and an internal buffer.
