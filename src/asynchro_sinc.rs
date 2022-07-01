@@ -238,7 +238,7 @@ fn interp_lin<T>(x: T, yvals: &[T; 2]) -> T
 where
     T: Sample,
 {
-    (T::one() - x) * yvals[0] + x * yvals[1]
+    yvals[0] + x * (yvals[1] - yvals[0])
 }
 
 fn validate_ratios(

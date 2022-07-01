@@ -2,13 +2,8 @@ use crate::error::{ResampleError, ResampleResult, ResamplerConstructionError};
 use crate::InterpolationType;
 use crate::{update_mask_from_buffers, validate_buffers, Resampler, Sample};
 
-const POLYNOMIAL_LEN: usize = 4;
-
-/// Get the starting index for the time points to use for polynomial fitting.
-pub fn get_start_index(t: f64, offset: isize) -> isize {
-    let next = t.floor() as isize + 1;
-    next - offset
-}
+const POLYNOMIAL_LEN_U: usize = 4;
+const POLYNOMIAL_LEN_I: isize = 4;
 
 /// An asynchronous resampler that accepts a fixed number of audio frames for input
 /// and returns a variable number of frames.
@@ -92,7 +87,7 @@ fn interp_lin<T>(x: T, yvals: &[T]) -> T
 where
     T: Sample,
 {
-    (T::one() - x) * yvals[0] + x * yvals[1]
+    yvals[0] + x * (yvals[1] - yvals[0])
 }
 
 fn validate_ratios(
@@ -136,14 +131,14 @@ where
 
         validate_ratios(resample_ratio, max_resample_ratio_relative)?;
 
-        let buffer = vec![vec![T::zero(); chunk_size + 2 * POLYNOMIAL_LEN]; nbr_channels];
+        let buffer = vec![vec![T::zero(); chunk_size + 2 * POLYNOMIAL_LEN_U]; nbr_channels];
 
         let channel_mask = vec![true; nbr_channels];
 
         Ok(FastFixedIn {
             nbr_channels,
             chunk_size,
-            last_index: -((POLYNOMIAL_LEN / 2) as f64),
+            last_index: -(POLYNOMIAL_LEN_I / 2) as f64,
             resample_ratio,
             resample_ratio_original: resample_ratio,
             max_relative_ratio: max_resample_ratio_relative,
@@ -179,18 +174,17 @@ where
         )?;
 
         let t_ratio = 1.0 / self.resample_ratio as f64;
-        let end_idx =
-            self.chunk_size as isize - (POLYNOMIAL_LEN as isize + 1) - t_ratio.ceil() as isize;
+        let end_idx = self.chunk_size as isize - (POLYNOMIAL_LEN_I + 1) - t_ratio.ceil() as isize;
 
         //update buffer with new data
         for buf in self.buffer.iter_mut() {
-            buf.copy_within(self.chunk_size..self.chunk_size + 2 * POLYNOMIAL_LEN, 0);
+            buf.copy_within(self.chunk_size..self.chunk_size + 2 * POLYNOMIAL_LEN_U, 0);
         }
 
         let needed_len = (self.chunk_size as f64 * self.resample_ratio + 10.0) as usize;
         for (chan, active) in self.channel_mask.iter().enumerate() {
             if *active {
-                self.buffer[chan][2 * POLYNOMIAL_LEN..2 * POLYNOMIAL_LEN + self.chunk_size]
+                self.buffer[chan][2 * POLYNOMIAL_LEN_U..2 * POLYNOMIAL_LEN_U + self.chunk_size]
                     .copy_from_slice(wave_in[chan].as_ref());
                 // Set length to chunksize*ratio plus a safety margin of 10 elements.
                 if needed_len > wave_out[chan].capacity() {
@@ -213,14 +207,20 @@ where
             InterpolationType::Cubic => {
                 while idx < end_idx as f64 {
                     idx += t_ratio;
-                    let start_idx = get_start_index(idx, 2);
-                    let frac = idx - idx.floor();
+                    let idx_floor = idx.floor();
+                    let start_idx = idx_floor as isize - 1;
+                    let frac = idx - idx_floor;
                     let frac_offset = T::coerce(frac);
                     for (chan, active) in self.channel_mask.iter().enumerate() {
                         if *active {
-                            let buf = &self.buffer[chan]
-                                [(start_idx + 8) as usize..(start_idx + 12) as usize];
-                            wave_out[chan][n] = interp_cubic(frac_offset, buf);
+                            unsafe {
+                                let buf = self.buffer.get_unchecked(chan).get_unchecked(
+                                    (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
+                                        ..(start_idx + 2 * POLYNOMIAL_LEN_I + 4) as usize,
+                                );
+                                *wave_out.get_unchecked_mut(chan).get_unchecked_mut(n) =
+                                    interp_cubic(frac_offset, buf);
+                            }
                         }
                     }
                     n += 1;
@@ -229,14 +229,20 @@ where
             InterpolationType::Linear => {
                 while idx < end_idx as f64 {
                     idx += t_ratio;
-                    let start_idx = get_start_index(idx, 1);
-                    let frac = idx - idx.floor();
+                    let idx_floor = idx.floor();
+                    let start_idx = idx_floor as isize;
+                    let frac = idx - idx_floor;
                     let frac_offset = T::coerce(frac);
                     for (chan, active) in self.channel_mask.iter().enumerate() {
                         if *active {
-                            let buf = &self.buffer[chan]
-                                [(start_idx + 8) as usize..(start_idx + 10) as usize];
-                            wave_out[chan][n] = interp_lin(frac_offset, buf);
+                            unsafe {
+                                let buf = self.buffer.get_unchecked(chan).get_unchecked(
+                                    (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
+                                        ..(start_idx + 2 * POLYNOMIAL_LEN_I + 2) as usize,
+                                );
+                                *wave_out.get_unchecked_mut(chan).get_unchecked_mut(n) =
+                                    interp_lin(frac_offset, buf);
+                            }
                         }
                     }
                     n += 1;
@@ -245,11 +251,16 @@ where
             InterpolationType::Nearest => {
                 while idx < end_idx as f64 {
                     idx += t_ratio;
-                    let start_idx = get_start_index(idx, 0);
+                    let start_idx = idx.floor() as isize;
                     for (chan, active) in self.channel_mask.iter().enumerate() {
                         if *active {
-                            let point = self.buffer[chan][(start_idx + 8) as usize];
-                            wave_out[chan][n] = point;
+                            unsafe {
+                                let point = self
+                                    .buffer
+                                    .get_unchecked(chan)
+                                    .get_unchecked((start_idx + 2 * POLYNOMIAL_LEN_I) as usize);
+                                *wave_out.get_unchecked_mut(chan).get_unchecked_mut(n) = *point;
+                            }
                         }
                     }
                     n += 1;
@@ -343,10 +354,10 @@ where
         validate_ratios(resample_ratio, max_resample_ratio_relative)?;
 
         let needed_input_size =
-            (chunk_size as f64 / resample_ratio).ceil() as usize + 2 + POLYNOMIAL_LEN / 2;
+            (chunk_size as f64 / resample_ratio).ceil() as usize + 2 + POLYNOMIAL_LEN_U / 2;
         let buffer_channel_length = ((max_resample_ratio_relative + 1.0) * needed_input_size as f64)
             as usize
-            + 2 * POLYNOMIAL_LEN;
+            + 2 * POLYNOMIAL_LEN_U;
         let buffer = vec![vec![T::zero(); buffer_channel_length]; nbr_channels];
         let channel_mask = vec![true; nbr_channels];
 
@@ -354,7 +365,7 @@ where
             nbr_channels,
             chunk_size,
             needed_input_size,
-            last_index: -((POLYNOMIAL_LEN / 2) as f64),
+            last_index: -(POLYNOMIAL_LEN_I / 2) as f64,
             current_buffer_fill: needed_input_size,
             resample_ratio,
             resample_ratio_original: resample_ratio,
@@ -391,7 +402,7 @@ where
         )?;
         for buf in self.buffer.iter_mut() {
             buf.copy_within(
-                self.current_buffer_fill..self.current_buffer_fill + 2 * POLYNOMIAL_LEN,
+                self.current_buffer_fill..self.current_buffer_fill + 2 * POLYNOMIAL_LEN_U,
                 0,
             );
         }
@@ -400,7 +411,7 @@ where
         for (chan, active) in self.channel_mask.iter().enumerate() {
             if *active {
                 self.buffer[chan]
-                    [2 * POLYNOMIAL_LEN..2 * POLYNOMIAL_LEN + wave_in[chan].as_ref().len()]
+                    [2 * POLYNOMIAL_LEN_U..2 * POLYNOMIAL_LEN_U + wave_in[chan].as_ref().len()]
                     .copy_from_slice(wave_in[chan].as_ref());
                 if self.chunk_size > wave_out[chan].capacity() {
                     trace!(
@@ -421,14 +432,20 @@ where
             InterpolationType::Cubic => {
                 for n in 0..self.chunk_size {
                     idx += t_ratio;
-                    let start_idx = get_start_index(idx, 2);
-                    let frac = idx - idx.floor();
+                    let idx_floor = idx.floor();
+                    let start_idx = idx_floor as isize - 1;
+                    let frac = idx - idx_floor;
                     let frac_offset = T::coerce(frac);
                     for (chan, active) in self.channel_mask.iter().enumerate() {
                         if *active {
-                            let buf = &self.buffer[chan]
-                                [(start_idx + 8) as usize..(start_idx + 12) as usize];
-                            wave_out[chan][n] = interp_cubic(frac_offset, buf);
+                            unsafe {
+                                let buf = self.buffer.get_unchecked(chan).get_unchecked(
+                                    (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
+                                        ..(start_idx + 2 * POLYNOMIAL_LEN_I + 4) as usize,
+                                );
+                                *wave_out.get_unchecked_mut(chan).get_unchecked_mut(n) =
+                                    interp_cubic(frac_offset, buf);
+                            }
                         }
                     }
                 }
@@ -436,14 +453,20 @@ where
             InterpolationType::Linear => {
                 for n in 0..self.chunk_size {
                     idx += t_ratio;
-                    let start_idx = get_start_index(idx, 1);
-                    let frac = idx - idx.floor();
+                    let idx_floor = idx.floor();
+                    let start_idx = idx_floor as isize;
+                    let frac = idx - idx_floor;
                     let frac_offset = T::coerce(frac);
                     for (chan, active) in self.channel_mask.iter().enumerate() {
                         if *active {
-                            let buf = &self.buffer[chan]
-                                [(start_idx + 8) as usize..(start_idx + 10) as usize];
-                            wave_out[chan][n] = interp_lin(frac_offset, buf);
+                            unsafe {
+                                let buf = self.buffer.get_unchecked(chan).get_unchecked(
+                                    (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
+                                        ..(start_idx + 2 * POLYNOMIAL_LEN_I + 2) as usize,
+                                );
+                                *wave_out.get_unchecked_mut(chan).get_unchecked_mut(n) =
+                                    interp_lin(frac_offset, buf);
+                            }
                         }
                     }
                 }
@@ -451,11 +474,16 @@ where
             InterpolationType::Nearest => {
                 for n in 0..self.chunk_size {
                     idx += t_ratio;
-                    let start_idx = get_start_index(idx, 0);
+                    let start_idx = idx.floor() as isize;
                     for (chan, active) in self.channel_mask.iter().enumerate() {
                         if *active {
-                            let point = self.buffer[chan][(start_idx + 8) as usize];
-                            wave_out[chan][n] = point;
+                            unsafe {
+                                let point = self
+                                    .buffer
+                                    .get_unchecked(chan)
+                                    .get_unchecked((start_idx + 2 * POLYNOMIAL_LEN_I) as usize);
+                                *wave_out.get_unchecked_mut(chan).get_unchecked_mut(n) = *point;
+                            }
                         }
                     }
                 }
@@ -466,7 +494,7 @@ where
         self.last_index = idx - self.current_buffer_fill as f64;
         self.needed_input_size = (self.last_index as f32
             + self.chunk_size as f32 / self.resample_ratio as f32
-            + POLYNOMIAL_LEN as f32)
+            + POLYNOMIAL_LEN_U as f32)
             .ceil() as usize
             + 2;
         trace!(
@@ -484,7 +512,7 @@ where
         (self.chunk_size as f64 * self.resample_ratio_original * self.max_relative_ratio).ceil()
             as usize
             + 2
-            + POLYNOMIAL_LEN / 2
+            + POLYNOMIAL_LEN_U / 2
     }
 
     fn input_frames_next(&self) -> usize {
@@ -512,7 +540,7 @@ where
             self.needed_input_size = (self.last_index as f32
                 + self.chunk_size as f32 / self.resample_ratio as f32)
                 .ceil() as usize
-                + POLYNOMIAL_LEN
+                + POLYNOMIAL_LEN_U
                 + 2;
             Ok(())
         } else {
