@@ -1,14 +1,14 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 extern crate rubato;
 
-use rubato::ScalarInterpolator;
+use rubato::sinc_interpolator::ScalarInterpolator;
 
 #[cfg(target_arch = "x86_64")]
-use rubato::interpolator_avx::AvxInterpolator;
+use rubato::sinc_interpolator_avx::AvxInterpolator;
 #[cfg(target_arch = "aarch64")]
-use rubato::interpolator_neon::NeonInterpolator;
+use rubato::sinc_interpolator_neon::NeonInterpolator;
 #[cfg(target_arch = "x86_64")]
-use rubato::interpolator_sse::SseInterpolator;
+use rubato::sinc_interpolator_sse::SseInterpolator;
 
 use rubato::{
     FastFixedIn, FftFixedIn, InterpolationType, PolynomialDegree, Resampler, SincFixedIn,

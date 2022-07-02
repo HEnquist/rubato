@@ -1,4 +1,4 @@
-use crate::asynchro_sinc::SincInterpolator;
+use crate::sinc_interpolator::SincInterpolator;
 use crate::error::{CpuFeature, MissingCpuFeature};
 use crate::sinc::make_sincs;
 use crate::windows::WindowFunction;
@@ -213,8 +213,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::asynchro_sinc::SincInterpolator;
-    use crate::interpolator_avx::AvxInterpolator;
+    use crate::sinc_interpolator::SincInterpolator;
+    use crate::sinc_interpolator_avx::AvxInterpolator;
     use crate::sinc::make_sincs;
     use crate::WindowFunction;
     use num_traits::Float;

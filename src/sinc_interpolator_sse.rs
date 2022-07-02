@@ -1,17 +1,21 @@
-use crate::asynchro_sinc::SincInterpolator;
+use crate::sinc_interpolator::SincInterpolator;
 use crate::error::{CpuFeature, MissingCpuFeature};
 use crate::sinc::make_sincs;
 use crate::windows::WindowFunction;
-use core::arch::aarch64::{float32x4_t, float64x2_t};
-use core::arch::aarch64::{vadd_f32, vaddq_f32, vfmaq_f32, vld1q_f32, vmovq_n_f32, vst1_f32, vget_high_f32, vget_low_f32};
-use core::arch::aarch64::{vaddq_f64, vfmaq_f64, vld1q_f64, vmovq_n_f64, vst1q_f64};
 use crate::Sample;
+use core::arch::x86_64::{__m128, __m128d};
+use core::arch::x86_64::{
+    _mm_add_pd, _mm_hadd_pd, _mm_loadu_pd, _mm_mul_pd, _mm_setzero_pd, _mm_store_sd,
+};
+use core::arch::x86_64::{
+    _mm_add_ps, _mm_hadd_ps, _mm_loadu_ps, _mm_mul_ps, _mm_setzero_ps, _mm_store_ss,
+};
 
 /// Collection of cpu features required for this interpolator.
-static FEATURES: &[CpuFeature] = &[CpuFeature::Neon];
+static FEATURES: &[CpuFeature] = &[CpuFeature::Sse3];
 
-/// Trait governing what can be done with an NeonSample.
-pub trait NeonSample: Sized + Send {
+/// Trait governing what can be done with an SseSample.
+pub trait SseSample: Sized + Send {
     type Sinc: Send;
 
     /// Pack sincs into a vector.
@@ -37,16 +41,16 @@ pub trait NeonSample: Sized + Send {
     ) -> Self;
 }
 
-impl NeonSample for f32 {
-    type Sinc = float32x4_t;
+impl SseSample for f32 {
+    type Sinc = __m128;
 
-    #[target_feature(enable = "neon")]
+    #[target_feature(enable = "sse3")]
     unsafe fn pack_sincs(sincs: Vec<Vec<Self>>) -> Vec<Vec<Self::Sinc>> {
         let mut packed_sincs = Vec::new();
         for sinc in sincs.iter() {
             let mut packed = Vec::new();
             for elements in sinc.chunks(4) {
-                let packed_elems = vld1q_f32(&elements[0]);
+                let packed_elems = _mm_loadu_ps(&elements[0]);
                 packed.push(packed_elems);
             }
             packed_sincs.push(packed);
@@ -54,7 +58,7 @@ impl NeonSample for f32 {
         packed_sincs
     }
 
-    #[target_feature(enable = "neon")]
+    #[target_feature(enable = "sse3")]
     unsafe fn get_sinc_interpolated_unsafe(
         wave: &[f32],
         index: usize,
@@ -64,38 +68,39 @@ impl NeonSample for f32 {
     ) -> f32 {
         let sinc = sincs.get_unchecked(subindex);
         let wave_cut = &wave[index..(index + length)];
-        let mut acc0 = vmovq_n_f32(0.0);
-        let mut acc1 = vmovq_n_f32(0.0);
+        let mut acc0 = _mm_setzero_ps();
+        let mut acc1 = _mm_setzero_ps();
         let mut w_idx = 0;
         let mut s_idx = 0;
         for _ in 0..wave_cut.len() / 8 {
-            let w0 = vld1q_f32(wave_cut.get_unchecked(w_idx));
-            let w1 = vld1q_f32(wave_cut.get_unchecked(w_idx + 4));
-            acc0 = vfmaq_f32(acc0, w0, *sinc.get_unchecked(s_idx));
-            acc1 = vfmaq_f32(acc1, w1, *sinc.get_unchecked(s_idx + 1));
+            let w0 = _mm_loadu_ps(wave_cut.get_unchecked(w_idx));
+            let w1 = _mm_loadu_ps(wave_cut.get_unchecked(w_idx + 4));
+            let s0 = _mm_mul_ps(w0, *sinc.get_unchecked(s_idx));
+            let s1 = _mm_mul_ps(w1, *sinc.get_unchecked(s_idx + 1));
+            acc0 = _mm_add_ps(acc0, s0);
+            acc1 = _mm_add_ps(acc1, s1);
             w_idx += 8;
             s_idx += 2;
         }
-        let sum4 = vaddq_f32(acc0, acc1);
-        let high = vget_high_f32(sum4);
-        let low = vget_low_f32(sum4);
-        let sum2 = vadd_f32(high, low);
-        let mut array = [0.0, 0.0];
-        vst1_f32(array.as_mut_ptr(), sum2);
-        array[0] + array[1]
+        let temp4 = _mm_add_ps(acc0, acc1);
+        let temp2 = _mm_hadd_ps(temp4, temp4);
+        let temp1 = _mm_hadd_ps(temp2, temp2);
+        let mut result = 0.0;
+        _mm_store_ss(&mut result, temp1);
+        result
     }
 }
 
-impl NeonSample for f64 {
-    type Sinc = float64x2_t;
+impl SseSample for f64 {
+    type Sinc = __m128d;
 
-    #[target_feature(enable = "neon")]
+    #[target_feature(enable = "sse3")]
     unsafe fn pack_sincs(sincs: Vec<Vec<f64>>) -> Vec<Vec<Self::Sinc>> {
         let mut packed_sincs = Vec::new();
         for sinc in sincs.iter() {
             let mut packed = Vec::new();
             for elements in sinc.chunks(2) {
-                let packed_elems = vld1q_f64(&elements[0]);
+                let packed_elems = _mm_loadu_pd(&elements[0]);
                 packed.push(packed_elems);
             }
             packed_sincs.push(packed);
@@ -103,7 +108,7 @@ impl NeonSample for f64 {
         packed_sincs
     }
 
-    #[target_feature(enable = "neon")]
+    #[target_feature(enable = "sse3")]
     unsafe fn get_sinc_interpolated_unsafe(
         wave: &[f64],
         index: usize,
@@ -113,46 +118,51 @@ impl NeonSample for f64 {
     ) -> f64 {
         let sinc = sincs.get_unchecked(subindex);
         let wave_cut = &wave[index..(index + length)];
-        let mut acc0 = vmovq_n_f64(0.0);
-        let mut acc1 = vmovq_n_f64(0.0);
-        let mut acc2 = vmovq_n_f64(0.0);
-        let mut acc3 = vmovq_n_f64(0.0);
+        let mut acc0 = _mm_setzero_pd();
+        let mut acc1 = _mm_setzero_pd();
+        let mut acc2 = _mm_setzero_pd();
+        let mut acc3 = _mm_setzero_pd();
         let mut w_idx = 0;
         let mut s_idx = 0;
         for _ in 0..wave_cut.len() / 8 {
-            let w0 = vld1q_f64(wave_cut.get_unchecked(w_idx));
-            let w1 = vld1q_f64(wave_cut.get_unchecked(w_idx+2));
-            let w2 = vld1q_f64(wave_cut.get_unchecked(w_idx+4));
-            let w3 = vld1q_f64(wave_cut.get_unchecked(w_idx+6));
-            acc0 = vfmaq_f64(acc0, w0, *sinc.get_unchecked(s_idx));
-            acc1 = vfmaq_f64(acc1, w1, *sinc.get_unchecked(s_idx + 1));
-            acc2 = vfmaq_f64(acc2, w2, *sinc.get_unchecked(s_idx + 2));
-            acc3 = vfmaq_f64(acc3, w3, *sinc.get_unchecked(s_idx + 3));
+            let w0 = _mm_loadu_pd(wave_cut.get_unchecked(w_idx));
+            let w1 = _mm_loadu_pd(wave_cut.get_unchecked(w_idx + 2));
+            let w2 = _mm_loadu_pd(wave_cut.get_unchecked(w_idx + 4));
+            let w3 = _mm_loadu_pd(wave_cut.get_unchecked(w_idx + 6));
+            let s0 = _mm_mul_pd(w0, *sinc.get_unchecked(s_idx));
+            let s1 = _mm_mul_pd(w1, *sinc.get_unchecked(s_idx + 1));
+            let s2 = _mm_mul_pd(w2, *sinc.get_unchecked(s_idx + 2));
+            let s3 = _mm_mul_pd(w3, *sinc.get_unchecked(s_idx + 3));
+            acc0 = _mm_add_pd(acc0, s0);
+            acc1 = _mm_add_pd(acc1, s1);
+            acc2 = _mm_add_pd(acc2, s2);
+            acc3 = _mm_add_pd(acc3, s3);
             w_idx += 8;
             s_idx += 4;
         }
-        let packedsum0 = vaddq_f64(acc0, acc1);
-        let packedsum1 = vaddq_f64(acc2, acc3);
-        let packedsum2 = vaddq_f64(packedsum0, packedsum1);
-        let mut values = [0.0, 0.0];
-        vst1q_f64(values.as_mut_ptr(), packedsum2);
-        values[0] + values[1]
+        let temp2_0 = _mm_add_pd(acc0, acc1);
+        let temp2_1 = _mm_add_pd(acc2, acc3);
+        let temp2 = _mm_hadd_pd(temp2_0, temp2_1);
+        let temp1 = _mm_hadd_pd(temp2, temp2);
+        let mut result = 0.0;
+        _mm_store_sd(&mut result, temp1);
+        result
     }
 }
 
 /// A SSE accelerated interpolator
-pub struct NeonInterpolator<T>
+pub struct SseInterpolator<T>
 where
-    T: NeonSample,
+    T: SseSample,
 {
     sincs: Vec<Vec<T::Sinc>>,
     length: usize,
     nbr_sincs: usize,
 }
 
-impl<T> SincInterpolator<T> for NeonInterpolator<T>
+impl<T> SincInterpolator<T> for SseInterpolator<T>
 where
-    T: Sample,
+    T: SseSample,
 {
     /// Calculate the scalar produt of an input wave and the selected sinc filter
     fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T {
@@ -180,11 +190,11 @@ where
     }
 }
 
-impl<T> NeonInterpolator<T>
+impl<T> SseInterpolator<T>
 where
     T: Sample,
 {
-    /// Create a new NeonInterpolator
+    /// Create a new SseInterpolator
     ///
     /// Parameters are:
     /// - `sinc_len`: Length of sinc functions.
@@ -203,7 +213,7 @@ where
 
         assert!(sinc_len % 8 == 0, "Sinc length must be a multiple of 8.");
         let sincs = make_sincs(sinc_len, oversampling_factor, f_cutoff, window);
-        let sincs = unsafe { <T as NeonSample>::pack_sincs(sincs) };
+        let sincs = unsafe { <T as SseSample>::pack_sincs(sincs) };
 
         Ok(Self {
             sincs,
@@ -215,8 +225,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::asynchro_sinc::SincInterpolator;
-    use crate::interpolator_neon::NeonInterpolator;
+    use crate::sinc_interpolator::SincInterpolator;
+    use crate::sinc_interpolator_sse::SseInterpolator;
     use crate::sinc::make_sincs;
     use crate::WindowFunction;
     use num_traits::Float;
@@ -231,7 +241,7 @@ mod tests {
     }
 
     #[test]
-    fn test_neon_interpolator_64() {
+    fn test_sse_interpolator_64() {
         let mut rng = rand::thread_rng();
         let mut wave = Vec::new();
         for _ in 0..2048 {
@@ -243,14 +253,14 @@ mod tests {
         let window = WindowFunction::BlackmanHarris2;
         let sincs = make_sincs::<f64>(sinc_len, oversampling_factor, f_cutoff, window);
         let interpolator =
-            NeonInterpolator::<f64>::new(sinc_len, oversampling_factor, f_cutoff, window).unwrap();
+            SseInterpolator::<f64>::new(sinc_len, oversampling_factor, f_cutoff, window).unwrap();
         let value = interpolator.get_sinc_interpolated(&wave, 333, 123);
         let check = get_sinc_interpolated(&wave, 333, &sincs[123]);
         assert!((value - check).abs() < 1.0e-9);
     }
 
     #[test]
-    fn test_neon_interpolator_32() {
+    fn test_sse_interpolator_32() {
         let mut rng = rand::thread_rng();
         let mut wave = Vec::new();
         for _ in 0..2048 {
@@ -262,7 +272,7 @@ mod tests {
         let window = WindowFunction::BlackmanHarris2;
         let sincs = make_sincs::<f32>(sinc_len, oversampling_factor, f_cutoff, window);
         let interpolator =
-            NeonInterpolator::<f32>::new(sinc_len, oversampling_factor, f_cutoff, window).unwrap();
+            SseInterpolator::<f32>::new(sinc_len, oversampling_factor, f_cutoff, window).unwrap();
         let value = interpolator.get_sinc_interpolated(&wave, 333, 123);
         let check = get_sinc_interpolated(&wave, 333, &sincs[123]);
         assert!((value - check).abs() < 1.0e-5);

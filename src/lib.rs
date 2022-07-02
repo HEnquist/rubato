@@ -155,8 +155,9 @@ mod sinc;
 mod synchro;
 mod windows;
 
+pub mod sinc_interpolator;
 pub use crate::asynchro_fast::{FastFixedIn, FastFixedOut, PolynomialDegree};
-pub use crate::asynchro_sinc::{ScalarInterpolator, SincFixedIn, SincFixedOut};
+pub use crate::asynchro_sinc::{SincFixedIn, SincFixedOut};
 pub use crate::error::{
     CpuFeature, MissingCpuFeature, ResampleError, ResampleResult, ResamplerConstructionError,
 };
@@ -175,36 +176,38 @@ macro_rules! interpolator {
         #[cfg($($cond)*)]
         pub mod $mod;
 
-        #[cfg($($cond)*)]
+        #[cfg(not($($cond)*))]
+        pub mod $mod {
+            use crate::Sample;
+
+            /// Dummy trait when not supported.
+            pub trait $trait {
+            }
+
+            /// Dummy impl of trait when not supported.
+            impl<T> $trait for T where T: Sample {
+            }
+        }
+
         use self::$mod::$trait;
-
-        /// Dummy trait when not supported.
-        #[cfg(not($($cond)*))]
-        pub trait $trait {
-        }
-
-        /// Dummy impl of trait when not supported.
-        #[cfg(not($($cond)*))]
-        impl<T> $trait for T where T: Sample {
-        }
     }
 }
 
 interpolator! {
     #[cfg(target_arch = "x86_64")]
-    mod interpolator_avx;
+    mod sinc_interpolator_avx;
     trait AvxSample;
 }
 
 interpolator! {
     #[cfg(target_arch = "x86_64")]
-    mod interpolator_sse;
+    mod sinc_interpolator_sse;
     trait SseSample;
 }
 
 interpolator! {
     #[cfg(target_arch = "aarch64")]
-    mod interpolator_neon;
+    mod sinc_interpolator_neon;
     trait NeonSample;
 }
 
