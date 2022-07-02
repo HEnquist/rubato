@@ -1,10 +1,10 @@
 use crate::error::{ResampleError, ResampleResult, ResamplerConstructionError};
 use crate::interpolation::*;
+use crate::sinc_interpolator::{ScalarInterpolator, SincInterpolator};
 #[cfg(target_arch = "x86_64")]
 use crate::sinc_interpolator_avx::AvxInterpolator;
 #[cfg(target_arch = "aarch64")]
 use crate::sinc_interpolator_neon::NeonInterpolator;
-use crate::sinc_interpolator::{ScalarInterpolator, SincInterpolator};
 #[cfg(target_arch = "x86_64")]
 use crate::sinc_interpolator_sse::SseInterpolator;
 use crate::windows::WindowFunction;
