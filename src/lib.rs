@@ -109,7 +109,7 @@
 //! - v0.10.0
 //!   - Add an object-safe wrapper trait for Resampler.
 //! - v0.9.0
-//!   - Accept any AsRef<[T]> as input.
+//!   - Accept any AsRef<\[T\]> as input.
 
 #[cfg(feature = "log")]
 extern crate log;

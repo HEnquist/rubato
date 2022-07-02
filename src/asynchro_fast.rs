@@ -30,11 +30,8 @@ pub enum PolynomialDegree {
 /// An asynchronous resampler that accepts a fixed number of audio frames for input
 /// and returns a variable number of frames.
 ///
-/// The resampling is done by interpolating between the input samples.
-/// The interpolation order can selected, and the choices are:
-/// - Cubic: fitting a third order polynomial to the four nearest input samples.
-/// - Linear: linear interpolation between the two nearest input samples.
-/// - Nearest: no interpolation, just pick the nearest input sample.
+/// The resampling is done by interpolating between the input samples by fitting polynomials.
+/// The polynomial degree can selected, see [PolynomialDegree] for the available options.
 ///
 /// Note that no anti-aliasing filter is used.
 /// This makes it run considerably faster than the corresponding SincFixedIn, which performs anti-aliasing filtering.
@@ -60,10 +57,7 @@ pub struct FastFixedIn<T> {
 /// [input_frames_next](Resampler::input_frames_next) function.
 ///
 /// The resampling is done by interpolating between the input samples.
-/// The interpolation order can selected, and the choices are:
-/// - Cubic: fitting a third order polynomial to the four nearest input samples.
-/// - Linear: linear interpolation between the two nearest input samples.
-/// - Nearest: no interpolation, just pick the nearest input sample.
+/// The polynomial degree can selected, see [PolynomialDegree] for the available options.
 ///
 /// Note that no anti-aliasing filter is used.
 /// This makes it run considerably faster than the corresponding SincFixedOut, which performs anti-aliasing filtering.
@@ -209,7 +203,7 @@ where
     /// Parameters are:
     /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
     /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Resampler::set_resample_ratio] relative to `resample_ratio`, must be >= 1.0. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio * 10.0` and `resample_ratio / 10.0`.
-    /// - `interpolation_type`: Degree of polynomial used for interpolation, see `PolynomialDegree`.
+    /// - `interpolation_type`: Degree of polynomial used for interpolation, see [PolynomialDegree].
     /// - `chunk_size`: Size of input data in frames.
     /// - `nbr_channels`: Number of channels in input/output.
     pub fn new(
@@ -476,7 +470,7 @@ where
     /// Parameters are:
     /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
     /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Resampler::set_resample_ratio] relative to `resample_ratio`, must be >= 1.0. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio * 10.0` and `resample_ratio / 10.0`.
-    /// - `interpolation_type`: Degree of polynomial used for interpolation, see `PolynomialDegree`.
+    /// - `interpolation_type`: Degree of polynomial used for interpolation, see [PolynomialDegree].
     /// - `chunk_size`: Size of output data in frames.
     /// - `nbr_channels`: Number of channels in input/output.
     pub fn new(
