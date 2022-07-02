@@ -5,9 +5,8 @@ const POLYNOMIAL_LEN_U: usize = 8;
 const POLYNOMIAL_LEN_I: isize = 8;
 
 macro_rules! t {
-    // Shorter for of T::coerce(value)
+    // Shorter form of T::coerce(value)
     ($expression:expr) => {
-        // `stringify!` will convert the expression *as it is* into a string.
         T::coerce($expression)
     };
 }
@@ -170,11 +169,9 @@ where
     T: Sample,
 {
     let a0 = yvals[1];
-    let a1 = -(T::one() / T::coerce(3.0)) * yvals[0] - T::coerce(0.5) * yvals[1] + yvals[2]
-        - (T::one() / T::coerce(6.0)) * yvals[3];
-    let a2 = T::coerce(0.5) * (yvals[0] + yvals[2]) - yvals[1];
-    let a3 = T::coerce(0.5) * (yvals[1] - yvals[2])
-        + (T::one() / T::coerce(6.0)) * (yvals[3] - yvals[0]);
+    let a1 = -t!(1.0 / 3.0) * yvals[0] - t!(0.5) * yvals[1] + yvals[2] - t!(1.0 / 6.0) * yvals[3];
+    let a2 = t!(0.5) * (yvals[0] + yvals[2]) - yvals[1];
+    let a3 = t!(0.5) * (yvals[1] - yvals[2]) + t!(1.0 / 6.0) * (yvals[3] - yvals[0]);
     let x2 = x * x;
     let x3 = x2 * x;
     a0 + a1 * x + a2 * x2 + a3 * x3
