@@ -10,7 +10,10 @@ use rubato::interpolator_neon::NeonInterpolator;
 #[cfg(target_arch = "x86_64")]
 use rubato::interpolator_sse::SseInterpolator;
 
-use rubato::{FastFixedIn, FftFixedIn, InterpolationType, Resampler, SincFixedIn, WindowFunction};
+use rubato::{
+    FastFixedIn, FftFixedIn, InterpolationType, PolynomialDegree, Resampler, SincFixedIn,
+    WindowFunction,
+};
 
 fn bench_fftfixedin(c: &mut Criterion) {
     let chunksize = 1024;
@@ -288,37 +291,61 @@ macro_rules! bench_fast_async_resampler {
 
 bench_fast_async_resampler!(
     f32,
-    InterpolationType::Cubic,
+    PolynomialDegree::Septic,
+    bench_fast_async_septic_32,
+    "fast async septic  32"
+);
+bench_fast_async_resampler!(
+    f32,
+    PolynomialDegree::Quintic,
+    bench_fast_async_quintic_32,
+    "fast async quintic  32"
+);
+bench_fast_async_resampler!(
+    f32,
+    PolynomialDegree::Cubic,
     bench_fast_async_cubic_32,
     "fast async cubic   32"
 );
 bench_fast_async_resampler!(
     f32,
-    InterpolationType::Linear,
+    PolynomialDegree::Linear,
     bench_fast_async_linear_32,
     "fast async linear  32"
 );
 bench_fast_async_resampler!(
     f32,
-    InterpolationType::Nearest,
+    PolynomialDegree::Nearest,
     bench_fast_async_nearest_32,
     "fast async nearest 32"
 );
 bench_fast_async_resampler!(
     f64,
-    InterpolationType::Cubic,
+    PolynomialDegree::Septic,
+    bench_fast_async_septic_64,
+    "fast async septic  64"
+);
+bench_fast_async_resampler!(
+    f64,
+    PolynomialDegree::Quintic,
+    bench_fast_async_quintic_64,
+    "fast async quintic  64"
+);
+bench_fast_async_resampler!(
+    f64,
+    PolynomialDegree::Cubic,
     bench_fast_async_cubic_64,
     "fast async cubic   64"
 );
 bench_fast_async_resampler!(
     f64,
-    InterpolationType::Linear,
+    PolynomialDegree::Linear,
     bench_fast_async_linear_64,
     "fast async linear  64"
 );
 bench_fast_async_resampler!(
     f64,
-    InterpolationType::Nearest,
+    PolynomialDegree::Nearest,
     bench_fast_async_nearest_64,
     "fast async nearest 64"
 );
@@ -328,9 +355,13 @@ criterion_group!(
     benches,
     bench_fftfixedin,
     bench_fftfixedin_32,
+    bench_fast_async_septic_32,
+    bench_fast_async_quintic_32,
     bench_fast_async_cubic_32,
     bench_fast_async_linear_32,
     bench_fast_async_nearest_32,
+    bench_fast_async_septic_64,
+    bench_fast_async_quintic_64,
     bench_fast_async_cubic_64,
     bench_fast_async_linear_64,
     bench_fast_async_nearest_64,
@@ -359,9 +390,13 @@ criterion_group!(
     benches,
     bench_fftfixedin,
     bench_fftfixedin_32,
+    bench_fast_async_septic_32,
+    bench_fast_async_quintic_32,
     bench_fast_async_cubic_32,
     bench_fast_async_linear_32,
     bench_fast_async_nearest_32,
+    bench_fast_async_septic_64,
+    bench_fast_async_quintic_64,
     bench_fast_async_cubic_64,
     bench_fast_async_linear_64,
     bench_fast_async_nearest_64,

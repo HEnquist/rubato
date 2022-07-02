@@ -1,5 +1,5 @@
 extern crate rubato;
-use rubato::{FastFixedIn, InterpolationType, Resampler};
+use rubato::{FastFixedIn, PolynomialDegree, Resampler};
 use std::convert::TryInto;
 use std::env;
 use std::fs::File;
@@ -101,7 +101,7 @@ fn main() {
     let f_ratio = fs_out as f64 / fs_in as f64;
 
     let mut resampler =
-        FastFixedIn::<f64>::new(f_ratio, 2.0, InterpolationType::Cubic, 1024, channels).unwrap();
+        FastFixedIn::<f64>::new(f_ratio, 2.0, PolynomialDegree::Septic, 1024, channels).unwrap();
 
     let num_chunks = f_in_ram.len() / (8 * channels * 1024);
     let start = Instant::now();

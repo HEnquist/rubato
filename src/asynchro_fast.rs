@@ -1,9 +1,32 @@
 use crate::error::{ResampleError, ResampleResult, ResamplerConstructionError};
-use crate::InterpolationType;
 use crate::{update_mask_from_buffers, validate_buffers, Resampler, Sample};
 
-const POLYNOMIAL_LEN_U: usize = 4;
-const POLYNOMIAL_LEN_I: isize = 4;
+const POLYNOMIAL_LEN_U: usize = 8;
+const POLYNOMIAL_LEN_I: isize = 8;
+
+macro_rules! t {
+    // Shorter for of T::coerce(value)
+    ($expression:expr) => {
+        // `stringify!` will convert the expression *as it is* into a string.
+        T::coerce($expression)
+    };
+}
+
+/// Degree of the polynomial used for interpolation.
+/// A higher degree gives a higher quality result, while taking longer to compute.
+#[derive(Debug)]
+pub enum PolynomialDegree {
+    /// Septic polynomial, fitted using 8 sample points.
+    Septic,
+    /// Quintic polynomial, fitted using 6 sample points.
+    Quintic,
+    /// Cubic polynomial, fitted using 4 sample points.
+    Cubic,
+    /// Linear polynomial, fitted using 2 sample points.
+    Linear,
+    /// Nearest, uses the nearest sample point without any fitting.
+    Nearest,
+}
 
 /// An asynchronous resampler that accepts a fixed number of audio frames for input
 /// and returns a variable number of frames.
@@ -29,7 +52,7 @@ pub struct FastFixedIn<T> {
     resample_ratio_original: f64,
     max_relative_ratio: f64,
     buffer: Vec<Vec<T>>,
-    interpolation: InterpolationType,
+    interpolation: PolynomialDegree,
     channel_mask: Vec<bool>,
 }
 
@@ -61,8 +84,83 @@ pub struct FastFixedOut<T> {
     resample_ratio_original: f64,
     max_relative_ratio: f64,
     buffer: Vec<Vec<T>>,
-    interpolation: InterpolationType,
+    interpolation: PolynomialDegree,
     channel_mask: Vec<bool>,
+}
+
+/// Perform septic polynomial interpolation to get value at x.
+/// Input points are assumed to be at x = -3, -2, -1, 0, 1, 2, 3, 4
+fn interp_septic<T>(x: T, yvals: &[T]) -> T
+where
+    T: Sample,
+{
+    let a = yvals[0];
+    let b = yvals[1];
+    let c = yvals[2];
+    let d = yvals[3];
+    let e = yvals[4];
+    let f = yvals[5];
+    let g = yvals[6];
+    let h = yvals[7];
+    let k7 = -a + t!(7.0) * b - t!(21.0) * c + t!(35.0) * d - t!(35.0) * e + t!(21.0) * f
+        - t!(7.0) * g
+        + h;
+    let k6 = t!(7.0) * a - t!(42.0) * b + t!(105.0) * c - t!(140.0) * d + t!(105.0) * e
+        - t!(42.0) * f
+        + t!(7.0) * g;
+    let k5 = -t!(7.0) * a - t!(14.0) * b + t!(189.0) * c - t!(490.0) * d + t!(595.0) * e
+        - t!(378.0) * f
+        + t!(119.0) * g
+        - t!(14.0) * h;
+    let k4 = -t!(35.0) * a + t!(420.0) * b - t!(1365.0) * c + t!(1960.0) * d - t!(1365.0) * e
+        + t!(420.0) * f
+        - t!(35.0) * g;
+    let k3 = t!(56.0) * a - t!(497.0) * b + t!(336.0) * c + t!(1715.0) * d - t!(3080.0) * e
+        + t!(1869.0) * f
+        - t!(448.0) * g
+        + t!(49.0) * h;
+    let k2 = t!(28.0) * a - t!(378.0) * b + t!(3780.0) * c - t!(6860.0) * d + t!(3780.0) * e
+        - t!(378.0) * f
+        + t!(28.0) * g;
+    let k1 = -t!(48.0) * a + t!(504.0) * b - t!(3024.0) * c - t!(1260.0) * d + t!(5040.0) * e
+        - t!(1512.0) * f
+        + t!(336.0) * g
+        - t!(36.0) * h;
+    let k0 = t!(5040.0) * d;
+    let x2 = x * x;
+    let x3 = x2 * x;
+    let x4 = x2 * x2;
+    let x5 = x2 * x3;
+    let x6 = x3 * x3;
+    let x7 = x3 * x4;
+    let val = k7 * x7 + k6 * x6 + k5 * x5 + k4 * x4 + k3 * x3 + k2 * x2 + k1 * x + k0;
+    t!(1.0 / 5040.0) * val
+}
+
+/// Perform quintic polynomial interpolation to get value at x.
+/// Input points are assumed to be at x = -2, -1, 0, 1, 2, 3
+fn interp_quintic<T>(x: T, yvals: &[T]) -> T
+where
+    T: Sample,
+{
+    let a = yvals[0];
+    let b = yvals[1];
+    let c = yvals[2];
+    let d = yvals[3];
+    let e = yvals[4];
+    let f = yvals[5];
+    let k5 = -a + t!(5.0) * b - t!(10.0) * c + t!(10.0) * d - t!(5.0) * e + f;
+    let k4 = t!(5.0) * a - t!(20.0) * b + t!(30.0) * c - t!(20.0) * d + t!(5.0) * e;
+    let k3 = -t!(5.0) * a - t!(5.0) * b + t!(50.0) * c - t!(70.0) * d + t!(35.0) * e - t!(5.0) * f;
+    let k2 = -t!(5.0) * a + t!(80.0) * b - t!(150.0) * c + t!(80.0) * d - t!(5.0) * e;
+    let k1 = t!(6.0) * a - t!(60.0) * b - t!(40.0) * c + t!(120.0) * d - t!(30.0) * e + t!(4.0) * f;
+    let k0 = t!(120.0) * c;
+    let x2 = x * x;
+    let x3 = x2 * x;
+    let x4 = x2 * x2;
+    let x5 = x2 * x3;
+    let val = k5 * x5 + k4 * x4 + k3 * x3 + k2 * x2 + k1 * x + k0;
+    t!(1.0 / 120.0) * val
 }
 
 /// Perform cubic polynomial interpolation to get value at x.
@@ -114,13 +212,13 @@ where
     /// Parameters are:
     /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
     /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Resampler::set_resample_ratio] relative to `resample_ratio`, must be >= 1.0. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio * 10.0` and `resample_ratio / 10.0`.
-    /// - `interpolation_type`: Interpolation type, see `InterpolationType`.
+    /// - `interpolation_type`: Degree of polynomial used for interpolation, see `PolynomialDegree`.
     /// - `chunk_size`: Size of input data in frames.
     /// - `nbr_channels`: Number of channels in input/output.
     pub fn new(
         resample_ratio: f64,
         max_resample_ratio_relative: f64,
-        interpolation_type: InterpolationType,
+        interpolation_type: PolynomialDegree,
         chunk_size: usize,
         nbr_channels: usize,
     ) -> Result<Self, ResamplerConstructionError> {
@@ -204,7 +302,51 @@ where
         let mut n = 0;
 
         match self.interpolation {
-            InterpolationType::Cubic => {
+            PolynomialDegree::Septic => {
+                while idx < end_idx as f64 {
+                    idx += t_ratio;
+                    let idx_floor = idx.floor();
+                    let start_idx = idx_floor as isize - 3;
+                    let frac = idx - idx_floor;
+                    let frac_offset = T::coerce(frac);
+                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                        if *active {
+                            unsafe {
+                                let buf = self.buffer.get_unchecked(chan).get_unchecked(
+                                    (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
+                                        ..(start_idx + 2 * POLYNOMIAL_LEN_I + 8) as usize,
+                                );
+                                *wave_out.get_unchecked_mut(chan).get_unchecked_mut(n) =
+                                    interp_septic(frac_offset, buf);
+                            }
+                        }
+                    }
+                    n += 1;
+                }
+            }
+            PolynomialDegree::Quintic => {
+                while idx < end_idx as f64 {
+                    idx += t_ratio;
+                    let idx_floor = idx.floor();
+                    let start_idx = idx_floor as isize - 2;
+                    let frac = idx - idx_floor;
+                    let frac_offset = T::coerce(frac);
+                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                        if *active {
+                            unsafe {
+                                let buf = self.buffer.get_unchecked(chan).get_unchecked(
+                                    (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
+                                        ..(start_idx + 2 * POLYNOMIAL_LEN_I + 6) as usize,
+                                );
+                                *wave_out.get_unchecked_mut(chan).get_unchecked_mut(n) =
+                                    interp_quintic(frac_offset, buf);
+                            }
+                        }
+                    }
+                    n += 1;
+                }
+            }
+            PolynomialDegree::Cubic => {
                 while idx < end_idx as f64 {
                     idx += t_ratio;
                     let idx_floor = idx.floor();
@@ -226,7 +368,7 @@ where
                     n += 1;
                 }
             }
-            InterpolationType::Linear => {
+            PolynomialDegree::Linear => {
                 while idx < end_idx as f64 {
                     idx += t_ratio;
                     let idx_floor = idx.floor();
@@ -248,7 +390,7 @@ where
                     n += 1;
                 }
             }
-            InterpolationType::Nearest => {
+            PolynomialDegree::Nearest => {
                 while idx < end_idx as f64 {
                     idx += t_ratio;
                     let start_idx = idx.floor() as isize;
@@ -337,13 +479,13 @@ where
     /// Parameters are:
     /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
     /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Resampler::set_resample_ratio] relative to `resample_ratio`, must be >= 1.0. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio * 10.0` and `resample_ratio / 10.0`.
-    /// - `interpolation_type`: Interpolation type, see `InterpolationType`.
+    /// - `interpolation_type`: Degree of polynomial used for interpolation, see `PolynomialDegree`.
     /// - `chunk_size`: Size of output data in frames.
     /// - `nbr_channels`: Number of channels in input/output.
     pub fn new(
         resample_ratio: f64,
         max_resample_ratio_relative: f64,
-        interpolation_type: InterpolationType,
+        interpolation_type: PolynomialDegree,
         chunk_size: usize,
         nbr_channels: usize,
     ) -> Result<Self, ResamplerConstructionError> {
@@ -429,7 +571,49 @@ where
         let t_ratio = 1.0 / self.resample_ratio as f64;
 
         match self.interpolation {
-            InterpolationType::Cubic => {
+            PolynomialDegree::Septic => {
+                for n in 0..self.chunk_size {
+                    idx += t_ratio;
+                    let idx_floor = idx.floor();
+                    let start_idx = idx_floor as isize - 3;
+                    let frac = idx - idx_floor;
+                    let frac_offset = T::coerce(frac);
+                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                        if *active {
+                            unsafe {
+                                let buf = self.buffer.get_unchecked(chan).get_unchecked(
+                                    (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
+                                        ..(start_idx + 2 * POLYNOMIAL_LEN_I + 8) as usize,
+                                );
+                                *wave_out.get_unchecked_mut(chan).get_unchecked_mut(n) =
+                                    interp_septic(frac_offset, buf);
+                            }
+                        }
+                    }
+                }
+            }
+            PolynomialDegree::Quintic => {
+                for n in 0..self.chunk_size {
+                    idx += t_ratio;
+                    let idx_floor = idx.floor();
+                    let start_idx = idx_floor as isize - 2;
+                    let frac = idx - idx_floor;
+                    let frac_offset = T::coerce(frac);
+                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                        if *active {
+                            unsafe {
+                                let buf = self.buffer.get_unchecked(chan).get_unchecked(
+                                    (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
+                                        ..(start_idx + 2 * POLYNOMIAL_LEN_I + 6) as usize,
+                                );
+                                *wave_out.get_unchecked_mut(chan).get_unchecked_mut(n) =
+                                    interp_quintic(frac_offset, buf);
+                            }
+                        }
+                    }
+                }
+            }
+            PolynomialDegree::Cubic => {
                 for n in 0..self.chunk_size {
                     idx += t_ratio;
                     let idx_floor = idx.floor();
@@ -450,7 +634,7 @@ where
                     }
                 }
             }
-            InterpolationType::Linear => {
+            PolynomialDegree::Linear => {
                 for n in 0..self.chunk_size {
                     idx += t_ratio;
                     let idx_floor = idx.floor();
@@ -471,7 +655,7 @@ where
                     }
                 }
             }
-            InterpolationType::Nearest => {
+            PolynomialDegree::Nearest => {
                 for n in 0..self.chunk_size {
                     idx += t_ratio;
                     let start_idx = idx.floor() as isize;
@@ -560,14 +744,14 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::InterpolationType;
+    use crate::PolynomialDegree;
     use crate::Resampler;
     use crate::{FastFixedIn, FastFixedOut};
 
     #[test]
     fn make_resampler_fi() {
         let mut resampler =
-            FastFixedIn::<f64>::new(1.2, 1.0, InterpolationType::Cubic, 1024, 2).unwrap();
+            FastFixedIn::<f64>::new(1.2, 1.0, PolynomialDegree::Cubic, 1024, 2).unwrap();
         let waves = vec![vec![0.0f64; 1024]; 2];
         let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
@@ -592,7 +776,7 @@ mod tests {
     #[test]
     fn make_resampler_fi_32() {
         let mut resampler =
-            FastFixedIn::<f32>::new(1.2, 1.0, InterpolationType::Cubic, 1024, 2).unwrap();
+            FastFixedIn::<f32>::new(1.2, 1.0, PolynomialDegree::Cubic, 1024, 2).unwrap();
         let waves = vec![vec![0.0f32; 1024]; 2];
         let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
@@ -617,7 +801,7 @@ mod tests {
     #[test]
     fn make_resampler_fi_skipped() {
         let mut resampler =
-            FastFixedIn::<f64>::new(1.2, 1.0, InterpolationType::Cubic, 1024, 2).unwrap();
+            FastFixedIn::<f64>::new(1.2, 1.0, PolynomialDegree::Cubic, 1024, 2).unwrap();
         let waves = vec![vec![0.0f64; 1024], Vec::new()];
         let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
@@ -636,7 +820,7 @@ mod tests {
         let mut resampler = FastFixedIn::<f64>::new(
             16000 as f64 / 96000 as f64,
             1.0,
-            InterpolationType::Cubic,
+            PolynomialDegree::Cubic,
             1024,
             2,
         )
@@ -668,7 +852,7 @@ mod tests {
         let mut resampler = FastFixedIn::<f64>::new(
             192000 as f64 / 44100 as f64,
             1.0,
-            InterpolationType::Cubic,
+            PolynomialDegree::Cubic,
             1024,
             2,
         )
@@ -697,7 +881,7 @@ mod tests {
     #[test]
     fn make_resampler_fo() {
         let mut resampler =
-            FastFixedOut::<f64>::new(1.2, 1.0, InterpolationType::Cubic, 1024, 2).unwrap();
+            FastFixedOut::<f64>::new(1.2, 1.0, PolynomialDegree::Cubic, 1024, 2).unwrap();
         let frames = resampler.input_frames_next();
         println!("{}", frames);
         assert!(frames > 800 && frames < 900);
@@ -710,7 +894,7 @@ mod tests {
     #[test]
     fn make_resampler_fo_32() {
         let mut resampler =
-            FastFixedOut::<f32>::new(1.2, 1.0, InterpolationType::Cubic, 1024, 2).unwrap();
+            FastFixedOut::<f32>::new(1.2, 1.0, PolynomialDegree::Cubic, 1024, 2).unwrap();
         let frames = resampler.input_frames_next();
         println!("{}", frames);
         assert!(frames > 800 && frames < 900);
@@ -723,7 +907,7 @@ mod tests {
     #[test]
     fn make_resampler_fo_skipped() {
         let mut resampler =
-            FastFixedOut::<f64>::new(1.2, 1.0, InterpolationType::Cubic, 1024, 2).unwrap();
+            FastFixedOut::<f64>::new(1.2, 1.0, PolynomialDegree::Cubic, 1024, 2).unwrap();
         let frames = resampler.input_frames_next();
         println!("{}", frames);
         assert!(frames > 800 && frames < 900);
@@ -754,7 +938,7 @@ mod tests {
     #[test]
     fn make_resampler_fo_downsample() {
         let mut resampler =
-            FastFixedOut::<f64>::new(0.125, 1.0, InterpolationType::Cubic, 1024, 2).unwrap();
+            FastFixedOut::<f64>::new(0.125, 1.0, PolynomialDegree::Cubic, 1024, 2).unwrap();
         let frames = resampler.input_frames_next();
         println!("{}", frames);
         assert!(
@@ -796,7 +980,7 @@ mod tests {
     #[test]
     fn make_resampler_fo_upsample() {
         let mut resampler =
-            FastFixedOut::<f64>::new(8.0, 1.0, InterpolationType::Cubic, 1024, 2).unwrap();
+            FastFixedOut::<f64>::new(8.0, 1.0, PolynomialDegree::Cubic, 1024, 2).unwrap();
         let frames = resampler.input_frames_next();
         println!("{}", frames);
         assert!(
