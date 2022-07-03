@@ -59,6 +59,7 @@ pub struct SincFixedOut<T> {
     current_buffer_fill: usize,
     resample_ratio: f64,
     resample_ratio_original: f64,
+    target_ratio: f64,
     max_relative_ratio: f64,
     interpolator: Box<dyn SincInterpolator<T>>,
     buffer: Vec<Vec<T>>,
@@ -512,6 +513,7 @@ where
             current_buffer_fill: needed_input_size,
             resample_ratio,
             resample_ratio_original: resample_ratio,
+            target_ratio: resample_ratio,
             max_relative_ratio: max_resample_ratio_relative,
             interpolator,
             buffer,
@@ -572,13 +574,16 @@ where
         }
 
         let mut idx = self.last_index;
-        let t_ratio = 1.0 / self.resample_ratio as f64;
+        let mut t_ratio = 1.0 / self.resample_ratio as f64;
+        let t_ratio_end = 1.0 / self.target_ratio as f64;
+        let t_ratio_increment = (t_ratio_end - t_ratio) / self.chunk_size as f64;
 
         match self.interpolation {
             InterpolationType::Cubic => {
                 let mut points = [T::zero(); 4];
                 let mut nearest = [(0isize, 0isize); 4];
                 for n in 0..self.chunk_size {
+                    t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     get_nearest_times_4(idx, oversampling_factor as isize, &mut nearest);
                     let frac = idx * oversampling_factor as f64
@@ -603,6 +608,7 @@ where
                 let mut points = [T::zero(); 2];
                 let mut nearest = [(0isize, 0isize); 2];
                 for n in 0..self.chunk_size {
+                    t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     get_nearest_times_2(idx, oversampling_factor as isize, &mut nearest);
                     let frac = idx * oversampling_factor as f64
@@ -627,6 +633,7 @@ where
                 let mut point;
                 let mut nearest;
                 for n in 0..self.chunk_size {
+                    t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     nearest = get_nearest_time(idx, oversampling_factor as isize);
                     for (chan, active) in self.channel_mask.iter().enumerate() {
@@ -646,6 +653,7 @@ where
 
         // store last index for next iteration
         self.last_index = idx - self.current_buffer_fill as f64;
+        self.resample_ratio = self.target_ratio;
         self.needed_input_size = (self.last_index as f32
             + self.chunk_size as f32 / self.resample_ratio as f32
             + sinc_len as f32)
@@ -690,9 +698,14 @@ where
         if (new_ratio / self.resample_ratio_original >= 1.0 / self.max_relative_ratio)
             && (new_ratio / self.resample_ratio_original <= self.max_relative_ratio)
         {
-            self.resample_ratio = new_ratio;
+            if !ramp {
+                self.resample_ratio = new_ratio;
+            }
+            self.target_ratio = new_ratio;
+
             self.needed_input_size = (self.last_index as f32
-                + self.chunk_size as f32 / self.resample_ratio as f32
+                + self.chunk_size as f32
+                    / (0.5 * self.resample_ratio as f32 + 0.5 * self.target_ratio as f32)
                 + self.interpolator.len() as f32)
                 .ceil() as usize
                 + 2;

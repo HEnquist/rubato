@@ -76,6 +76,7 @@ pub struct FastFixedOut<T> {
     current_buffer_fill: usize,
     resample_ratio: f64,
     resample_ratio_original: f64,
+    target_ratio: f64,
     max_relative_ratio: f64,
     buffer: Vec<Vec<T>>,
     interpolation: PolynomialDegree,
@@ -528,6 +529,7 @@ where
             current_buffer_fill: needed_input_size,
             resample_ratio,
             resample_ratio_original: resample_ratio,
+            target_ratio: resample_ratio,
             max_relative_ratio: max_resample_ratio_relative,
             buffer,
             interpolation: interpolation_type,
@@ -585,11 +587,14 @@ where
         }
 
         let mut idx = self.last_index;
-        let t_ratio = 1.0 / self.resample_ratio as f64;
+        let mut t_ratio = 1.0 / self.resample_ratio as f64;
+        let t_ratio_end = 1.0 / self.target_ratio as f64;
+        let t_ratio_increment = (t_ratio_end - t_ratio) / self.chunk_size as f64;
 
         match self.interpolation {
             PolynomialDegree::Septic => {
                 for n in 0..self.chunk_size {
+                    t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     let idx_floor = idx.floor();
                     let start_idx = idx_floor as isize - 3;
@@ -611,6 +616,7 @@ where
             }
             PolynomialDegree::Quintic => {
                 for n in 0..self.chunk_size {
+                    t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     let idx_floor = idx.floor();
                     let start_idx = idx_floor as isize - 2;
@@ -632,6 +638,7 @@ where
             }
             PolynomialDegree::Cubic => {
                 for n in 0..self.chunk_size {
+                    t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     let idx_floor = idx.floor();
                     let start_idx = idx_floor as isize - 1;
@@ -653,6 +660,7 @@ where
             }
             PolynomialDegree::Linear => {
                 for n in 0..self.chunk_size {
+                    t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     let idx_floor = idx.floor();
                     let start_idx = idx_floor as isize;
@@ -674,6 +682,7 @@ where
             }
             PolynomialDegree::Nearest => {
                 for n in 0..self.chunk_size {
+                    t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     let start_idx = idx.floor() as isize;
                     for (chan, active) in self.channel_mask.iter().enumerate() {
@@ -693,6 +702,7 @@ where
 
         // store last index for next iteration
         self.last_index = idx - self.current_buffer_fill as f64;
+        self.resample_ratio = self.target_ratio;
         self.needed_input_size = (self.last_index as f32
             + self.chunk_size as f32 / self.resample_ratio as f32
             + POLYNOMIAL_LEN_U as f32)
@@ -737,9 +747,13 @@ where
         if (new_ratio / self.resample_ratio_original >= 1.0 / self.max_relative_ratio)
             && (new_ratio / self.resample_ratio_original <= self.max_relative_ratio)
         {
-            self.resample_ratio = new_ratio;
+            if !ramp {
+                self.resample_ratio = new_ratio;
+            }
+            self.target_ratio = new_ratio;
             self.needed_input_size = (self.last_index as f32
-                + self.chunk_size as f32 / self.resample_ratio as f32)
+                + self.chunk_size as f32
+                    / (0.5 * self.resample_ratio as f32 + 0.5 * self.target_ratio as f32))
                 .ceil() as usize
                 + POLYNOMIAL_LEN_U
                 + 2;
