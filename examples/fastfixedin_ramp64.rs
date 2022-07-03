@@ -1,5 +1,5 @@
 extern crate rubato;
-use rubato::{InterpolationParameters, InterpolationType, Resampler, SincFixedIn, WindowFunction};
+use rubato::{PolynomialDegree, Resampler, FastFixedIn};
 use std::convert::TryInto;
 use std::env;
 use std::fs::File;
@@ -112,65 +112,10 @@ fn main() {
 
     let f_ratio = fs_out as f64 / fs_in as f64;
 
-    // Fast for async
-    //let sinc_len = 64;
-    //let f_cutoff = 0.9156021241005041; //1.0 /(1.0 + std::f32::consts::PI/sinc_len as f32);
-    //let params = InterpolationParameters {
-    //    sinc_len,
-    //    f_cutoff,
-    //    interpolation: InterpolationType::Linear,
-    //    oversampling_factor: 1024,
-    //    window: WindowFunction::Hann2,
-    //};
-
-    // Balanced for sync for 44100 -> 96000 etc (note that for sync it's better to use the fft resampler)
-    //let sinc_len = 128;
-    //let f_cutoff = 0.925914648491266;
-    //let params = InterpolationParameters {
-    //    sinc_len,
-    //    f_cutoff,
-    //    interpolation: InterpolationType::Nearest,
-    //    oversampling_factor: 320,
-    //    window: WindowFunction::Blackman2,
-    //};
-
-    // Balanced for async
-    let sinc_len = 128;
-    let f_cutoff = 0.925914648491266;
-    let params = InterpolationParameters {
-        sinc_len,
-        f_cutoff,
-        interpolation: InterpolationType::Linear,
-        oversampling_factor: 2048,
-        window: WindowFunction::Blackman2,
-    };
-    //
-    //// Best for sync for 44100 -> 96000 etc (note that for sync it's better to use the fft resampler)
-    //let sinc_len = 256;
-    //let f_cutoff = 0.9473371669037001;
-    //let params = InterpolationParameters {
-    //    sinc_len,
-    //    f_cutoff,
-    //    interpolation: InterpolationType::Nearest,
-    //    oversampling_factor: 320,
-    //    window: WindowFunction::BlackmanHarris2,
-    //};
-
-    // Best quality for async
-    //let sinc_len = 256;
-    //let f_cutoff = 0.9473371669037001;
-    //let params = InterpolationParameters {
-    //    sinc_len,
-    //    f_cutoff,
-    //    interpolation: InterpolationType::Cubic,
-    //    oversampling_factor: 256,
-    //    window: WindowFunction::BlackmanHarris2,
-    //};
-
     let chunksize = 1024;
     let target_ratio = final_ratio / 100.0;
     let mut resampler =
-        SincFixedIn::<f64>::new(f_ratio, target_ratio, params, chunksize, channels).unwrap();
+        FastFixedIn::<f64>::new(f_ratio, target_ratio, PolynomialDegree::Cubic, chunksize, channels).unwrap();
 
     let num_chunks = f_in_ram.len() / (8 * channels * chunksize);
     let mut output_time = 0.0;
@@ -185,7 +130,7 @@ fn main() {
             let rel_time = output_time / duration;
             let rel_ratio = 1.0 + (target_ratio - 1.0) * rel_time;
             println!("time {}, rel ratio {}", output_time, rel_ratio);
-            resampler.set_resample_ratio_relative(rel_ratio).unwrap();
+            resampler.set_resample_ratio_relative(rel_ratio, false).unwrap();
         }
     }
 

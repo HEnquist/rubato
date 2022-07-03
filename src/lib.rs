@@ -99,6 +99,7 @@
 //!
 //! - v0.13.0
 //!   - Add faster (lower quality) asynchronous resamplers.
+//!   - Optional smooth ramping of ratio changes to avoid audible steps.
 //! - v0.12.0
 //!   - Always enable all simd acceleration (and remove the simd Cargo features).
 //! - v0.11.0
@@ -375,7 +376,11 @@ pub trait Resampler<T>: Send {
     /// outside these bounds will return [ResampleError::RatioOutOfBounds].
     ///
     /// For synchronous resamplers, this will always return [ResampleError::SyncNotAdjustable].
-    fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()>;
+    /// 
+    /// If the argument `ramp` is set to true, the ratio will be ramped from the old to the new value
+    /// during processing of the next chunk. This allows smooth transitions from one ratio to another.
+    /// If `ramp` is false, the new ratio will be applied from the start of the next chunk. 
+    fn set_resample_ratio(&mut self, new_ratio: f64, ramp: bool) -> ResampleResult<()>;
 
     /// Update the resample ratio as a factor relative to the original one
     ///
@@ -388,7 +393,7 @@ pub trait Resampler<T>: Send {
     /// below 1.0 speed up the output and raise the pitch.
     ///
     /// For synchronous resamplers, this will always return [ResampleError::SyncNotAdjustable].
-    fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> ResampleResult<()>;
+    fn set_resample_ratio_relative(&mut self, rel_ratio: f64, ramp: bool) -> ResampleResult<()>;
 }
 
 /// This is a helper trait that can be used when a [Resampler] must be object safe.
@@ -439,10 +444,10 @@ pub trait VecResampler<T>: Send {
     fn output_frames_next(&self) -> usize;
 
     /// Refer to [Resampler::set_resample_ratio]
-    fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()>;
+    fn set_resample_ratio(&mut self, new_ratio: f64, ramp: bool) -> ResampleResult<()>;
 
     /// Refer to [Resampler::set_resample_ratio_relative]
-    fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> ResampleResult<()>;
+    fn set_resample_ratio_relative(&mut self, rel_ratio: f64, ramp: bool) -> ResampleResult<()>;
 }
 
 impl<T, U> VecResampler<T> for U
@@ -494,12 +499,12 @@ where
         Resampler::input_buffer_allocate(self)
     }
 
-    fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()> {
-        Resampler::set_resample_ratio(self, new_ratio)
+    fn set_resample_ratio(&mut self, new_ratio: f64, ramp: bool) -> ResampleResult<()> {
+        Resampler::set_resample_ratio(self, new_ratio, ramp)
     }
 
-    fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> ResampleResult<()> {
-        Resampler::set_resample_ratio_relative(self, rel_ratio)
+    fn set_resample_ratio_relative(&mut self, rel_ratio: f64, ramp: bool) -> ResampleResult<()> {
+        Resampler::set_resample_ratio_relative(self, rel_ratio, ramp)
     }
 }
 

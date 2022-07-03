@@ -397,7 +397,7 @@ where
         self.chunk_size
     }
 
-    fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()> {
+    fn set_resample_ratio(&mut self, new_ratio: f64, ramp: bool) -> ResampleResult<()> {
         trace!("Change resample ratio to {}", new_ratio);
         if (new_ratio / self.resample_ratio_original >= 1.0 / self.max_relative_ratio)
             && (new_ratio / self.resample_ratio_original <= self.max_relative_ratio)
@@ -413,9 +413,9 @@ where
         }
     }
 
-    fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> ResampleResult<()> {
+    fn set_resample_ratio_relative(&mut self, rel_ratio: f64, ramp: bool) -> ResampleResult<()> {
         let new_ratio = self.resample_ratio_original * rel_ratio;
-        self.set_resample_ratio(new_ratio)
+        self.set_resample_ratio(new_ratio, ramp)
     }
 }
 
@@ -668,7 +668,7 @@ where
         self.chunk_size
     }
 
-    fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()> {
+    fn set_resample_ratio(&mut self, new_ratio: f64, ramp: bool) -> ResampleResult<()> {
         trace!("Change resample ratio to {}", new_ratio);
         if (new_ratio / self.resample_ratio_original >= 1.0 / self.max_relative_ratio)
             && (new_ratio / self.resample_ratio_original <= self.max_relative_ratio)
@@ -689,9 +689,9 @@ where
         }
     }
 
-    fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> ResampleResult<()> {
+    fn set_resample_ratio_relative(&mut self, rel_ratio: f64, ramp: bool) -> ResampleResult<()> {
         let new_ratio = self.resample_ratio_original * rel_ratio;
-        self.set_resample_ratio(new_ratio)
+        self.set_resample_ratio(new_ratio, ramp)
     }
 }
 

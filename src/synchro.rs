@@ -301,13 +301,13 @@ where
 
     /// Update the resample ratio. This is not supported by this resampler and
     /// always returns an [ResampleError::SyncNotAdjustable].
-    fn set_resample_ratio(&mut self, _new_ratio: f64) -> ResampleResult<()> {
+    fn set_resample_ratio(&mut self, _new_ratio: f64, _ramp: bool) -> ResampleResult<()> {
         Err(ResampleError::SyncNotAdjustable)
     }
 
     /// Update the resample ratio relative to the original one. This is not
     /// supported by this resampler and always returns an [ResampleError::SyncNotAdjustable].
-    fn set_resample_ratio_relative(&mut self, _rel_ratio: f64) -> ResampleResult<()> {
+    fn set_resample_ratio_relative(&mut self, _rel_ratio: f64, _ramp: bool) -> ResampleResult<()> {
         Err(ResampleError::SyncNotAdjustable)
     }
 }
@@ -467,13 +467,13 @@ where
 
     /// Update the resample ratio. This is not supported by this resampler and
     /// always returns [ResampleError::SyncNotAdjustable].
-    fn set_resample_ratio(&mut self, _new_ratio: f64) -> ResampleResult<()> {
+    fn set_resample_ratio(&mut self, _new_ratio: f64, _ramp: bool) -> ResampleResult<()> {
         Err(ResampleError::SyncNotAdjustable)
     }
 
     /// Update the resample ratio relative to the original one. This is not
     /// supported by this resampler and always returns [ResampleError::SyncNotAdjustable].
-    fn set_resample_ratio_relative(&mut self, _rel_ratio: f64) -> ResampleResult<()> {
+    fn set_resample_ratio_relative(&mut self, _rel_ratio: f64, _ramp: bool) -> ResampleResult<()> {
         Err(ResampleError::SyncNotAdjustable)
     }
 }
@@ -637,13 +637,13 @@ where
 
     /// Update the resample ratio. This is not supported by this resampler and
     /// always returns [ResampleError::SyncNotAdjustable].
-    fn set_resample_ratio(&mut self, _new_ratio: f64) -> ResampleResult<()> {
+    fn set_resample_ratio(&mut self, _new_ratio: f64, _ramp: bool) -> ResampleResult<()> {
         Err(ResampleError::SyncNotAdjustable)
     }
 
     /// Update the resample ratio relative to the original one. This is not
     /// supported by this resampler and always returns [ResampleError::SyncNotAdjustable].
-    fn set_resample_ratio_relative(&mut self, _rel_ratio: f64) -> ResampleResult<()> {
+    fn set_resample_ratio_relative(&mut self, _rel_ratio: f64, _ramp: bool) -> ResampleResult<()> {
         Err(ResampleError::SyncNotAdjustable)
     }
 }
