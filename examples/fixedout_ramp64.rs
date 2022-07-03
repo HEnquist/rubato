@@ -139,7 +139,9 @@ fn main() {
             let rel_time = output_time / duration;
             let rel_ratio = 1.0 + (target_ratio - 1.0) * rel_time;
             println!("time {}, rel ratio {}", output_time, rel_ratio);
-            resampler.set_resample_ratio_relative(rel_ratio).unwrap();
+            resampler
+                .set_resample_ratio_relative(rel_ratio, true)
+                .unwrap();
         }
     }
 

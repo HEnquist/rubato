@@ -376,10 +376,10 @@ pub trait Resampler<T>: Send {
     /// outside these bounds will return [ResampleError::RatioOutOfBounds].
     ///
     /// For synchronous resamplers, this will always return [ResampleError::SyncNotAdjustable].
-    /// 
+    ///
     /// If the argument `ramp` is set to true, the ratio will be ramped from the old to the new value
     /// during processing of the next chunk. This allows smooth transitions from one ratio to another.
-    /// If `ramp` is false, the new ratio will be applied from the start of the next chunk. 
+    /// If `ramp` is false, the new ratio will be applied from the start of the next chunk.
     fn set_resample_ratio(&mut self, new_ratio: f64, ramp: bool) -> ResampleResult<()>;
 
     /// Update the resample ratio as a factor relative to the original one

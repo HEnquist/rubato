@@ -29,6 +29,7 @@ pub struct SincFixedIn<T> {
     last_index: f64,
     resample_ratio: f64,
     resample_ratio_original: f64,
+    target_ratio: f64,
     max_relative_ratio: f64,
     interpolator: Box<dyn SincInterpolator<T>>,
     buffer: Vec<Vec<T>>,
@@ -221,6 +222,7 @@ where
             last_index: -((interpolator.len() / 2) as f64),
             resample_ratio,
             resample_ratio_original: resample_ratio,
+            target_ratio: resample_ratio,
             max_relative_ratio: max_resample_ratio_relative,
             interpolator,
             buffer,
@@ -256,15 +258,22 @@ where
 
         let sinc_len = self.interpolator.len();
         let oversampling_factor = self.interpolator.nbr_sincs();
-        let t_ratio = 1.0 / self.resample_ratio as f64;
-        let end_idx = self.chunk_size as isize - (sinc_len as isize + 1) - t_ratio.ceil() as isize;
+        let mut t_ratio = 1.0 / self.resample_ratio as f64;
+        let t_ratio_end = 1.0 / self.target_ratio as f64;
+        let approximate_nbr_frames =
+            self.chunk_size as f64 * (0.5 * self.resample_ratio + 0.5 * self.target_ratio);
+        let t_ratio_increment = (t_ratio_end - t_ratio) / approximate_nbr_frames;
+        let end_idx =
+            self.chunk_size as isize - (sinc_len as isize + 1) - t_ratio_end.ceil() as isize;
 
         //update buffer with new data
         for buf in self.buffer.iter_mut() {
             buf.copy_within(self.chunk_size..self.chunk_size + 2 * sinc_len, 0);
         }
 
-        let needed_len = (self.chunk_size as f64 * self.resample_ratio + 10.0) as usize;
+        let needed_len = (self.chunk_size as f64
+            * (0.5 * self.resample_ratio + 0.5 * self.target_ratio)
+            + 10.0) as usize;
         for (chan, active) in self.channel_mask.iter().enumerate() {
             if *active {
                 self.buffer[chan][2 * sinc_len..2 * sinc_len + self.chunk_size]
@@ -291,6 +300,7 @@ where
                 let mut points = [T::zero(); 4];
                 let mut nearest = [(0isize, 0isize); 4];
                 while idx < end_idx as f64 {
+                    t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     get_nearest_times_4(idx, oversampling_factor as isize, &mut nearest);
                     let frac = idx * oversampling_factor as f64
@@ -316,6 +326,7 @@ where
                 let mut points = [T::zero(); 2];
                 let mut nearest = [(0isize, 0isize); 2];
                 while idx < end_idx as f64 {
+                    t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     get_nearest_times_2(idx, oversampling_factor as isize, &mut nearest);
                     let frac = idx * oversampling_factor as f64
@@ -341,6 +352,7 @@ where
                 let mut point;
                 let mut nearest;
                 while idx < end_idx as f64 {
+                    t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     nearest = get_nearest_time(idx, oversampling_factor as isize);
                     for (chan, active) in self.channel_mask.iter().enumerate() {
@@ -366,6 +378,7 @@ where
                 wave_out[chan].truncate(n);
             }
         }
+        self.resample_ratio = self.target_ratio;
         trace!(
             "Resampling channels {:?}, {} frames in, {} frames out",
             active_channels_mask,
@@ -382,7 +395,8 @@ where
     }
 
     fn output_frames_next(&self) -> usize {
-        (self.chunk_size as f64 * self.resample_ratio + 10.0) as usize
+        (self.chunk_size as f64 * (0.5 * self.resample_ratio + 0.5 * self.target_ratio) + 10.0)
+            as usize
     }
 
     fn nbr_channels(&self) -> usize {
@@ -402,7 +416,10 @@ where
         if (new_ratio / self.resample_ratio_original >= 1.0 / self.max_relative_ratio)
             && (new_ratio / self.resample_ratio_original <= self.max_relative_ratio)
         {
-            self.resample_ratio = new_ratio;
+            if !ramp {
+                self.resample_ratio = new_ratio;
+            }
+            self.target_ratio = new_ratio;
             Ok(())
         } else {
             Err(ResampleError::RatioOutOfBounds {

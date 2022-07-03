@@ -266,9 +266,11 @@ where
 
         let mut t_ratio = 1.0 / self.resample_ratio as f64;
         let t_ratio_end = 1.0 / self.target_ratio as f64;
-        let approximate_nbr_frames = self.chunk_size as f64 * (0.5 * self.resample_ratio + 0.5 * self.target_ratio);
-        let t_ratio_increment = (t_ratio_end - t_ratio)/approximate_nbr_frames;
-        let end_idx = self.chunk_size as isize - (POLYNOMIAL_LEN_I + 1) - t_ratio_end.ceil() as isize;
+        let approximate_nbr_frames =
+            self.chunk_size as f64 * (0.5 * self.resample_ratio + 0.5 * self.target_ratio);
+        let t_ratio_increment = (t_ratio_end - t_ratio) / approximate_nbr_frames;
+        let end_idx =
+            self.chunk_size as isize - (POLYNOMIAL_LEN_I + 1) - t_ratio_end.ceil() as isize;
         //println!(
         //    "start ratio {}, end_ratio {}, frames {}, t_increment {}",
         //    t_ratio,
@@ -282,7 +284,9 @@ where
             buf.copy_within(self.chunk_size..self.chunk_size + 2 * POLYNOMIAL_LEN_U, 0);
         }
 
-        let needed_len = (self.chunk_size as f64 * (0.5 * self.resample_ratio + 0.5 * self.target_ratio) + 10.0) as usize;
+        let needed_len = (self.chunk_size as f64
+            * (0.5 * self.resample_ratio + 0.5 * self.target_ratio)
+            + 10.0) as usize;
         for (chan, active) in self.channel_mask.iter().enumerate() {
             if *active {
                 self.buffer[chan][2 * POLYNOMIAL_LEN_U..2 * POLYNOMIAL_LEN_U + self.chunk_size]
@@ -442,7 +446,8 @@ where
     }
 
     fn output_frames_next(&self) -> usize {
-        (self.chunk_size as f64 * (0.5 * self.resample_ratio + 0.5 * self.target_ratio) + 10.0) as usize
+        (self.chunk_size as f64 * (0.5 * self.resample_ratio + 0.5 * self.target_ratio) + 10.0)
+            as usize
     }
 
     fn nbr_channels(&self) -> usize {
