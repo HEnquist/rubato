@@ -100,6 +100,7 @@
 //! - v0.13.0
 //!   - Add faster (lower quality) asynchronous resamplers.
 //!   - Optional smooth ramping of ratio changes to avoid audible steps.
+//!   - Refactoring for a more logical structure.
 //! - v0.12.0
 //!   - Always enable all simd acceleration (and remove the simd Cargo features).
 //! - v0.11.0
@@ -158,17 +159,15 @@ mod windows;
 
 pub mod sinc_interpolator;
 pub use crate::asynchro_fast::{FastFixedIn, FastFixedOut, PolynomialDegree};
-pub use crate::asynchro_sinc::{SincFixedIn, SincFixedOut, SincInterpolationParameters, SincInterpolationType};
+pub use crate::asynchro_sinc::{
+    SincFixedIn, SincFixedOut, SincInterpolationParameters, SincInterpolationType,
+};
 pub use crate::error::{
     CpuFeature, MissingCpuFeature, ResampleError, ResampleResult, ResamplerConstructionError,
 };
 pub use crate::sample::Sample;
 pub use crate::synchro::{FftFixedIn, FftFixedInOut, FftFixedOut};
 pub use crate::windows::WindowFunction;
-
-
-
-
 
 /// A resampler that us used to resample a chunk of audio to a new sample rate.
 /// For asynchronous resamplers, the rate can be adjusted as required.

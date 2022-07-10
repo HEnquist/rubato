@@ -11,7 +11,7 @@ use rubato::sinc_interpolator::sinc_interpolator_neon::NeonInterpolator;
 use rubato::sinc_interpolator::sinc_interpolator_sse::SseInterpolator;
 
 use rubato::{
-    FastFixedIn, FftFixedIn, SincInterpolationType, PolynomialDegree, Resampler, SincFixedIn,
+    FastFixedIn, FftFixedIn, PolynomialDegree, Resampler, SincFixedIn, SincInterpolationType,
     WindowFunction,
 };
 

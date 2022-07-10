@@ -1,15 +1,14 @@
 use crate::error::{ResampleError, ResampleResult, ResamplerConstructionError};
 use crate::interpolation::*;
-use crate::sinc_interpolator::{ScalarInterpolator, SincInterpolator};
 #[cfg(target_arch = "x86_64")]
 use crate::sinc_interpolator::sinc_interpolator_avx::AvxInterpolator;
 #[cfg(target_arch = "aarch64")]
 use crate::sinc_interpolator::sinc_interpolator_neon::NeonInterpolator;
 #[cfg(target_arch = "x86_64")]
 use crate::sinc_interpolator::sinc_interpolator_sse::SseInterpolator;
+use crate::sinc_interpolator::{ScalarInterpolator, SincInterpolator};
 use crate::windows::WindowFunction;
 use crate::{update_mask_from_buffers, validate_buffers, Resampler, Sample};
-
 
 /// A struct holding the parameters for sinc interpolation.
 #[derive(Debug)]
@@ -784,9 +783,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::{interp_cubic, interp_lin};
+    use crate::Resampler;
     use crate::SincInterpolationParameters;
     use crate::SincInterpolationType;
-    use crate::Resampler;
     use crate::WindowFunction;
     use crate::{SincFixedIn, SincFixedOut};
 

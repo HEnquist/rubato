@@ -1,5 +1,7 @@
 extern crate rubato;
-use rubato::{SincInterpolationParameters, SincInterpolationType, Resampler, SincFixedOut, WindowFunction};
+use rubato::{
+    Resampler, SincFixedOut, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+};
 use std::convert::TryInto;
 use std::env;
 use std::fs::File;
