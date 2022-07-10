@@ -1,5 +1,5 @@
 extern crate rubato;
-use rubato::{InterpolationParameters, InterpolationType, Resampler, SincFixedIn, WindowFunction};
+use rubato::{SincInterpolationParameters, SincInterpolationType, Resampler, SincFixedIn, WindowFunction};
 use std::convert::TryInto;
 use std::env;
 use std::fs::File;
@@ -103,10 +103,10 @@ fn main() {
     // Fast for async
     //let sinc_len = 64;
     //let f_cutoff = 0.9156021241005041; //1.0 /(1.0 + std::f32::consts::PI/sinc_len as f32);
-    //let params = InterpolationParameters {
+    //let params = SincInterpolationParameters {
     //    sinc_len,
     //    f_cutoff,
-    //    interpolation: InterpolationType::Linear,
+    //    interpolation: SincInterpolationType::Linear,
     //    oversampling_factor: 1024,
     //    window: WindowFunction::Hann2,
     //};
@@ -114,10 +114,10 @@ fn main() {
     // Balanced for sync for 44100 -> 96000 etc (note that for sync it's better to use the fft resampler)
     //let sinc_len = 128;
     //let f_cutoff = 0.925914648491266;
-    //let params = InterpolationParameters {
+    //let params = SincInterpolationParameters {
     //    sinc_len,
     //    f_cutoff,
-    //    interpolation: InterpolationType::Nearest,
+    //    interpolation: SincInterpolationType::Nearest,
     //    oversampling_factor: 320,
     //    window: WindowFunction::Blackman2,
     //};
@@ -125,10 +125,10 @@ fn main() {
     // Balanced for async
     let sinc_len = 128;
     let f_cutoff = 0.925914648491266;
-    let params = InterpolationParameters {
+    let params = SincInterpolationParameters {
         sinc_len,
         f_cutoff,
-        interpolation: InterpolationType::Linear,
+        interpolation: SincInterpolationType::Linear,
         oversampling_factor: 2048,
         window: WindowFunction::Blackman2,
     };
@@ -136,10 +136,10 @@ fn main() {
     //// Best for sync for 44100 -> 96000 etc (note that for sync it's better to use the fft resampler)
     //let sinc_len = 256;
     //let f_cutoff = 0.9473371669037001;
-    //let params = InterpolationParameters {
+    //let params = SincInterpolationParameters {
     //    sinc_len,
     //    f_cutoff,
-    //    interpolation: InterpolationType::Nearest,
+    //    interpolation: SincInterpolationType::Nearest,
     //    oversampling_factor: 320,
     //    window: WindowFunction::BlackmanHarris2,
     //};
@@ -147,10 +147,10 @@ fn main() {
     // Best quality for async
     //let sinc_len = 256;
     //let f_cutoff = 0.9473371669037001;
-    //let params = InterpolationParameters {
+    //let params = SincInterpolationParameters {
     //    sinc_len,
     //    f_cutoff,
-    //    interpolation: InterpolationType::Cubic,
+    //    interpolation: SincInterpolationType::Cubic,
     //    oversampling_factor: 256,
     //    window: WindowFunction::BlackmanHarris2,
     //};

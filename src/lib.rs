@@ -71,11 +71,11 @@
 //! Resample a single chunk of a dummy audio file from 44100 to 48000 Hz.
 //! See also the "fixedin64" example that can be used to process a file from disk.
 //! ```
-//! use rubato::{Resampler, SincFixedIn, InterpolationType, InterpolationParameters, WindowFunction};
-//! let params = InterpolationParameters {
+//! use rubato::{Resampler, SincFixedIn, SincInterpolationType, SincInterpolationParameters, WindowFunction};
+//! let params = SincInterpolationParameters {
 //!     sinc_len: 256,
 //!     f_cutoff: 0.95,
-//!     interpolation: InterpolationType::Linear,
+//!     interpolation: SincInterpolationType::Linear,
 //!     oversampling_factor: 256,
 //!     window: WindowFunction::BlackmanHarris2,
 //! };
@@ -158,7 +158,7 @@ mod windows;
 
 pub mod sinc_interpolator;
 pub use crate::asynchro_fast::{FastFixedIn, FastFixedOut, PolynomialDegree};
-pub use crate::asynchro_sinc::{SincFixedIn, SincFixedOut};
+pub use crate::asynchro_sinc::{SincFixedIn, SincFixedOut, SincInterpolationParameters, SincInterpolationType};
 pub use crate::error::{
     CpuFeature, MissingCpuFeature, ResampleError, ResampleResult, ResamplerConstructionError,
 };
@@ -166,107 +166,9 @@ pub use crate::sample::Sample;
 pub use crate::synchro::{FftFixedIn, FftFixedInOut, FftFixedOut};
 pub use crate::windows::WindowFunction;
 
-/// Helper macro to define a dummy implementation of the sample trait if a
-/// feature is not supported.
-macro_rules! interpolator {
-    (
-    #[cfg($($cond:tt)*)]
-    mod $mod:ident;
-    trait $trait:ident;
-    ) => {
-        #[cfg($($cond)*)]
-        pub mod $mod;
 
-        #[cfg(not($($cond)*))]
-        pub mod $mod {
-            use crate::Sample;
 
-            /// Dummy trait when not supported.
-            pub trait $trait {
-            }
 
-            /// Dummy impl of trait when not supported.
-            impl<T> $trait for T where T: Sample {
-            }
-        }
-
-        use self::$mod::$trait;
-    }
-}
-
-interpolator! {
-    #[cfg(target_arch = "x86_64")]
-    mod sinc_interpolator_avx;
-    trait AvxSample;
-}
-
-interpolator! {
-    #[cfg(target_arch = "x86_64")]
-    mod sinc_interpolator_sse;
-    trait SseSample;
-}
-
-interpolator! {
-    #[cfg(target_arch = "aarch64")]
-    mod sinc_interpolator_neon;
-    trait NeonSample;
-}
-
-/// A struct holding the parameters for interpolation.
-#[derive(Debug)]
-pub struct InterpolationParameters {
-    /// Length of the windowed sinc interpolation filter.
-    /// Higher values can allow a higher cut-off frequency leading to less high frequency roll-off
-    /// at the expense of higher cpu usage. 256 is a good starting point.
-    /// The value will be rounded up to the nearest multiple of 8.
-    pub sinc_len: usize,
-    /// Relative cutoff frequency of the sinc interpolation filter
-    /// (relative to the lowest one of fs_in/2 or fs_out/2). Start at 0.95, and increase if needed.
-    pub f_cutoff: f32,
-    /// The number of intermediate points to use for interpolation.
-    /// Higher values use more memory for storing the sinc filters.
-    /// Only the points actually needed are calculated during processing
-    /// so a larger number does not directly lead to higher cpu usage.
-    /// But keeping it down helps in keeping the sincs in the cpu cache. Start at 128.
-    pub oversampling_factor: usize,
-    /// Interpolation type, see `InterpolationType`
-    pub interpolation: InterpolationType,
-    /// Window function to use.
-    pub window: WindowFunction,
-}
-
-/// Interpolation methods that can be selected. For asynchronous interpolation where the
-/// ratio between input and output sample rates can be any number, it's not possible to
-/// pre-calculate all the needed interpolation filters.
-/// Instead they have to be computed as needed, which becomes impractical since the
-/// sincs are very expensive to generate in terms of cpu time.
-/// It's more efficient to combine the sinc filters with some other interpolation technique.
-/// Then sinc filters are used to provide a fixed number of interpolated points between input samples,
-/// and then the new value is calculated by interpolation between those points.
-#[derive(Debug)]
-pub enum InterpolationType {
-    /// For cubic interpolation, the four nearest intermediate points are calculated
-    /// using sinc interpolation.
-    /// Then a cubic polynomial is fitted to these points, and is then used to calculate the new sample value.
-    /// The computation time as about twice the one for linear interpolation,
-    /// but it requires much fewer intermediate points for a good result.
-    Cubic,
-    /// With linear interpolation the new sample value is calculated by linear interpolation
-    /// between the two nearest points.
-    /// This requires two intermediate points to be calculated using sinc interpolation,
-    /// and te output is a weighted average of these two.
-    /// This is relatively fast, but needs a large number of intermediate points to
-    /// push the resampling artefacts below the noise floor.
-    Linear,
-    /// The Nearest mode doesn't do any interpolation, but simply picks the nearest intermediate point.
-    /// This is useful when the nearest point is actually the correct one, for example when upsampling by a factor 2,
-    /// like 48kHz->96kHz.
-    /// Then setting the oversampling_factor to 2, and using Nearest mode,
-    /// no unnecessary computations are performed and the result is the same as for synchronous resampling.
-    /// This also works for other ratios that can be expressed by a fraction. For 44.1kHz -> 48 kHz,
-    /// setting oversampling_factor to 160 gives the desired result (since 48kHz = 160/147 * 44.1kHz).
-    Nearest,
-}
 
 /// A resampler that us used to resample a chunk of audio to a new sample rate.
 /// For asynchronous resamplers, the rate can be adjusted as required.

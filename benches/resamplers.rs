@@ -4,14 +4,14 @@ extern crate rubato;
 use rubato::sinc_interpolator::ScalarInterpolator;
 
 #[cfg(target_arch = "x86_64")]
-use rubato::sinc_interpolator_avx::AvxInterpolator;
+use rubato::sinc_interpolator::sinc_interpolator_avx::AvxInterpolator;
 #[cfg(target_arch = "aarch64")]
-use rubato::sinc_interpolator_neon::NeonInterpolator;
+use rubato::sinc_interpolator::sinc_interpolator_neon::NeonInterpolator;
 #[cfg(target_arch = "x86_64")]
-use rubato::sinc_interpolator_sse::SseInterpolator;
+use rubato::sinc_interpolator::sinc_interpolator_sse::SseInterpolator;
 
 use rubato::{
-    FastFixedIn, FftFixedIn, InterpolationType, PolynomialDegree, Resampler, SincFixedIn,
+    FastFixedIn, FftFixedIn, SincInterpolationType, PolynomialDegree, Resampler, SincFixedIn,
     WindowFunction,
 };
 
@@ -79,7 +79,7 @@ macro_rules! bench_async_resampler {
 bench_async_resampler!(
     f32,
     ScalarInterpolator,
-    InterpolationType::Cubic,
+    SincInterpolationType::Cubic,
     bench_scalar_async_cubic_32,
     "scalar async cubic   32",
     infallible
@@ -87,7 +87,7 @@ bench_async_resampler!(
 bench_async_resampler!(
     f32,
     ScalarInterpolator,
-    InterpolationType::Linear,
+    SincInterpolationType::Linear,
     bench_scalar_async_linear_32,
     "scalar async linear  32",
     infallible
@@ -95,7 +95,7 @@ bench_async_resampler!(
 bench_async_resampler!(
     f32,
     ScalarInterpolator,
-    InterpolationType::Nearest,
+    SincInterpolationType::Nearest,
     bench_scalar_async_nearest_32,
     "scalar async nearest 32",
     infallible
@@ -103,7 +103,7 @@ bench_async_resampler!(
 bench_async_resampler!(
     f64,
     ScalarInterpolator,
-    InterpolationType::Cubic,
+    SincInterpolationType::Cubic,
     bench_scalar_async_cubic_64,
     "scalar async cubic   64",
     infallible
@@ -111,7 +111,7 @@ bench_async_resampler!(
 bench_async_resampler!(
     f64,
     ScalarInterpolator,
-    InterpolationType::Linear,
+    SincInterpolationType::Linear,
     bench_scalar_async_linear_64,
     "scalar async linear  64",
     infallible
@@ -119,7 +119,7 @@ bench_async_resampler!(
 bench_async_resampler!(
     f64,
     ScalarInterpolator,
-    InterpolationType::Nearest,
+    SincInterpolationType::Nearest,
     bench_scalar_async_nearest_64,
     "scalar async nearest 64",
     infallible
@@ -129,7 +129,7 @@ bench_async_resampler!(
 bench_async_resampler!(
     f32,
     SseInterpolator,
-    InterpolationType::Cubic,
+    SincInterpolationType::Cubic,
     bench_sse_async_cubic_32,
     "sse async cubic   32"
 );
@@ -137,7 +137,7 @@ bench_async_resampler!(
 bench_async_resampler!(
     f32,
     SseInterpolator,
-    InterpolationType::Linear,
+    SincInterpolationType::Linear,
     bench_sse_async_linear_32,
     "sse async linear  32"
 );
@@ -145,7 +145,7 @@ bench_async_resampler!(
 bench_async_resampler!(
     f32,
     SseInterpolator,
-    InterpolationType::Nearest,
+    SincInterpolationType::Nearest,
     bench_sse_async_nearest_32,
     "sse async nearest 32"
 );
@@ -153,7 +153,7 @@ bench_async_resampler!(
 bench_async_resampler!(
     f64,
     SseInterpolator,
-    InterpolationType::Cubic,
+    SincInterpolationType::Cubic,
     bench_sse_async_cubic_64,
     "sse async cubic   64"
 );
@@ -161,7 +161,7 @@ bench_async_resampler!(
 bench_async_resampler!(
     f64,
     SseInterpolator,
-    InterpolationType::Linear,
+    SincInterpolationType::Linear,
     bench_sse_async_linear_64,
     "sse async linear  64"
 );
@@ -169,7 +169,7 @@ bench_async_resampler!(
 bench_async_resampler!(
     f64,
     SseInterpolator,
-    InterpolationType::Nearest,
+    SincInterpolationType::Nearest,
     bench_sse_async_nearest_64,
     "sse async nearest 64"
 );
@@ -178,7 +178,7 @@ bench_async_resampler!(
 bench_async_resampler!(
     f32,
     AvxInterpolator,
-    InterpolationType::Cubic,
+    SincInterpolationType::Cubic,
     bench_avx_async_cubic_32,
     "avx async cubic   32"
 );
@@ -186,7 +186,7 @@ bench_async_resampler!(
 bench_async_resampler!(
     f32,
     AvxInterpolator,
-    InterpolationType::Linear,
+    SincInterpolationType::Linear,
     bench_avx_async_linear_32,
     "avx async linear  32"
 );
@@ -194,7 +194,7 @@ bench_async_resampler!(
 bench_async_resampler!(
     f32,
     AvxInterpolator,
-    InterpolationType::Nearest,
+    SincInterpolationType::Nearest,
     bench_avx_async_nearest_32,
     "avx async nearest 32"
 );
@@ -202,7 +202,7 @@ bench_async_resampler!(
 bench_async_resampler!(
     f64,
     AvxInterpolator,
-    InterpolationType::Cubic,
+    SincInterpolationType::Cubic,
     bench_avx_async_cubic_64,
     "avx async cubic   64"
 );
@@ -210,7 +210,7 @@ bench_async_resampler!(
 bench_async_resampler!(
     f64,
     AvxInterpolator,
-    InterpolationType::Linear,
+    SincInterpolationType::Linear,
     bench_avx_async_linear_64,
     "avx async linear  64"
 );
@@ -218,7 +218,7 @@ bench_async_resampler!(
 bench_async_resampler!(
     f64,
     AvxInterpolator,
-    InterpolationType::Nearest,
+    SincInterpolationType::Nearest,
     bench_avx_async_nearest_64,
     "avx async nearest 64"
 );
@@ -227,7 +227,7 @@ bench_async_resampler!(
 bench_async_resampler!(
     f32,
     NeonInterpolator,
-    InterpolationType::Cubic,
+    SincInterpolationType::Cubic,
     bench_neon_async_cubic_32,
     "neon async cubic   32"
 );
@@ -235,7 +235,7 @@ bench_async_resampler!(
 bench_async_resampler!(
     f32,
     NeonInterpolator,
-    InterpolationType::Linear,
+    SincInterpolationType::Linear,
     bench_neon_async_linear_32,
     "neon async linear  32"
 );
@@ -243,7 +243,7 @@ bench_async_resampler!(
 bench_async_resampler!(
     f32,
     NeonInterpolator,
-    InterpolationType::Nearest,
+    SincInterpolationType::Nearest,
     bench_neon_async_nearest_32,
     "neon async nearest 32"
 );
@@ -251,7 +251,7 @@ bench_async_resampler!(
 bench_async_resampler!(
     f64,
     NeonInterpolator,
-    InterpolationType::Cubic,
+    SincInterpolationType::Cubic,
     bench_neon_async_cubic_64,
     "neon async cubic   64"
 );
@@ -259,7 +259,7 @@ bench_async_resampler!(
 bench_async_resampler!(
     f64,
     NeonInterpolator,
-    InterpolationType::Linear,
+    SincInterpolationType::Linear,
     bench_neon_async_linear_64,
     "neon async linear  64"
 );
@@ -267,7 +267,7 @@ bench_async_resampler!(
 bench_async_resampler!(
     f64,
     NeonInterpolator,
-    InterpolationType::Nearest,
+    SincInterpolationType::Nearest,
     bench_neon_async_nearest_64,
     "neon async nearest 64"
 );

@@ -2,14 +2,70 @@ use crate::error::{ResampleError, ResampleResult, ResamplerConstructionError};
 use crate::interpolation::*;
 use crate::sinc_interpolator::{ScalarInterpolator, SincInterpolator};
 #[cfg(target_arch = "x86_64")]
-use crate::sinc_interpolator_avx::AvxInterpolator;
+use crate::sinc_interpolator::sinc_interpolator_avx::AvxInterpolator;
 #[cfg(target_arch = "aarch64")]
-use crate::sinc_interpolator_neon::NeonInterpolator;
+use crate::sinc_interpolator::sinc_interpolator_neon::NeonInterpolator;
 #[cfg(target_arch = "x86_64")]
-use crate::sinc_interpolator_sse::SseInterpolator;
+use crate::sinc_interpolator::sinc_interpolator_sse::SseInterpolator;
 use crate::windows::WindowFunction;
 use crate::{update_mask_from_buffers, validate_buffers, Resampler, Sample};
-use crate::{InterpolationParameters, InterpolationType};
+
+
+/// A struct holding the parameters for sinc interpolation.
+#[derive(Debug)]
+pub struct SincInterpolationParameters {
+    /// Length of the windowed sinc interpolation filter.
+    /// Higher values can allow a higher cut-off frequency leading to less high frequency roll-off
+    /// at the expense of higher cpu usage. 256 is a good starting point.
+    /// The value will be rounded up to the nearest multiple of 8.
+    pub sinc_len: usize,
+    /// Relative cutoff frequency of the sinc interpolation filter
+    /// (relative to the lowest one of fs_in/2 or fs_out/2). Start at 0.95, and increase if needed.
+    pub f_cutoff: f32,
+    /// The number of intermediate points to use for interpolation.
+    /// Higher values use more memory for storing the sinc filters.
+    /// Only the points actually needed are calculated during processing
+    /// so a larger number does not directly lead to higher cpu usage.
+    /// But keeping it down helps in keeping the sincs in the cpu cache. Start at 128.
+    pub oversampling_factor: usize,
+    /// Interpolation type, see `SincInterpolationType`
+    pub interpolation: SincInterpolationType,
+    /// Window function to use.
+    pub window: WindowFunction,
+}
+
+/// Interpolation methods that can be selected. For asynchronous interpolation where the
+/// ratio between input and output sample rates can be any number, it's not possible to
+/// pre-calculate all the needed interpolation filters.
+/// Instead they have to be computed as needed, which becomes impractical since the
+/// sincs are very expensive to generate in terms of cpu time.
+/// It's more efficient to combine the sinc filters with some other interpolation technique.
+/// Then sinc filters are used to provide a fixed number of interpolated points between input samples,
+/// and then the new value is calculated by interpolation between those points.
+#[derive(Debug)]
+pub enum SincInterpolationType {
+    /// For cubic interpolation, the four nearest intermediate points are calculated
+    /// using sinc interpolation.
+    /// Then a cubic polynomial is fitted to these points, and is then used to calculate the new sample value.
+    /// The computation time as about twice the one for linear interpolation,
+    /// but it requires much fewer intermediate points for a good result.
+    Cubic,
+    /// With linear interpolation the new sample value is calculated by linear interpolation
+    /// between the two nearest points.
+    /// This requires two intermediate points to be calculated using sinc interpolation,
+    /// and te output is a weighted average of these two.
+    /// This is relatively fast, but needs a large number of intermediate points to
+    /// push the resampling artefacts below the noise floor.
+    Linear,
+    /// The Nearest mode doesn't do any interpolation, but simply picks the nearest intermediate point.
+    /// This is useful when the nearest point is actually the correct one, for example when upsampling by a factor 2,
+    /// like 48kHz->96kHz.
+    /// Then setting the oversampling_factor to 2, and using Nearest mode,
+    /// no unnecessary computations are performed and the result is the same as for synchronous resampling.
+    /// This also works for other ratios that can be expressed by a fraction. For 44.1kHz -> 48 kHz,
+    /// setting oversampling_factor to 160 gives the desired result (since 48kHz = 160/147 * 44.1kHz).
+    Nearest,
+}
 
 /// An asynchronous resampler that accepts a fixed number of audio frames for input
 /// and returns a variable number of frames.
@@ -33,7 +89,7 @@ pub struct SincFixedIn<T> {
     max_relative_ratio: f64,
     interpolator: Box<dyn SincInterpolator<T>>,
     buffer: Vec<Vec<T>>,
-    interpolation: InterpolationType,
+    interpolation: SincInterpolationType,
     channel_mask: Vec<bool>,
 }
 
@@ -63,7 +119,7 @@ pub struct SincFixedOut<T> {
     max_relative_ratio: f64,
     interpolator: Box<dyn SincInterpolator<T>>,
     buffer: Vec<Vec<T>>,
-    interpolation: InterpolationType,
+    interpolation: SincInterpolationType,
     channel_mask: Vec<bool>,
 }
 
@@ -162,13 +218,13 @@ where
     /// Parameters are:
     /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
     /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Resampler::set_resample_ratio] relative to `resample_ratio`, must be >= 1.0. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio * 10.0` and `resample_ratio / 10.0`.
-    /// - `parameters`: Parameters for interpolation, see `InterpolationParameters`.
+    /// - `parameters`: Parameters for interpolation, see `SincInterpolationParameters`.
     /// - `chunk_size`: Size of input data in frames.
     /// - `nbr_channels`: Number of channels in input/output.
     pub fn new(
         resample_ratio: f64,
         max_resample_ratio_relative: f64,
-        parameters: InterpolationParameters,
+        parameters: SincInterpolationParameters,
         chunk_size: usize,
         nbr_channels: usize,
     ) -> Result<Self, ResamplerConstructionError> {
@@ -200,14 +256,14 @@ where
     /// Parameters are:
     /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
     /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Resampler::set_resample_ratio] relative to `resample_ratio`, must be >= 1.0. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio` * 10.0 and `resample_ratio` / 10.0.
-    /// - `interpolation_type`: Parameters for interpolation, see `InterpolationParameters`.
+    /// - `interpolation_type`: Parameters for interpolation, see `SincInterpolationParameters`.
     /// - `interpolator`: The interpolator to use.
     /// - `chunk_size`: Size of output data in frames.
     /// - `nbr_channels`: Number of channels in input/output.
     pub fn new_with_interpolator(
         resample_ratio: f64,
         max_resample_ratio_relative: f64,
-        interpolation_type: InterpolationType,
+        interpolation_type: SincInterpolationType,
         interpolator: Box<dyn SincInterpolator<T>>,
         chunk_size: usize,
         nbr_channels: usize,
@@ -297,7 +353,7 @@ where
         let mut n = 0;
 
         match self.interpolation {
-            InterpolationType::Cubic => {
+            SincInterpolationType::Cubic => {
                 let mut points = [T::zero(); 4];
                 let mut nearest = [(0isize, 0isize); 4];
                 while idx < end_idx as f64 {
@@ -323,7 +379,7 @@ where
                     n += 1;
                 }
             }
-            InterpolationType::Linear => {
+            SincInterpolationType::Linear => {
                 let mut points = [T::zero(); 2];
                 let mut nearest = [(0isize, 0isize); 2];
                 while idx < end_idx as f64 {
@@ -349,7 +405,7 @@ where
                     n += 1;
                 }
             }
-            InterpolationType::Nearest => {
+            SincInterpolationType::Nearest => {
                 let mut point;
                 let mut nearest;
                 while idx < end_idx as f64 {
@@ -446,13 +502,13 @@ where
     /// Parameters are:
     /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
     /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Resampler::set_resample_ratio] relative to `resample_ratio`, must be >= 1.0. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio * 10.0` and `resample_ratio / 10.0`.
-    /// - `parameters`: Parameters for interpolation, see `InterpolationParameters`.
+    /// - `parameters`: Parameters for interpolation, see `SincInterpolationParameters`.
     /// - `chunk_size`: Size of output data in frames.
     /// - `nbr_channels`: Number of channels in input/output.
     pub fn new(
         resample_ratio: f64,
         max_resample_ratio_relative: f64,
-        parameters: InterpolationParameters,
+        parameters: SincInterpolationParameters,
         chunk_size: usize,
         nbr_channels: usize,
     ) -> Result<Self, ResamplerConstructionError> {
@@ -483,14 +539,14 @@ where
     /// Parameters are:
     /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
     /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Resampler::set_resample_ratio] relative to `resample_ratio`, must be >= 1.0. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio` * 10.0 and `resample_ratio` / 10.0.
-    /// - `interpolation_type`: Parameters for interpolation, see `InterpolationParameters`.
+    /// - `interpolation_type`: Parameters for interpolation, see `SincInterpolationParameters`.
     /// - `interpolator`: The interpolator to use.
     /// - `chunk_size`: Size of output data in frames.
     /// - `nbr_channels`: Number of channels in input/output.
     pub fn new_with_interpolator(
         resample_ratio: f64,
         max_resample_ratio_relative: f64,
-        interpolation_type: InterpolationType,
+        interpolation_type: SincInterpolationType,
         interpolator: Box<dyn SincInterpolator<T>>,
         chunk_size: usize,
         nbr_channels: usize,
@@ -579,7 +635,7 @@ where
         let t_ratio_increment = (t_ratio_end - t_ratio) / self.chunk_size as f64;
 
         match self.interpolation {
-            InterpolationType::Cubic => {
+            SincInterpolationType::Cubic => {
                 let mut points = [T::zero(); 4];
                 let mut nearest = [(0isize, 0isize); 4];
                 for n in 0..self.chunk_size {
@@ -604,7 +660,7 @@ where
                     }
                 }
             }
-            InterpolationType::Linear => {
+            SincInterpolationType::Linear => {
                 let mut points = [T::zero(); 2];
                 let mut nearest = [(0isize, 0isize); 2];
                 for n in 0..self.chunk_size {
@@ -629,7 +685,7 @@ where
                     }
                 }
             }
-            InterpolationType::Nearest => {
+            SincInterpolationType::Nearest => {
                 let mut point;
                 let mut nearest;
                 for n in 0..self.chunk_size {
@@ -728,18 +784,18 @@ where
 #[cfg(test)]
 mod tests {
     use super::{interp_cubic, interp_lin};
-    use crate::InterpolationParameters;
-    use crate::InterpolationType;
+    use crate::SincInterpolationParameters;
+    use crate::SincInterpolationType;
     use crate::Resampler;
     use crate::WindowFunction;
     use crate::{SincFixedIn, SincFixedOut};
 
     #[test]
     fn int_cubic() {
-        let params = InterpolationParameters {
+        let params = SincInterpolationParameters {
             sinc_len: 64,
             f_cutoff: 0.95,
-            interpolation: InterpolationType::Cubic,
+            interpolation: SincInterpolationType::Cubic,
             oversampling_factor: 16,
             window: WindowFunction::BlackmanHarris2,
         };
@@ -751,10 +807,10 @@ mod tests {
 
     #[test]
     fn int_lin_32() {
-        let params = InterpolationParameters {
+        let params = SincInterpolationParameters {
             sinc_len: 64,
             f_cutoff: 0.95,
-            interpolation: InterpolationType::Cubic,
+            interpolation: SincInterpolationType::Cubic,
             oversampling_factor: 16,
             window: WindowFunction::BlackmanHarris2,
         };
@@ -766,10 +822,10 @@ mod tests {
 
     #[test]
     fn int_cubic_32() {
-        let params = InterpolationParameters {
+        let params = SincInterpolationParameters {
             sinc_len: 64,
             f_cutoff: 0.95,
-            interpolation: InterpolationType::Cubic,
+            interpolation: SincInterpolationType::Cubic,
             oversampling_factor: 16,
             window: WindowFunction::BlackmanHarris2,
         };
@@ -781,10 +837,10 @@ mod tests {
 
     #[test]
     fn int_lin() {
-        let params = InterpolationParameters {
+        let params = SincInterpolationParameters {
             sinc_len: 64,
             f_cutoff: 0.95,
-            interpolation: InterpolationType::Cubic,
+            interpolation: SincInterpolationType::Cubic,
             oversampling_factor: 16,
             window: WindowFunction::BlackmanHarris2,
         };
@@ -796,10 +852,10 @@ mod tests {
 
     #[test]
     fn make_resampler_fi() {
-        let params = InterpolationParameters {
+        let params = SincInterpolationParameters {
             sinc_len: 64,
             f_cutoff: 0.95,
-            interpolation: InterpolationType::Cubic,
+            interpolation: SincInterpolationType::Cubic,
             oversampling_factor: 16,
             window: WindowFunction::BlackmanHarris2,
         };
@@ -827,10 +883,10 @@ mod tests {
 
     #[test]
     fn make_resampler_fi_32() {
-        let params = InterpolationParameters {
+        let params = SincInterpolationParameters {
             sinc_len: 64,
             f_cutoff: 0.95,
-            interpolation: InterpolationType::Cubic,
+            interpolation: SincInterpolationType::Cubic,
             oversampling_factor: 16,
             window: WindowFunction::BlackmanHarris2,
         };
@@ -858,10 +914,10 @@ mod tests {
 
     #[test]
     fn make_resampler_fi_skipped() {
-        let params = InterpolationParameters {
+        let params = SincInterpolationParameters {
             sinc_len: 64,
             f_cutoff: 0.95,
-            interpolation: InterpolationType::Cubic,
+            interpolation: SincInterpolationType::Cubic,
             oversampling_factor: 16,
             window: WindowFunction::BlackmanHarris2,
         };
@@ -881,10 +937,10 @@ mod tests {
     #[test]
     fn make_resampler_fi_downsample() {
         // Replicate settings from reported issue
-        let params = InterpolationParameters {
+        let params = SincInterpolationParameters {
             sinc_len: 256,
             f_cutoff: 0.95,
-            interpolation: InterpolationType::Cubic,
+            interpolation: SincInterpolationType::Cubic,
             oversampling_factor: 160,
             window: WindowFunction::BlackmanHarris2,
         };
@@ -914,10 +970,10 @@ mod tests {
     #[test]
     fn make_resampler_fi_upsample() {
         // Replicate settings from reported issue
-        let params = InterpolationParameters {
+        let params = SincInterpolationParameters {
             sinc_len: 256,
             f_cutoff: 0.95,
-            interpolation: InterpolationType::Cubic,
+            interpolation: SincInterpolationType::Cubic,
             oversampling_factor: 160,
             window: WindowFunction::BlackmanHarris2,
         };
@@ -946,10 +1002,10 @@ mod tests {
 
     #[test]
     fn make_resampler_fo() {
-        let params = InterpolationParameters {
+        let params = SincInterpolationParameters {
             sinc_len: 64,
             f_cutoff: 0.95,
-            interpolation: InterpolationType::Cubic,
+            interpolation: SincInterpolationType::Cubic,
             oversampling_factor: 16,
             window: WindowFunction::BlackmanHarris2,
         };
@@ -965,10 +1021,10 @@ mod tests {
 
     #[test]
     fn make_resampler_fo_32() {
-        let params = InterpolationParameters {
+        let params = SincInterpolationParameters {
             sinc_len: 64,
             f_cutoff: 0.95,
-            interpolation: InterpolationType::Cubic,
+            interpolation: SincInterpolationType::Cubic,
             oversampling_factor: 16,
             window: WindowFunction::BlackmanHarris2,
         };
@@ -984,10 +1040,10 @@ mod tests {
 
     #[test]
     fn make_resampler_fo_skipped() {
-        let params = InterpolationParameters {
+        let params = SincInterpolationParameters {
             sinc_len: 64,
             f_cutoff: 0.95,
-            interpolation: InterpolationType::Cubic,
+            interpolation: SincInterpolationType::Cubic,
             oversampling_factor: 16,
             window: WindowFunction::BlackmanHarris2,
         };
@@ -1021,10 +1077,10 @@ mod tests {
 
     #[test]
     fn make_resampler_fo_downsample() {
-        let params = InterpolationParameters {
+        let params = SincInterpolationParameters {
             sinc_len: 256,
             f_cutoff: 0.95,
-            interpolation: InterpolationType::Cubic,
+            interpolation: SincInterpolationType::Cubic,
             oversampling_factor: 160,
             window: WindowFunction::BlackmanHarris2,
         };
@@ -1069,10 +1125,10 @@ mod tests {
 
     #[test]
     fn make_resampler_fo_upsample() {
-        let params = InterpolationParameters {
+        let params = SincInterpolationParameters {
             sinc_len: 256,
             f_cutoff: 0.95,
-            interpolation: InterpolationType::Cubic,
+            interpolation: SincInterpolationType::Cubic,
             oversampling_factor: 160,
             window: WindowFunction::BlackmanHarris2,
         };

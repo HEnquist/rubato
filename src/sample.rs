@@ -1,4 +1,4 @@
-use crate::{AvxSample, NeonSample, SseSample};
+use crate::sinc_interpolator::{AvxSample, NeonSample, SseSample};
 
 /// The trait governing a single sample.
 ///

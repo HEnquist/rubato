@@ -2,6 +2,52 @@ use crate::sinc::make_sincs;
 use crate::windows::WindowFunction;
 use crate::Sample;
 
+/// Helper macro to define a dummy implementation of the sample trait if a
+/// feature is not supported.
+macro_rules! interpolator {
+    (
+    #[cfg($($cond:tt)*)]
+    mod $mod:ident;
+    trait $trait:ident;
+    ) => {
+        #[cfg($($cond)*)]
+        pub mod $mod;
+
+        #[cfg(not($($cond)*))]
+        pub mod $mod {
+            use crate::Sample;
+
+            /// Dummy trait when not supported.
+            pub trait $trait {
+            }
+
+            /// Dummy impl of trait when not supported.
+            impl<T> $trait for T where T: Sample {
+            }
+        }
+
+        pub use self::$mod::$trait;
+    }
+}
+
+interpolator! {
+    #[cfg(target_arch = "x86_64")]
+    mod sinc_interpolator_avx;
+    trait AvxSample;
+}
+
+interpolator! {
+    #[cfg(target_arch = "x86_64")]
+    mod sinc_interpolator_sse;
+    trait SseSample;
+}
+
+interpolator! {
+    #[cfg(target_arch = "aarch64")]
+    mod sinc_interpolator_neon;
+    trait NeonSample;
+}
+
 /// Functions for making the scalar product with a sinc
 pub trait SincInterpolator<T>: Send {
     /// Make the scalar product between the waveform starting at `index` and the sinc of `subindex`.

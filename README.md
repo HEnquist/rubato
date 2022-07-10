@@ -73,11 +73,11 @@ This means that logging should be avoided if using this library in a realtime ap
 Resample a single chunk of a dummy audio file from 44100 to 48000 Hz.
 See also the "fixedin64" example that can be used to process a file from disk.
 ```rust
-use rubato::{Resampler, SincFixedIn, InterpolationType, InterpolationParameters, WindowFunction};
-let params = InterpolationParameters {
+use rubato::{Resampler, SincFixedIn, SincInterpolationType, SincInterpolationParameters, WindowFunction};
+let params = SincInterpolationParameters {
     sinc_len: 256,
     f_cutoff: 0.95,
-    interpolation: InterpolationType::Linear,
+    interpolation: SincInterpolationType::Linear,
     oversampling_factor: 256,
     window: WindowFunction::BlackmanHarris2,
 };
