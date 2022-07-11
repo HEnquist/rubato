@@ -265,21 +265,6 @@ where
             self.chunk_size,
         )?;
 
-        let mut t_ratio = 1.0 / self.resample_ratio as f64;
-        let t_ratio_end = 1.0 / self.target_ratio as f64;
-        let approximate_nbr_frames =
-            self.chunk_size as f64 * (0.5 * self.resample_ratio + 0.5 * self.target_ratio);
-        let t_ratio_increment = (t_ratio_end - t_ratio) / approximate_nbr_frames;
-        let end_idx =
-            self.chunk_size as isize - (POLYNOMIAL_LEN_I + 1) - t_ratio_end.ceil() as isize;
-        //println!(
-        //    "start ratio {}, end_ratio {}, frames {}, t_increment {}",
-        //    t_ratio,
-        //    t_ratio_end,
-        //    approximate_nbr_frames,
-        //    t_ratio_increment
-        //);
-
         //update buffer with new data
         for buf in self.buffer.iter_mut() {
             buf.copy_within(self.chunk_size..self.chunk_size + 2 * POLYNOMIAL_LEN_U, 0);
@@ -304,6 +289,21 @@ where
                 wave_out[chan].resize(needed_len, T::zero());
             }
         }
+
+        let mut t_ratio = 1.0 / self.resample_ratio as f64;
+        let t_ratio_end = 1.0 / self.target_ratio as f64;
+        let approximate_nbr_frames =
+            self.chunk_size as f64 * (0.5 * self.resample_ratio + 0.5 * self.target_ratio);
+        let t_ratio_increment = (t_ratio_end - t_ratio) / approximate_nbr_frames;
+        let end_idx =
+            self.chunk_size as isize - (POLYNOMIAL_LEN_I + 1) - t_ratio_end.ceil() as isize;
+        //println!(
+        //    "start ratio {}, end_ratio {}, frames {}, t_increment {}",
+        //    t_ratio,
+        //    t_ratio_end,
+        //    approximate_nbr_frames,
+        //    t_ratio_increment
+        //);
 
         let mut idx = self.last_index;
 

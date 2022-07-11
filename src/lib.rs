@@ -174,7 +174,10 @@ pub use crate::windows::WindowFunction;
 ///
 /// This trait is not object safe. If you need an object safe resampler,
 /// use the [VecResampler] wrapper trait.
-pub trait Resampler<T>: Send {
+pub trait Resampler<T>: Send
+where
+    T: Sample,
+{
     /// This is a convenience wrapper for [process_into_buffer](Resampler::process_into_buffer)
     /// that allocates the output buffer with each call. For realtime applications, use
     /// [process_into_buffer](Resampler::process_into_buffer) with a buffer allocated by
@@ -221,6 +224,57 @@ pub trait Resampler<T>: Send {
         wave_out: &mut [Vec<T>],
         active_channels_mask: Option<&[bool]>,
     ) -> ResampleResult<()>;
+
+    /// This is a convenience method for processing the last frames at the end of a stream.
+    /// Use this when there are fewer frames remaining than what the resampler requires as input.
+    /// Calling this function is equivalent to padding the input buffer with zeros
+    /// to make it the right input length, and then calling [process_into_buffer](Resampler::process_into_buffer).
+    /// The method can also be called without any input frames, by providing `None` as input buffer.
+    /// This can be utilized to push any remaining delayed frames out from the internal buffers.
+    /// Note that this method allocates space for a temporary input buffer.
+    /// Real-time applications should instead call `process_into_buffer` with a zero-padded pre-allocated input buffer.
+    fn process_partial_into_buffer<V: AsRef<[T]>>(
+        &mut self,
+        wave_in: Option<&[V]>,
+        wave_out: &mut [Vec<T>],
+        active_channels_mask: Option<&[bool]>,
+    ) -> ResampleResult<()> {
+        let frames = self.input_frames_next();
+        let mut wave_in_padded = Vec::with_capacity(self.nbr_channels());
+        for _ in 0..self.nbr_channels() {
+            wave_in_padded.push(vec![T::zero(); frames]);
+        }
+        if let Some(input) = wave_in {
+            for (ch_input, ch_padded) in input.iter().zip(wave_in_padded.iter_mut()) {
+                let frames_in = ch_input.as_ref().len();
+                if frames_in > 0 {
+                    ch_padded[0..frames_in].copy_from_slice(ch_input.as_ref());
+                } else {
+                    ch_padded.clear();
+                }
+            }
+        }
+        self.process_into_buffer(&wave_in_padded, wave_out, active_channels_mask)
+    }
+
+    /// This is a convenience method for processing the last frames at the end of a stream.
+    /// It is similar to [process_partial_into_buffer](Resampler::process_partial_into_buffer)
+    /// but allocates the output buffer with each call.
+    /// Note that this method allocates space for both input and output.
+    fn process_partial<V: AsRef<[T]>>(
+        &mut self,
+        wave_in: Option<&[V]>,
+        active_channels_mask: Option<&[bool]>,
+    ) -> ResampleResult<Vec<Vec<T>>> {
+        let frames = self.output_frames_next();
+        let channels = self.nbr_channels();
+        let mut wave_out = Vec::with_capacity(channels);
+        for _ in 0..channels {
+            wave_out.push(Vec::with_capacity(frames));
+        }
+        self.process_partial_into_buffer::<V>(wave_in, &mut wave_out, active_channels_mask)?;
+        Ok(wave_out)
+    }
 
     /// Convenience method for allocating an input buffer suitable for use with
     /// [process_into_buffer](Resampler::process_into_buffer). The buffer's capacity
@@ -323,6 +377,21 @@ pub trait VecResampler<T>: Send {
         active_channels_mask: Option<&[bool]>,
     ) -> ResampleResult<()>;
 
+    /// Refer to [Resampler::process_partial_into_buffer]
+    fn process_partial_into_buffer(
+        &mut self,
+        wave_in: Option<&[Vec<T>]>,
+        wave_out: &mut [Vec<T>],
+        active_channels_mask: Option<&[bool]>,
+    ) -> ResampleResult<()>;
+
+    /// Refer to [Resampler::process_partial]
+    fn process_partial(
+        &mut self,
+        wave_in: Option<&[Vec<T>]>,
+        active_channels_mask: Option<&[bool]>,
+    ) -> ResampleResult<Vec<Vec<T>>>;
+
     /// Refer to [Resampler::input_buffer_allocate]
     fn input_buffer_allocate(&self) -> Vec<Vec<T>>;
 
@@ -354,6 +423,7 @@ pub trait VecResampler<T>: Send {
 impl<T, U> VecResampler<T> for U
 where
     U: Resampler<T>,
+    T: sample::Sample,
 {
     fn process(
         &mut self,
@@ -370,6 +440,23 @@ where
         active_channels_mask: Option<&[bool]>,
     ) -> ResampleResult<()> {
         Resampler::process_into_buffer(self, wave_in, wave_out, active_channels_mask)
+    }
+
+    fn process_partial_into_buffer(
+        &mut self,
+        wave_in: Option<&[Vec<T>]>,
+        wave_out: &mut [Vec<T>],
+        active_channels_mask: Option<&[bool]>,
+    ) -> ResampleResult<()> {
+        Resampler::process_partial_into_buffer(self, wave_in, wave_out, active_channels_mask)
+    }
+
+    fn process_partial(
+        &mut self,
+        wave_in: Option<&[Vec<T>]>,
+        active_channels_mask: Option<&[bool]>,
+    ) -> ResampleResult<Vec<Vec<T>>> {
+        Resampler::process_partial(self, wave_in, active_channels_mask)
     }
 
     fn output_buffer_allocate(&self) -> Vec<Vec<T>> {

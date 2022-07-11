@@ -226,7 +226,7 @@ where
 #[cfg(test)]
 mod tests {
     use crate::sinc_interpolator::SincInterpolator;
-    use crate::sinc_interpolator_sse::SseInterpolator;
+    use crate::sinc_interpolator::sinc_interpolator_sse::SseInterpolator;
     use crate::sinc::make_sincs;
     use crate::WindowFunction;
     use num_traits::Float;
