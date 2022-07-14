@@ -800,6 +800,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::check_output;
     use crate::PolynomialDegree;
     use crate::Resampler;
     use crate::{FastFixedIn, FastFixedOut};
@@ -1118,5 +1119,19 @@ mod tests {
             1024,
             out2[0].len()
         );
+    }
+
+    #[test]
+    fn check_fo_output() {
+        let mut resampler =
+            FastFixedOut::<f64>::new(8.0, 1.0, PolynomialDegree::Cubic, 1024, 2).unwrap();
+        check_output!(check_fo_output, resampler);
+    }
+
+    #[test]
+    fn check_fi_output() {
+        let mut resampler =
+            FastFixedIn::<f64>::new(8.0, 1.0, PolynomialDegree::Cubic, 1024, 2).unwrap();
+        check_output!(check_fo_output, resampler);
     }
 }

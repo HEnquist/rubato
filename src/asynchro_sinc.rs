@@ -808,6 +808,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::{interp_cubic, interp_lin};
+    use crate::check_output;
     use crate::Resampler;
     use crate::SincInterpolationParameters;
     use crate::SincInterpolationType;
@@ -1250,5 +1251,31 @@ mod tests {
             1024,
             out2[0].len()
         );
+    }
+
+    #[test]
+    fn check_fo_output() {
+        let params = SincInterpolationParameters {
+            sinc_len: 64,
+            f_cutoff: 0.95,
+            interpolation: SincInterpolationType::Cubic,
+            oversampling_factor: 16,
+            window: WindowFunction::BlackmanHarris2,
+        };
+        let mut resampler = SincFixedOut::<f64>::new(1.2, 1.0, params, 1024, 2).unwrap();
+        check_output!(check_fo_output, resampler);
+    }
+
+    #[test]
+    fn check_fi_output() {
+        let params = SincInterpolationParameters {
+            sinc_len: 64,
+            f_cutoff: 0.95,
+            interpolation: SincInterpolationType::Cubic,
+            oversampling_factor: 16,
+            window: WindowFunction::BlackmanHarris2,
+        };
+        let mut resampler = SincFixedIn::<f64>::new(1.2, 1.0, params, 1024, 2).unwrap();
+        check_output!(check_fo_output, resampler);
     }
 }

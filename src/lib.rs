@@ -546,7 +546,7 @@ pub(crate) fn validate_buffers<T, V: AsRef<[T]>>(
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use crate::VecResampler;
     use crate::{FftFixedIn, FftFixedInOut, FftFixedOut};
     use crate::{SincFixedIn, SincFixedOut};
@@ -582,5 +582,55 @@ mod tests {
     fn test_impl_send() {
         impl_send::<f32>();
         impl_send::<f64>();
+    }
+
+    #[macro_export]
+    macro_rules! check_output {
+        ($name:ident, $resampler:ident) => {
+            let mut val = 0.0;
+            let mut prev_last = -0.1;
+            for n in 0..5 {
+                let frames = $resampler.input_frames_next();
+                let mut waves = vec![vec![0.0f64; frames]; 2];
+                for m in 0..frames {
+                    for ch in 0..2 {
+                        waves[ch][m] = val;
+                    }
+                    val = val + 0.1;
+                }
+                let out = $resampler.process(&waves, None).unwrap();
+                let frames_out = out[0].len();
+                for ch in 0..2 {
+                    assert!(
+                        out[ch][0] > prev_last,
+                        "Iteration {}, first value {} prev last value {}",
+                        n,
+                        out[ch][0],
+                        prev_last
+                    );
+                    assert!(
+                        out[ch][frames_out - 1] > out[ch][0],
+                        "Iteration {}, last value {} first value {}",
+                        n,
+                        out[ch][frames_out - 1],
+                        out[ch][0]
+                    );
+                }
+                prev_last = out[0][frames_out - 1];
+                for m in 0..frames_out - 1 {
+                    for ch in 0..2 {
+                        let diff = out[ch][m + 1] - out[ch][m];
+                        assert!(
+                            diff < 0.15 && diff > -0.05,
+                            "Frame {}:{} next value {} value {}",
+                            n,
+                            m,
+                            out[ch][m + 1],
+                            out[ch][m]
+                        );
+                    }
+                }
+            }
+        };
     }
 }

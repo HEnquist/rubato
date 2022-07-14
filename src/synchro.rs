@@ -681,6 +681,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::check_output;
     use crate::synchro::{FftFixedIn, FftFixedInOut, FftFixedOut, FftResampler};
     use crate::Resampler;
     use rand::Rng;
@@ -911,5 +912,23 @@ mod tests {
         let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 1024);
+    }
+
+    #[test]
+    fn check_fo_output() {
+        let mut resampler = FftFixedOut::<f64>::new(44100, 48000, 1024, 2, 2).unwrap();
+        check_output!(check_fo_output, resampler);
+    }
+
+    #[test]
+    fn check_fi_output() {
+        let mut resampler = FftFixedIn::<f64>::new(44100, 48000, 1024, 2, 2).unwrap();
+        check_output!(check_fo_output, resampler);
+    }
+
+    #[test]
+    fn check_fio_output() {
+        let mut resampler = FftFixedInOut::<f64>::new(44100, 48000, 1024, 2).unwrap();
+        check_output!(check_fo_output, resampler);
     }
 }
