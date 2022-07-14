@@ -608,8 +608,10 @@ pub mod tests {
                         out[ch][0],
                         prev_last
                     );
+                    let expected_diff = frames as f64 * 0.1;
+                    let diff = out[ch][frames_out - 1] - out[ch][0];
                     assert!(
-                        out[ch][frames_out - 1] > out[ch][0],
+                        diff < 1.5 * expected_diff && diff > 0.25 * expected_diff,
                         "Iteration {}, last value {} first value {}",
                         n,
                         out[ch][frames_out - 1],

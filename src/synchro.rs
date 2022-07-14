@@ -916,19 +916,19 @@ mod tests {
 
     #[test]
     fn check_fo_output() {
-        let mut resampler = FftFixedOut::<f64>::new(44100, 48000, 1024, 2, 2).unwrap();
+        let mut resampler = FftFixedOut::<f64>::new(44100, 48000, 4096, 4, 2).unwrap();
         check_output!(check_fo_output, resampler);
     }
 
     #[test]
     fn check_fi_output() {
-        let mut resampler = FftFixedIn::<f64>::new(44100, 48000, 1024, 2, 2).unwrap();
+        let mut resampler = FftFixedIn::<f64>::new(44100, 48000, 4096, 4, 2).unwrap();
         check_output!(check_fo_output, resampler);
     }
 
     #[test]
     fn check_fio_output() {
-        let mut resampler = FftFixedInOut::<f64>::new(44100, 48000, 1024, 2).unwrap();
+        let mut resampler = FftFixedInOut::<f64>::new(44100, 48000, 4096, 2).unwrap();
         check_output!(check_fo_output, resampler);
     }
 }
