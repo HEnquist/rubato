@@ -310,6 +310,13 @@ where
     fn set_resample_ratio_relative(&mut self, _rel_ratio: f64, _ramp: bool) -> ResampleResult<()> {
         Err(ResampleError::SyncNotAdjustable)
     }
+
+    fn reset(&mut self) {
+        self.overlaps
+            .iter_mut()
+            .for_each(|ch| ch.iter_mut().for_each(|s| *s = T::zero()));
+        self.channel_mask.iter_mut().for_each(|val| *val = true);
+    }
 }
 
 impl<T> FftFixedOut<T>
@@ -475,6 +482,19 @@ where
     /// supported by this resampler and always returns [ResampleError::SyncNotAdjustable].
     fn set_resample_ratio_relative(&mut self, _rel_ratio: f64, _ramp: bool) -> ResampleResult<()> {
         Err(ResampleError::SyncNotAdjustable)
+    }
+
+    fn reset(&mut self) {
+        self.overlaps
+            .iter_mut()
+            .for_each(|ch| ch.iter_mut().for_each(|s| *s = T::zero()));
+        self.output_buffers
+            .iter_mut()
+            .for_each(|ch| ch.iter_mut().for_each(|s| *s = T::zero()));
+        self.channel_mask.iter_mut().for_each(|val| *val = true);
+        self.saved_frames = 0;
+        let chunks_needed = (self.chunk_size_out as f32 / self.fft_size_out as f32).ceil() as usize;
+        self.frames_needed = chunks_needed * self.fft_size_in;
     }
 }
 
@@ -646,12 +666,24 @@ where
     fn set_resample_ratio_relative(&mut self, _rel_ratio: f64, _ramp: bool) -> ResampleResult<()> {
         Err(ResampleError::SyncNotAdjustable)
     }
+
+    fn reset(&mut self) {
+        self.overlaps
+            .iter_mut()
+            .for_each(|ch| ch.iter_mut().for_each(|s| *s = T::zero()));
+        self.input_buffers
+            .iter_mut()
+            .for_each(|ch| ch.iter_mut().for_each(|s| *s = T::zero()));
+        self.channel_mask.iter_mut().for_each(|val| *val = true);
+        self.saved_frames = 0;
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::synchro::{FftFixedIn, FftFixedInOut, FftFixedOut, FftResampler};
     use crate::Resampler;
+    use rand::Rng;
 
     #[test]
     fn resample_unit() {
@@ -686,6 +718,30 @@ mod tests {
     }
 
     #[test]
+    fn reset_resampler_fio() {
+        let mut resampler = FftFixedInOut::<f64>::new(44100, 48000, 1024, 2).unwrap();
+        let frames = resampler.input_frames_next();
+
+        let mut rng = rand::thread_rng();
+        let mut waves = vec![vec![0.0f64; frames]; 2];
+        waves
+            .iter_mut()
+            .for_each(|ch| ch.iter_mut().for_each(|s| *s = rng.gen()));
+        let out1 = resampler.process(&waves, None).unwrap();
+        resampler.reset();
+        assert_eq!(
+            frames,
+            resampler.input_frames_next(),
+            "Resampler requires different number of frames when new and after a reset."
+        );
+        let out2 = resampler.process(&waves, None).unwrap();
+        assert_eq!(
+            out1, out2,
+            "Resampler gives different output when new and after a reset."
+        );
+    }
+
+    #[test]
     fn make_resampler_fio_skipped() {
         // asking for 1024 give the nearest which is 1029 -> 1120
         let mut resampler = FftFixedInOut::<f64>::new(44100, 48000, 1024, 2).unwrap();
@@ -706,6 +762,30 @@ mod tests {
         let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 1024);
+    }
+
+    #[test]
+    fn reset_resampler_fo() {
+        let mut resampler = FftFixedOut::<f64>::new(44100, 192000, 1024, 2, 2).unwrap();
+        let frames = resampler.input_frames_next();
+
+        let mut rng = rand::thread_rng();
+        let mut waves = vec![vec![0.0f64; frames]; 2];
+        waves
+            .iter_mut()
+            .for_each(|ch| ch.iter_mut().for_each(|s| *s = rng.gen()));
+        let out1 = resampler.process(&waves, None).unwrap();
+        resampler.reset();
+        assert_eq!(
+            frames,
+            resampler.input_frames_next(),
+            "Resampler requires different number of frames when new and after a reset."
+        );
+        let out2 = resampler.process(&waves, None).unwrap();
+        assert_eq!(
+            out1, out2,
+            "Resampler gives different output when new and after a reset."
+        );
     }
 
     #[test]
@@ -741,6 +821,24 @@ mod tests {
         let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 640);
+    }
+
+    #[test]
+    fn reset_resampler_fi() {
+        let mut resampler = FftFixedIn::<f64>::new(44100, 48000, 1024, 2, 2).unwrap();
+
+        let mut rng = rand::thread_rng();
+        let mut waves = vec![vec![0.0f64; 1024]; 2];
+        waves
+            .iter_mut()
+            .for_each(|ch| ch.iter_mut().for_each(|s| *s = rng.gen()));
+        let out1 = resampler.process(&waves, None).unwrap();
+        resampler.reset();
+        let out2 = resampler.process(&waves, None).unwrap();
+        assert_eq!(
+            out1, out2,
+            "Resampler gives different output when new and after a reset."
+        );
     }
 
     #[test]

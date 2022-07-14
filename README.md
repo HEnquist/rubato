@@ -102,6 +102,8 @@ The `rubato` crate requires rustc version 1.61 or newer.
 - v0.13.0
   - Add faster (lower quality) asynchronous resamplers.
   - Optional smooth ramping of ratio changes to avoid audible steps.
+  - Add convenience methods for handling last frames in a stream.
+  - Add resampler reset method.
   - Refactoring for a more logical structure.
 - v0.12.0
   - Always enable all simd acceleration (and remove the simd Cargo features).

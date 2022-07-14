@@ -349,6 +349,9 @@ where
     ///
     /// For synchronous resamplers, this will always return [ResampleError::SyncNotAdjustable].
     fn set_resample_ratio_relative(&mut self, rel_ratio: f64, ramp: bool) -> ResampleResult<()>;
+
+    /// Reset the resampler state and clear all internal buffers.
+    fn reset(&mut self);
 }
 
 /// This is a helper trait that can be used when a [Resampler] must be object safe.

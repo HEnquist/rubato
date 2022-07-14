@@ -490,6 +490,16 @@ where
         let new_ratio = self.resample_ratio_original * rel_ratio;
         self.set_resample_ratio(new_ratio, ramp)
     }
+
+    fn reset(&mut self) {
+        self.buffer
+            .iter_mut()
+            .for_each(|ch| ch.iter_mut().for_each(|s| *s = T::zero()));
+        self.channel_mask.iter_mut().for_each(|val| *val = true);
+        self.last_index = -((self.interpolator.len() / 2) as f64);
+        self.resample_ratio = self.resample_ratio_original;
+        self.target_ratio = self.resample_ratio_original;
+    }
 }
 
 impl<T> SincFixedOut<T>
@@ -778,6 +788,21 @@ where
         let new_ratio = self.resample_ratio_original * rel_ratio;
         self.set_resample_ratio(new_ratio, ramp)
     }
+
+    fn reset(&mut self) {
+        self.buffer
+            .iter_mut()
+            .for_each(|ch| ch.iter_mut().for_each(|s| *s = T::zero()));
+        self.needed_input_size = (self.chunk_size as f64 / self.resample_ratio_original).ceil()
+            as usize
+            + 2
+            + self.interpolator.len() / 2;
+        self.current_buffer_fill = self.needed_input_size;
+        self.last_index = -((self.interpolator.len() / 2) as f64);
+        self.channel_mask.iter_mut().for_each(|val| *val = true);
+        self.resample_ratio = self.resample_ratio_original;
+        self.target_ratio = self.resample_ratio_original;
+    }
 }
 
 #[cfg(test)]
@@ -788,6 +813,7 @@ mod tests {
     use crate::SincInterpolationType;
     use crate::WindowFunction;
     use crate::{SincFixedIn, SincFixedOut};
+    use rand::Rng;
 
     #[test]
     fn int_cubic() {
@@ -877,6 +903,31 @@ mod tests {
             1226,
             1232,
             out2[0].len()
+        );
+    }
+
+    #[test]
+    fn reset_resampler_fi() {
+        let params = SincInterpolationParameters {
+            sinc_len: 64,
+            f_cutoff: 0.95,
+            interpolation: SincInterpolationType::Cubic,
+            oversampling_factor: 16,
+            window: WindowFunction::BlackmanHarris2,
+        };
+        let mut resampler = SincFixedIn::<f64>::new(1.2, 1.0, params, 1024, 2).unwrap();
+
+        let mut rng = rand::thread_rng();
+        let mut waves = vec![vec![0.0f64; 1024]; 2];
+        waves
+            .iter_mut()
+            .for_each(|ch| ch.iter_mut().for_each(|s| *s = rng.gen()));
+        let out1 = resampler.process(&waves, None).unwrap();
+        resampler.reset();
+        let out2 = resampler.process(&waves, None).unwrap();
+        assert_eq!(
+            out1, out2,
+            "Resampler gives different output when new and after a reset."
         );
     }
 
@@ -1016,6 +1067,37 @@ mod tests {
         let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 1024);
+    }
+
+    #[test]
+    fn reset_resampler_fo() {
+        let params = SincInterpolationParameters {
+            sinc_len: 64,
+            f_cutoff: 0.95,
+            interpolation: SincInterpolationType::Cubic,
+            oversampling_factor: 16,
+            window: WindowFunction::BlackmanHarris2,
+        };
+        let mut resampler = SincFixedOut::<f64>::new(1.2, 1.0, params, 1024, 2).unwrap();
+        let frames = resampler.input_frames_next();
+
+        let mut rng = rand::thread_rng();
+        let mut waves = vec![vec![0.0f64; frames]; 2];
+        waves
+            .iter_mut()
+            .for_each(|ch| ch.iter_mut().for_each(|s| *s = rng.gen()));
+        let out1 = resampler.process(&waves, None).unwrap();
+        resampler.reset();
+        assert_eq!(
+            frames,
+            resampler.input_frames_next(),
+            "Resampler requires different number of frames when new and after a reset."
+        );
+        let out2 = resampler.process(&waves, None).unwrap();
+        assert_eq!(
+            out1, out2,
+            "Resampler gives different output when new and after a reset."
+        );
     }
 
     #[test]
