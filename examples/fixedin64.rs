@@ -158,14 +158,28 @@ fn main() {
     //};
 
     let mut resampler = SincFixedIn::<f64>::new(f_ratio, 2.0, params, 1024, channels).unwrap();
+    let chunksize = resampler.input_frames_next();
 
-    let num_chunks = f_in_ram.len() / (8 * channels * 1024);
+    let frame_bytes = 8 * channels;
+    let chunksize_bytes = frame_bytes * chunksize;
+    let num_chunks = f_in_ram.len() / chunksize_bytes;
+    let rest_frames = (f_in_ram.len() % chunksize_bytes) / frame_bytes;
+
     let start = Instant::now();
     for _chunk in 0..num_chunks {
-        let waves = read_frames(&mut f_in, 1024, channels);
+        let waves = read_frames(&mut f_in, chunksize, channels);
         let waves_out = resampler.process(&waves, None).unwrap();
         write_frames(waves_out, &mut f_out, channels);
     }
+    // Process a partial chunk with the last frames.
+    if rest_frames > 0 {
+        let waves = read_frames(&mut f_in, rest_frames, channels);
+        let waves_out = resampler.process_partial(Some(&waves), None).unwrap();
+        write_frames(waves_out, &mut f_out, channels);
+    }
+    // Flush once to ensure we get all delayed samples.
+    let waves_out = resampler.process_partial::<Vec<f64>>(None, None).unwrap();
+    write_frames(waves_out, &mut f_out, channels);
 
     let duration = start.elapsed();
 

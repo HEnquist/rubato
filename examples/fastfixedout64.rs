@@ -104,13 +104,22 @@ fn main() {
         let nbr_frames = resampler.input_frames_next();
         let waves = read_frames(&mut f_in, nbr_frames, channels);
         //println!("Read took: {:?}", start2.elapsed());
-        if waves[0].len() < nbr_frames {
+        if waves[0].is_empty() {
             break;
         }
-        let waves_out = resampler.process(&waves, None).unwrap();
+        let waves_out = if waves[0].len() < nbr_frames {
+            // Process a partial chunk with the last frames.
+            resampler.process_partial(Some(&waves), None).unwrap()
+        } else {
+            // Process a full chunk of frames.
+            resampler.process(&waves, None).unwrap()
+        };
         //println!("got {} frames", waves_out[0].len());
         write_frames(waves_out, &mut f_out, channels);
     }
+    // Flush once to ensure we get all delayed samples.
+    let waves_out = resampler.process_partial::<Vec<f64>>(None, None).unwrap();
+    write_frames(waves_out, &mut f_out, channels);
 
     let duration = start.elapsed();
 
