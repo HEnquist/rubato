@@ -167,7 +167,7 @@ pub use crate::error::{
 };
 pub use crate::sample::Sample;
 pub use crate::synchro::{FftFixedIn, FftFixedInOut, FftFixedOut};
-pub use crate::windows::WindowFunction;
+pub use crate::windows::{calculate_cutoff, WindowFunction};
 
 /// A resampler that us used to resample a chunk of audio to a new sample rate.
 /// For asynchronous resamplers, the rate can be adjusted as required.

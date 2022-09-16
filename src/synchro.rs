@@ -93,8 +93,10 @@ where
     pub fn new(fft_size_in: usize, fft_size_out: usize) -> Self {
         // calculate antialiasing cutoff
         let cutoff = if fft_size_in > fft_size_out {
+            // TODO use calculate_cutoff
             0.4f32.powf(16.0 / fft_size_out as f32) * fft_size_out as f32 / fft_size_in as f32
         } else {
+            // TODO use calculate_cutoff
             0.4f32.powf(16.0 / fft_size_in as f32)
         };
         debug!(
