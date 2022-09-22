@@ -1,6 +1,7 @@
 extern crate rubato;
 use rubato::{
-    Resampler, SincFixedOut, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+    calculate_cutoff, Resampler, SincFixedOut, SincInterpolationParameters, SincInterpolationType,
+    WindowFunction,
 };
 use std::convert::TryInto;
 use std::env;
@@ -112,13 +113,17 @@ fn main() {
 
     // Balanced for async, see the fixedin64 example for more config examples
     let sinc_len = 128;
-    let f_cutoff = 0.925914648491266;
+    let oversampling_factor = 2048;
+    let interpolation = SincInterpolationType::Linear;
+    let window = WindowFunction::Blackman2;
+
+    let f_cutoff = calculate_cutoff(sinc_len, window);
     let params = SincInterpolationParameters {
         sinc_len,
         f_cutoff,
-        interpolation: SincInterpolationType::Linear,
-        oversampling_factor: 2048,
-        window: WindowFunction::Blackman2,
+        interpolation,
+        oversampling_factor,
+        window,
     };
 
     let chunksize = 1024;
