@@ -135,6 +135,11 @@ pub enum ResampleError {
         expected: usize,
         actual: usize,
     },
+    InsufficientOutputBufferSize {
+        channel: usize,
+        expected: usize,
+        actual: usize,
+    },
 }
 
 impl fmt::Display for ResampleError {
@@ -180,6 +185,17 @@ impl fmt::Display for ResampleError {
                 write!(
                     f,
                     "Wrong number of frames {} in input channel {}, expected {}",
+                    actual, channel, expected
+                )
+            }
+            Self::InsufficientOutputBufferSize {
+                channel,
+                expected,
+                actual,
+            } => {
+                write!(
+                    f,
+                    "Inufficient buffer size {} for output channel {}, expected {}",
                     actual, channel, expected
                 )
             }
