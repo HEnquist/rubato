@@ -243,7 +243,7 @@ where
         wave_in: &[Vin],
         wave_out: &mut [Vout],
         active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<usize> {
+    ) -> ResampleResult<(usize, usize)> {
         if let Some(mask) = active_channels_mask {
             self.channel_mask.copy_from_slice(mask);
         } else {
@@ -268,7 +268,7 @@ where
                 )
             }
         }
-        Ok(self.chunk_size_out)
+        Ok((self.chunk_size_in, self.chunk_size_out))
     }
 
     fn input_frames_max(&self) -> usize {
@@ -380,7 +380,7 @@ where
         wave_in: &[Vin],
         wave_out: &mut [Vout],
         active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<usize> {
+    ) -> ResampleResult<(usize, usize)> {
         if let Some(mask) = active_channels_mask {
             self.channel_mask.copy_from_slice(mask);
         } else {
@@ -435,7 +435,7 @@ where
         };
         let chunks_needed = (frames_needed_out as f32 / self.fft_size_out as f32).ceil() as usize;
         self.frames_needed = chunks_needed * self.fft_size_in;
-        Ok(processed_frames - self.saved_frames)
+        Ok((self.frames_needed, processed_frames - self.saved_frames))
     }
 
     fn input_frames_max(&self) -> usize {
@@ -549,7 +549,7 @@ where
         wave_in: &[Vin],
         wave_out: &mut [Vout],
         active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<usize> {
+    ) -> ResampleResult<(usize, usize)> {
         if let Some(mask) = active_channels_mask {
             self.channel_mask.copy_from_slice(mask);
         } else {
@@ -612,7 +612,7 @@ where
             }
         }
         self.saved_frames = extra;
-        Ok(needed_len)
+        Ok((self.chunk_size_in, needed_len))
     }
 
     fn input_frames_max(&self) -> usize {
@@ -834,10 +834,11 @@ mod tests {
         let allocated_out_len = out[0].len();
         assert_eq!(allocated_out_len, out[1].len());
         let mask = vec![true; 2];
-        let processed_out_len = resampler
+        let (consumed_in_len, processed_out_len) = resampler
             .process_into_buffer(&waves, &mut out, Some(&mask))
             .unwrap();
         assert_eq!(out.len(), 2);
+        assert_eq!(consumed_in_len, frames);
         assert_eq!(processed_out_len, 640);
         // The vectors are not truncated during processing
         assert_eq!(allocated_out_len, out[0].len());

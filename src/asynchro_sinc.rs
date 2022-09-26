@@ -297,7 +297,7 @@ where
         wave_in: &[Vin],
         wave_out: &mut [Vout],
         active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<usize> {
+    ) -> ResampleResult<(usize, usize)> {
         if let Some(mask) = active_channels_mask {
             self.channel_mask.copy_from_slice(mask);
         } else {
@@ -430,7 +430,7 @@ where
             self.chunk_size,
             n,
         );
-        Ok(n)
+        Ok((self.chunk_size, n))
     }
 
     fn output_frames_max(&self) -> usize {
@@ -586,7 +586,7 @@ where
         wave_in: &[Vin],
         wave_out: &mut [Vout],
         active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<usize> {
+    ) -> ResampleResult<(usize, usize)> {
         if let Some(mask) = active_channels_mask {
             self.channel_mask.copy_from_slice(mask);
         } else {
@@ -714,7 +714,7 @@ where
             self.needed_input_size,
             self.last_index
         );
-        Ok(self.chunk_size)
+        Ok((self.needed_input_size, self.chunk_size))
     }
 
     fn input_frames_max(&self) -> usize {

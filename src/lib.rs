@@ -209,7 +209,8 @@ where
             };
             wave_out.push(chan_out);
         }
-        let out_len = self.process_into_buffer(wave_in, &mut wave_out, active_channels_mask)?;
+        let (_, out_len) =
+            self.process_into_buffer(wave_in, &mut wave_out, active_channels_mask)?;
         for chan_out in wave_out.iter_mut() {
             chan_out.truncate(out_len);
         }
@@ -238,13 +239,14 @@ where
     /// and the corresponding output will be left unchanged.
     /// If `None` is given, all channels will be considered active unless their length is 0.
     ///
-    /// Returns the number of output samples per channel.
+    /// Returns the number of input samples consumed and the number output samples written
+    /// per channel.
     fn process_into_buffer<Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
         &mut self,
         wave_in: &[Vin],
         wave_out: &mut [Vout],
         active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<usize>;
+    ) -> ResampleResult<(usize, usize)>;
 
     /// This is a convenience method for processing the last frames at the end of a stream.
     /// Use this when there are fewer frames remaining than what the resampler requires as input.
@@ -259,7 +261,7 @@ where
         wave_in: Option<&[Vin]>,
         wave_out: &mut [Vout],
         active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<usize> {
+    ) -> ResampleResult<(usize, usize)> {
         let frames = self.input_frames_next();
         let mut wave_in_padded = Vec::with_capacity(self.nbr_channels());
         for _ in 0..self.nbr_channels() {
@@ -298,7 +300,7 @@ where
             };
             wave_out.push(chan_out);
         }
-        let out_len =
+        let (_, out_len) =
             self.process_partial_into_buffer(wave_in, &mut wave_out, active_channels_mask)?;
         for chan_out in wave_out.iter_mut() {
             chan_out.truncate(out_len);
@@ -404,7 +406,7 @@ pub trait VecResampler<T>: Send {
         wave_in: &[Vec<T>],
         wave_out: &mut [Vec<T>],
         active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<usize>;
+    ) -> ResampleResult<(usize, usize)>;
 
     /// Refer to [Resampler::process_partial_into_buffer]
     fn process_partial_into_buffer(
@@ -412,7 +414,7 @@ pub trait VecResampler<T>: Send {
         wave_in: Option<&[Vec<T>]>,
         wave_out: &mut [Vec<T>],
         active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<usize>;
+    ) -> ResampleResult<(usize, usize)>;
 
     /// Refer to [Resampler::process_partial]
     fn process_partial(
@@ -467,7 +469,7 @@ where
         wave_in: &[Vec<T>],
         wave_out: &mut [Vec<T>],
         active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<usize> {
+    ) -> ResampleResult<(usize, usize)> {
         Resampler::process_into_buffer(self, wave_in, wave_out, active_channels_mask)
     }
 
@@ -476,7 +478,7 @@ where
         wave_in: Option<&[Vec<T>]>,
         wave_out: &mut [Vec<T>],
         active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<usize> {
+    ) -> ResampleResult<(usize, usize)> {
         Resampler::process_partial_into_buffer(
             self,
             wave_in.map(AsRef::as_ref),
@@ -543,7 +545,7 @@ pub(crate) fn validate_buffers<T, Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
     wave_out: &mut [Vout],
     mask: &[bool],
     channels: usize,
-    input_len: usize,
+    min_input_len: usize,
     min_output_len: usize,
 ) -> ResampleResult<()> {
     if wave_in.len() != channels {
@@ -560,10 +562,10 @@ pub(crate) fn validate_buffers<T, Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
     }
     for (chan, wave_in) in wave_in.iter().enumerate().filter(|(chan, _)| mask[*chan]) {
         let actual_len = wave_in.as_ref().len();
-        if actual_len != input_len {
-            return Err(ResampleError::WrongNumberOfInputFrames {
+        if actual_len < min_input_len {
+            return Err(ResampleError::InsufficientInputBufferSize {
                 channel: chan,
-                expected: input_len,
+                expected: min_input_len,
                 actual: actual_len,
             });
         }

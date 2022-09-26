@@ -128,13 +128,15 @@ pub enum ResampleError {
     WrongNumberOfOutputChannels { expected: usize, actual: usize },
     /// Error raised when the number of channels of the mask doesn't match expected.
     WrongNumberOfMaskChannels { expected: usize, actual: usize },
-    /// Error raised when the number of frames in a single channel doesn't match
-    /// the expected.
-    WrongNumberOfInputFrames {
+    /// Error raised when the number of frames in an input channel is less
+    /// than the minimum expected number of frames.
+    InsufficientInputBufferSize {
         channel: usize,
         expected: usize,
         actual: usize,
     },
+    /// Error raised when the number of frames in an output channel is less
+    /// than the minimum expected number of frames.
     InsufficientOutputBufferSize {
         channel: usize,
         expected: usize,
@@ -177,14 +179,14 @@ impl fmt::Display for ResampleError {
                     actual, expected
                 )
             }
-            Self::WrongNumberOfInputFrames {
+            Self::InsufficientInputBufferSize {
                 channel,
                 expected,
                 actual,
             } => {
                 write!(
                     f,
-                    "Wrong number of frames {} in input channel {}, expected {}",
+                    "Insufficient buffer size {} for input channel {}, expected {}",
                     actual, channel, expected
                 )
             }
@@ -195,7 +197,7 @@ impl fmt::Display for ResampleError {
             } => {
                 write!(
                     f,
-                    "Inufficient buffer size {} for output channel {}, expected {}",
+                    "Insufficient buffer size {} for output channel {}, expected {}",
                     actual, channel, expected
                 )
             }
