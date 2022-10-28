@@ -100,7 +100,10 @@
 //! - v0.13.0
 //!   - Add faster (lower quality) asynchronous resamplers.
 //!   - Optional smooth ramping of ratio changes to avoid audible steps.
+//!   - Add convenience methods for handling last frames in a stream.
+//!   - Add resampler reset method.
 //!   - Refactoring for a more logical structure.
+//!   - Add helper function for calculating cutoff frequency.
 //! - v0.12.0
 //!   - Always enable all simd acceleration (and remove the simd Cargo features).
 //! - v0.11.0
@@ -167,7 +170,7 @@ pub use crate::error::{
 };
 pub use crate::sample::Sample;
 pub use crate::synchro::{FftFixedIn, FftFixedInOut, FftFixedOut};
-pub use crate::windows::WindowFunction;
+pub use crate::windows::{calculate_cutoff, WindowFunction};
 
 /// A resampler that us used to resample a chunk of audio to a new sample rate.
 /// For asynchronous resamplers, the rate can be adjusted as required.

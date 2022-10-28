@@ -1,6 +1,7 @@
 extern crate rubato;
 use rubato::{
-    Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+    calculate_cutoff, Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType,
+    WindowFunction,
 };
 use std::convert::TryInto;
 use std::env;
@@ -98,64 +99,40 @@ fn main() {
     let mut f_in = Cursor::new(&f_in_ram);
     let mut f_out = Cursor::new(&mut f_out_ram);
 
-    // parameters
-
     let f_ratio = fs_out as f64 / fs_in as f64;
 
     // Fast for async
     //let sinc_len = 64;
-    //let f_cutoff = 0.9156021241005041; //1.0 /(1.0 + std::f32::consts::PI/sinc_len as f32);
-    //let params = SincInterpolationParameters {
-    //    sinc_len,
-    //    f_cutoff,
-    //    interpolation: SincInterpolationType::Linear,
-    //    oversampling_factor: 1024,
-    //    window: WindowFunction::Hann2,
-    //};
-
-    // Balanced for sync for 44100 -> 96000 etc (note that for sync it's better to use the fft resampler)
-    //let sinc_len = 128;
-    //let f_cutoff = 0.925914648491266;
-    //let params = SincInterpolationParameters {
-    //    sinc_len,
-    //    f_cutoff,
-    //    interpolation: SincInterpolationType::Nearest,
-    //    oversampling_factor: 320,
-    //    window: WindowFunction::Blackman2,
-    //};
+    //let oversampling_factor = 1024;
+    //let interpolation = SincInterpolationType::Linear;
+    //let window = WindowFunction::Hann2;
 
     // Balanced for async
     let sinc_len = 128;
-    let f_cutoff = 0.925914648491266;
-    let params = SincInterpolationParameters {
-        sinc_len,
-        f_cutoff,
-        interpolation: SincInterpolationType::Linear,
-        oversampling_factor: 2048,
-        window: WindowFunction::Blackman2,
-    };
-    //
-    //// Best for sync for 44100 -> 96000 etc (note that for sync it's better to use the fft resampler)
-    //let sinc_len = 256;
-    //let f_cutoff = 0.9473371669037001;
-    //let params = SincInterpolationParameters {
-    //    sinc_len,
-    //    f_cutoff,
-    //    interpolation: SincInterpolationType::Nearest,
-    //    oversampling_factor: 320,
-    //    window: WindowFunction::BlackmanHarris2,
-    //};
+    let oversampling_factor = 2048;
+    let interpolation = SincInterpolationType::Linear;
+    let window = WindowFunction::Blackman2;
 
     // Best quality for async
     //let sinc_len = 256;
-    //let f_cutoff = 0.9473371669037001;
-    //let params = SincInterpolationParameters {
-    //    sinc_len,
-    //    f_cutoff,
-    //    interpolation: SincInterpolationType::Cubic,
-    //    oversampling_factor: 256,
-    //    window: WindowFunction::BlackmanHarris2,
-    //};
+    //let oversampling_factor = 256;
+    //let interpolation = SincInterpolationType::Cubic;
+    //let window = WindowFunction::BlackmanHarris2;
+
+    // Balanced for sync for 44100 -> 96000 etc (note that for sync it's better to use the fft resampler)
+    //let sinc_len = 128;
+    //let oversampling_factor = 320;
+    //let interpolation = SincInterpolationType::Nearest;
+    //let window = WindowFunction::Blackman2;
+
+    let f_cutoff = calculate_cutoff(sinc_len, window);
+    let params = SincInterpolationParameters {
+        sinc_len,
+        f_cutoff,
+        interpolation,
+        oversampling_factor,
+        window,
+    };
 
     let mut resampler = SincFixedIn::<f64>::new(f_ratio, 2.0, params, 1024, channels).unwrap();
     let chunksize = resampler.input_frames_next();

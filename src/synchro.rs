@@ -7,7 +7,7 @@ use num_traits::Zero;
 use std::sync::Arc;
 
 use crate::error::{ResampleError, ResampleResult};
-use crate::{update_mask_from_buffers, validate_buffers, Resampler, Sample};
+use crate::{calculate_cutoff, update_mask_from_buffers, validate_buffers, Resampler, Sample};
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 
 /// A helper for resampling a single chunk of data.
@@ -93,9 +93,11 @@ where
     pub fn new(fft_size_in: usize, fft_size_out: usize) -> Self {
         // calculate antialiasing cutoff
         let cutoff = if fft_size_in > fft_size_out {
-            0.4f32.powf(16.0 / fft_size_out as f32) * fft_size_out as f32 / fft_size_in as f32
+            calculate_cutoff::<f32>(fft_size_out, WindowFunction::BlackmanHarris2)
+                * fft_size_out as f32
+                / fft_size_in as f32
         } else {
-            0.4f32.powf(16.0 / fft_size_in as f32)
+            calculate_cutoff::<f32>(fft_size_in, WindowFunction::BlackmanHarris2)
         };
         debug!(
             "Create new FftResampler, fft_size_in: {}, fft_size_out: {}, cutoff: {}",

@@ -13,7 +13,7 @@ where
     }
 }
 
-/// Helper function. Make a set of windowed sincs.  
+/// Helper function. Make a set of windowed sincs.
 pub fn make_sincs<T>(
     npoints: usize,
     factor: usize,
