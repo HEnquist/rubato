@@ -161,6 +161,7 @@ mod synchro;
 mod windows;
 
 pub mod sinc_interpolator;
+
 pub use crate::asynchro_fast::{FastFixedIn, FastFixedOut, PolynomialDegree};
 pub use crate::asynchro_sinc::{
     SincFixedIn, SincFixedOut, SincInterpolationParameters, SincInterpolationType,
@@ -193,10 +194,29 @@ where
         let frames = self.output_frames_next();
         let channels = self.nbr_channels();
         let mut wave_out = Vec::with_capacity(channels);
-        for _ in 0..channels {
-            wave_out.push(Vec::with_capacity(frames));
+        for chan in 0..channels {
+            let chan_out = if active_channels_mask.map(|mask| mask[chan]).unwrap_or(true)
+                // An empty input buffer is implicitly interpreted as if the
+                // corresponding flag in the channel mask is set to `false`
+                // according to the documentation of `process_into_buffer`():
+                //
+                // "If `None` is given, all channels will be considered active unless their length is 0."
+                //
+                // TODO: Disable this feature, because it is inconsistent with
+                // the behavior of `process_partial_into_buffer()`
+                && !wave_in[chan].as_ref().is_empty()
+            {
+                vec![T::zero(); frames]
+            } else {
+                vec![]
+            };
+            wave_out.push(chan_out);
         }
-        self.process_into_buffer(wave_in, &mut wave_out, active_channels_mask)?;
+        let (_, out_len) =
+            self.process_into_buffer(wave_in, &mut wave_out, active_channels_mask)?;
+        for chan_out in wave_out.iter_mut() {
+            chan_out.truncate(out_len);
+        }
         Ok(wave_out)
     }
 
@@ -210,10 +230,10 @@ where
     /// as a slice ([AsRef<\[T\]>](AsRef)) which contains the samples for a single channel.
     /// Because [Vec<T>] implements [AsRef<\[T\]>](AsRef), the input may be [`Vec<Vec<T>>`](Vec).
     ///
-    /// The output data is a slice, where each element of the slice is a [Vec] which contains
-    /// the samples for a single channel. If the output channel vectors do not have sufficient
-    /// capacity for all output samples, they will be resized by this function. To avoid these
-    /// allocations during this function, allocate the output buffer with
+    /// The output data is a slice, where each element of the slice is a [T] which contains
+    /// the samples for a single channel. If the output channel slices do not have sufficient
+    /// capacity for all output samples, the function will return an error with the expected
+    /// size. You could allocate the required output buffer with
     /// [output_buffer_allocate](Resampler::output_buffer_allocate) before calling this function
     /// and reuse the same buffer for each call.
     ///
@@ -221,12 +241,15 @@ where
     /// Any channel marked as inactive by a false value will be skipped during processing
     /// and the corresponding output will be left unchanged.
     /// If `None` is given, all channels will be considered active unless their length is 0.
-    fn process_into_buffer<V: AsRef<[T]>>(
+    ///
+    /// Returns the number of input samples consumed and the number output samples written
+    /// per channel.
+    fn process_into_buffer<Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
         &mut self,
-        wave_in: &[V],
-        wave_out: &mut [Vec<T>],
+        wave_in: &[Vin],
+        wave_out: &mut [Vout],
         active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<()>;
+    ) -> ResampleResult<(usize, usize)>;
 
     /// This is a convenience method for processing the last frames at the end of a stream.
     /// Use this when there are fewer frames remaining than what the resampler requires as input.
@@ -236,12 +259,12 @@ where
     /// This can be utilized to push any remaining delayed frames out from the internal buffers.
     /// Note that this method allocates space for a temporary input buffer.
     /// Real-time applications should instead call `process_into_buffer` with a zero-padded pre-allocated input buffer.
-    fn process_partial_into_buffer<V: AsRef<[T]>>(
+    fn process_partial_into_buffer<Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
         &mut self,
-        wave_in: Option<&[V]>,
-        wave_out: &mut [Vec<T>],
+        wave_in: Option<&[Vin]>,
+        wave_out: &mut [Vout],
         active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<()> {
+    ) -> ResampleResult<(usize, usize)> {
         let frames = self.input_frames_next();
         let mut wave_in_padded = Vec::with_capacity(self.nbr_channels());
         for _ in 0..self.nbr_channels() {
@@ -272,10 +295,19 @@ where
         let frames = self.output_frames_next();
         let channels = self.nbr_channels();
         let mut wave_out = Vec::with_capacity(channels);
-        for _ in 0..channels {
-            wave_out.push(Vec::with_capacity(frames));
+        for chan in 0..channels {
+            let chan_out = if active_channels_mask.map(|mask| mask[chan]).unwrap_or(true) {
+                vec![T::zero(); frames]
+            } else {
+                vec![]
+            };
+            wave_out.push(chan_out);
         }
-        self.process_partial_into_buffer::<V>(wave_in, &mut wave_out, active_channels_mask)?;
+        let (_, out_len) =
+            self.process_partial_into_buffer(wave_in, &mut wave_out, active_channels_mask)?;
+        for chan_out in wave_out.iter_mut() {
+            chan_out.truncate(out_len);
+        }
         Ok(wave_out)
     }
 
@@ -312,11 +344,7 @@ where
     fn output_buffer_allocate(&self) -> Vec<Vec<T>> {
         let frames = self.output_frames_max();
         let channels = self.nbr_channels();
-        let mut buffer = Vec::with_capacity(channels);
-        for _ in 0..channels {
-            buffer.push(Vec::with_capacity(frames));
-        }
-        buffer
+        vec![Vec::with_capacity(frames); channels]
     }
 
     /// Get the max number of output frames per channel
@@ -381,7 +409,7 @@ pub trait VecResampler<T>: Send {
         wave_in: &[Vec<T>],
         wave_out: &mut [Vec<T>],
         active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<()>;
+    ) -> ResampleResult<(usize, usize)>;
 
     /// Refer to [Resampler::process_partial_into_buffer]
     fn process_partial_into_buffer(
@@ -389,7 +417,7 @@ pub trait VecResampler<T>: Send {
         wave_in: Option<&[Vec<T>]>,
         wave_out: &mut [Vec<T>],
         active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<()>;
+    ) -> ResampleResult<(usize, usize)>;
 
     /// Refer to [Resampler::process_partial]
     fn process_partial(
@@ -444,7 +472,7 @@ where
         wave_in: &[Vec<T>],
         wave_out: &mut [Vec<T>],
         active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<()> {
+    ) -> ResampleResult<(usize, usize)> {
         Resampler::process_into_buffer(self, wave_in, wave_out, active_channels_mask)
     }
 
@@ -453,8 +481,13 @@ where
         wave_in: Option<&[Vec<T>]>,
         wave_out: &mut [Vec<T>],
         active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<()> {
-        Resampler::process_partial_into_buffer(self, wave_in, wave_out, active_channels_mask)
+    ) -> ResampleResult<(usize, usize)> {
+        Resampler::process_partial_into_buffer(
+            self,
+            wave_in.map(AsRef::as_ref),
+            wave_out,
+            active_channels_mask,
+        )
     }
 
     fn process_partial(
@@ -510,12 +543,13 @@ fn update_mask_from_buffers<T, V: AsRef<[T]>>(wave_in: &[V], mask: &mut [bool]) 
     }
 }
 
-pub(crate) fn validate_buffers<T, V: AsRef<[T]>>(
-    wave_in: &[V],
-    wave_out: &mut [Vec<T>],
+pub(crate) fn validate_buffers<T, Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
+    wave_in: &[Vin],
+    wave_out: &mut [Vout],
     mask: &[bool],
     channels: usize,
-    needed_len: usize,
+    min_input_len: usize,
+    min_output_len: usize,
 ) -> ResampleResult<()> {
     if wave_in.len() != channels {
         return Err(ResampleError::WrongNumberOfInputChannels {
@@ -529,13 +563,13 @@ pub(crate) fn validate_buffers<T, V: AsRef<[T]>>(
             actual: wave_in.len(),
         });
     }
-    for (chan, wave) in wave_in.iter().enumerate() {
-        let wave = wave.as_ref();
-        if wave.len() != needed_len && mask[chan] {
-            return Err(ResampleError::WrongNumberOfInputFrames {
+    for (chan, wave_in) in wave_in.iter().enumerate().filter(|(chan, _)| mask[*chan]) {
+        let actual_len = wave_in.as_ref().len();
+        if actual_len < min_input_len {
+            return Err(ResampleError::InsufficientInputBufferSize {
                 channel: chan,
-                expected: needed_len,
-                actual: wave.len(),
+                expected: min_input_len,
+                actual: actual_len,
             });
         }
     }
@@ -544,6 +578,20 @@ pub(crate) fn validate_buffers<T, V: AsRef<[T]>>(
             expected: channels,
             actual: wave_out.len(),
         });
+    }
+    for (chan, wave_out) in wave_out
+        .iter_mut()
+        .enumerate()
+        .filter(|(chan, _)| mask[*chan])
+    {
+        let actual_len = wave_out.as_mut().len();
+        if actual_len < min_output_len {
+            return Err(ResampleError::InsufficientOutputBufferSize {
+                channel: chan,
+                expected: min_output_len,
+                actual: actual_len,
+            });
+        }
     }
     Ok(())
 }

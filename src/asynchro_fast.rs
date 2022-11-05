@@ -245,17 +245,22 @@ impl<T> Resampler<T> for FastFixedIn<T>
 where
     T: Sample,
 {
-    fn process_into_buffer<V: AsRef<[T]>>(
+    fn process_into_buffer<Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
         &mut self,
-        wave_in: &[V],
-        wave_out: &mut [Vec<T>],
+        wave_in: &[Vin],
+        wave_out: &mut [Vout],
         active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<()> {
+    ) -> ResampleResult<(usize, usize)> {
         if let Some(mask) = active_channels_mask {
             self.channel_mask.copy_from_slice(mask);
         } else {
             update_mask_from_buffers(wave_in, &mut self.channel_mask);
         };
+
+        // Set length to chunksize*ratio plus a safety margin of 10 elements.
+        let needed_len = (self.chunk_size as f64
+            * (0.5 * self.resample_ratio + 0.5 * self.target_ratio)
+            + 10.0) as usize;
 
         validate_buffers(
             wave_in,
@@ -263,6 +268,7 @@ where
             &self.channel_mask,
             self.nbr_channels,
             self.chunk_size,
+            needed_len,
         )?;
 
         //update buffer with new data
@@ -270,23 +276,10 @@ where
             buf.copy_within(self.chunk_size..self.chunk_size + 2 * POLYNOMIAL_LEN_U, 0);
         }
 
-        let needed_len = (self.chunk_size as f64
-            * (0.5 * self.resample_ratio + 0.5 * self.target_ratio)
-            + 10.0) as usize;
         for (chan, active) in self.channel_mask.iter().enumerate() {
             if *active {
                 self.buffer[chan][2 * POLYNOMIAL_LEN_U..2 * POLYNOMIAL_LEN_U + self.chunk_size]
                     .copy_from_slice(wave_in[chan].as_ref());
-                // Set length to chunksize*ratio plus a safety margin of 10 elements.
-                if needed_len > wave_out[chan].capacity() {
-                    trace!(
-                        "Allocating more space for channel {}, old capacity: {}, new: {}",
-                        chan,
-                        wave_out[chan].capacity(),
-                        needed_len
-                    );
-                }
-                wave_out[chan].resize(needed_len, T::zero());
             }
         }
 
@@ -325,8 +318,10 @@ where
                                     (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
                                         ..(start_idx + 2 * POLYNOMIAL_LEN_I + 8) as usize,
                                 );
-                                *wave_out.get_unchecked_mut(chan).get_unchecked_mut(n) =
-                                    interp_septic(frac_offset, buf);
+                                *wave_out
+                                    .get_unchecked_mut(chan)
+                                    .as_mut()
+                                    .get_unchecked_mut(n) = interp_septic(frac_offset, buf);
                             }
                         }
                     }
@@ -348,8 +343,10 @@ where
                                     (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
                                         ..(start_idx + 2 * POLYNOMIAL_LEN_I + 6) as usize,
                                 );
-                                *wave_out.get_unchecked_mut(chan).get_unchecked_mut(n) =
-                                    interp_quintic(frac_offset, buf);
+                                *wave_out
+                                    .get_unchecked_mut(chan)
+                                    .as_mut()
+                                    .get_unchecked_mut(n) = interp_quintic(frac_offset, buf);
                             }
                         }
                     }
@@ -371,8 +368,10 @@ where
                                     (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
                                         ..(start_idx + 2 * POLYNOMIAL_LEN_I + 4) as usize,
                                 );
-                                *wave_out.get_unchecked_mut(chan).get_unchecked_mut(n) =
-                                    interp_cubic(frac_offset, buf);
+                                *wave_out
+                                    .get_unchecked_mut(chan)
+                                    .as_mut()
+                                    .get_unchecked_mut(n) = interp_cubic(frac_offset, buf);
                             }
                         }
                     }
@@ -394,8 +393,10 @@ where
                                     (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
                                         ..(start_idx + 2 * POLYNOMIAL_LEN_I + 2) as usize,
                                 );
-                                *wave_out.get_unchecked_mut(chan).get_unchecked_mut(n) =
-                                    interp_lin(frac_offset, buf);
+                                *wave_out
+                                    .get_unchecked_mut(chan)
+                                    .as_mut()
+                                    .get_unchecked_mut(n) = interp_lin(frac_offset, buf);
                             }
                         }
                     }
@@ -414,7 +415,10 @@ where
                                     .buffer
                                     .get_unchecked(chan)
                                     .get_unchecked((start_idx + 2 * POLYNOMIAL_LEN_I) as usize);
-                                *wave_out.get_unchecked_mut(chan).get_unchecked_mut(n) = *point;
+                                *wave_out
+                                    .get_unchecked_mut(chan)
+                                    .as_mut()
+                                    .get_unchecked_mut(n) = *point;
                             }
                         }
                     }
@@ -425,11 +429,6 @@ where
 
         // store last index for next iteration
         self.last_index = idx - self.chunk_size as f64;
-        for (chan, active) in self.channel_mask.iter().enumerate() {
-            if *active {
-                wave_out[chan].truncate(n);
-            }
-        }
         self.resample_ratio = self.target_ratio;
         trace!(
             "Resampling channels {:?}, {} frames in, {} frames out",
@@ -437,7 +436,7 @@ where
             self.chunk_size,
             n,
         );
-        Ok(())
+        Ok((self.chunk_size, n))
     }
 
     fn output_frames_max(&self) -> usize {
@@ -552,12 +551,12 @@ impl<T> Resampler<T> for FastFixedOut<T>
 where
     T: Sample,
 {
-    fn process_into_buffer<V: AsRef<[T]>>(
+    fn process_into_buffer<Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
         &mut self,
-        wave_in: &[V],
-        wave_out: &mut [Vec<T>],
+        wave_in: &[Vin],
+        wave_out: &mut [Vout],
         active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<()> {
+    ) -> ResampleResult<(usize, usize)> {
         if let Some(mask) = active_channels_mask {
             self.channel_mask.copy_from_slice(mask);
         } else {
@@ -570,6 +569,7 @@ where
             &self.channel_mask,
             self.nbr_channels,
             self.needed_input_size,
+            self.chunk_size,
         )?;
         for buf in self.buffer.iter_mut() {
             buf.copy_within(
@@ -579,21 +579,14 @@ where
         }
         self.current_buffer_fill = self.needed_input_size;
 
-        for (chan, active) in self.channel_mask.iter().enumerate() {
-            if *active {
-                self.buffer[chan]
-                    [2 * POLYNOMIAL_LEN_U..2 * POLYNOMIAL_LEN_U + wave_in[chan].as_ref().len()]
-                    .copy_from_slice(wave_in[chan].as_ref());
-                if self.chunk_size > wave_out[chan].capacity() {
-                    trace!(
-                        "Allocating more space for channel {}, old capacity: {}, new: {}",
-                        chan,
-                        wave_out[chan].capacity(),
-                        self.chunk_size
-                    );
-                }
-                wave_out[chan].resize(self.chunk_size, T::zero());
-            }
+        for (chan, wave_in) in wave_in
+            .iter()
+            .enumerate()
+            .filter(|(chan, _)| self.channel_mask[*chan])
+        {
+            debug_assert!(self.chunk_size <= wave_out[chan].as_mut().len());
+            self.buffer[chan][2 * POLYNOMIAL_LEN_U..2 * POLYNOMIAL_LEN_U + wave_in.as_ref().len()]
+                .copy_from_slice(wave_in.as_ref());
         }
 
         let mut idx = self.last_index;
@@ -617,8 +610,10 @@ where
                                     (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
                                         ..(start_idx + 2 * POLYNOMIAL_LEN_I + 8) as usize,
                                 );
-                                *wave_out.get_unchecked_mut(chan).get_unchecked_mut(n) =
-                                    interp_septic(frac_offset, buf);
+                                *wave_out
+                                    .get_unchecked_mut(chan)
+                                    .as_mut()
+                                    .get_unchecked_mut(n) = interp_septic(frac_offset, buf);
                             }
                         }
                     }
@@ -639,8 +634,10 @@ where
                                     (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
                                         ..(start_idx + 2 * POLYNOMIAL_LEN_I + 6) as usize,
                                 );
-                                *wave_out.get_unchecked_mut(chan).get_unchecked_mut(n) =
-                                    interp_quintic(frac_offset, buf);
+                                *wave_out
+                                    .get_unchecked_mut(chan)
+                                    .as_mut()
+                                    .get_unchecked_mut(n) = interp_quintic(frac_offset, buf);
                             }
                         }
                     }
@@ -661,8 +658,10 @@ where
                                     (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
                                         ..(start_idx + 2 * POLYNOMIAL_LEN_I + 4) as usize,
                                 );
-                                *wave_out.get_unchecked_mut(chan).get_unchecked_mut(n) =
-                                    interp_cubic(frac_offset, buf);
+                                *wave_out
+                                    .get_unchecked_mut(chan)
+                                    .as_mut()
+                                    .get_unchecked_mut(n) = interp_cubic(frac_offset, buf);
                             }
                         }
                     }
@@ -683,8 +682,10 @@ where
                                     (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
                                         ..(start_idx + 2 * POLYNOMIAL_LEN_I + 2) as usize,
                                 );
-                                *wave_out.get_unchecked_mut(chan).get_unchecked_mut(n) =
-                                    interp_lin(frac_offset, buf);
+                                *wave_out
+                                    .get_unchecked_mut(chan)
+                                    .as_mut()
+                                    .get_unchecked_mut(n) = interp_lin(frac_offset, buf);
                             }
                         }
                     }
@@ -702,7 +703,10 @@ where
                                     .buffer
                                     .get_unchecked(chan)
                                     .get_unchecked((start_idx + 2 * POLYNOMIAL_LEN_I) as usize);
-                                *wave_out.get_unchecked_mut(chan).get_unchecked_mut(n) = *point;
+                                *wave_out
+                                    .get_unchecked_mut(chan)
+                                    .as_mut()
+                                    .get_unchecked_mut(n) = *point;
                             }
                         }
                     }
@@ -726,7 +730,7 @@ where
             self.needed_input_size,
             self.last_index
         );
-        Ok(())
+        Ok((self.needed_input_size, self.chunk_size))
     }
 
     fn input_frames_max(&self) -> usize {
