@@ -249,7 +249,7 @@ where
         if let Some(mask) = active_channels_mask {
             self.channel_mask.copy_from_slice(mask);
         } else {
-            update_mask_from_buffers(wave_in, &mut self.channel_mask);
+            update_mask_from_buffers(&mut self.channel_mask);
         };
 
         validate_buffers(
@@ -386,7 +386,7 @@ where
         if let Some(mask) = active_channels_mask {
             self.channel_mask.copy_from_slice(mask);
         } else {
-            update_mask_from_buffers(wave_in, &mut self.channel_mask);
+            update_mask_from_buffers(&mut self.channel_mask);
         };
 
         validate_buffers(
@@ -555,7 +555,7 @@ where
         if let Some(mask) = active_channels_mask {
             self.channel_mask.copy_from_slice(mask);
         } else {
-            update_mask_from_buffers(wave_in, &mut self.channel_mask);
+            update_mask_from_buffers(&mut self.channel_mask);
         };
 
         let next_saved_frames = self.saved_frames + self.chunk_size_in;
@@ -732,7 +732,8 @@ mod tests {
         let mut resampler = FftFixedInOut::<f64>::new(44100, 48000, 1024, 2).unwrap();
         let frames = resampler.input_frames_next();
         let waves = vec![vec![0.0f64; frames], Vec::new()];
-        let out = resampler.process(&waves, None).unwrap();
+        let mask = vec![true, false];
+        let out = resampler.process(&waves, Some(&mask)).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 1120);
         assert!(out[1].is_empty());
@@ -779,7 +780,8 @@ mod tests {
         let frames = resampler.input_frames_next();
         assert_eq!(frames, 294);
         let waves = vec![vec![0.0f64; frames], Vec::new()];
-        let out = resampler.process(&waves, None).unwrap();
+        let mask = vec![true, false];
+        let out = resampler.process(&waves, Some(&mask)).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 1024);
         assert!(out[1].is_empty());
@@ -791,7 +793,8 @@ mod tests {
         let frames = resampler.input_frames_next();
         assert_eq!(frames, 294);
         let waves = vec![Vec::new(); 2];
-        let out = resampler.process(&waves, None).unwrap();
+        let mask = vec![false; 2];
+        let out = resampler.process(&waves, Some(&mask)).unwrap();
         assert_eq!(out.len(), 2);
         assert!(out[0].is_empty());
         assert!(out[1].is_empty());
@@ -864,7 +867,8 @@ mod tests {
         let frames = resampler.input_frames_next();
         assert_eq!(frames, 1024);
         let waves = vec![vec![0.0f64; frames], Vec::new()];
-        let out = resampler.process(&waves, None).unwrap();
+        let mask = vec![true, false];
+        let out = resampler.process(&waves, Some(&mask)).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 640);
         assert!(out[1].is_empty());
@@ -876,7 +880,8 @@ mod tests {
         let frames = resampler.input_frames_next();
         assert_eq!(frames, 1024);
         let waves = vec![Vec::new(); 2];
-        let out = resampler.process(&waves, None).unwrap();
+        let mask = vec![false; 2];
+        let out = resampler.process(&waves, Some(&mask)).unwrap();
         assert_eq!(out.len(), 2);
         assert!(out[0].is_empty());
         assert!(out[1].is_empty());

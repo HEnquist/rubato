@@ -254,7 +254,7 @@ where
         if let Some(mask) = active_channels_mask {
             self.channel_mask.copy_from_slice(mask);
         } else {
-            update_mask_from_buffers(wave_in, &mut self.channel_mask);
+            update_mask_from_buffers(&mut self.channel_mask);
         };
 
         // Set length to chunksize*ratio plus a safety margin of 10 elements.
@@ -560,7 +560,7 @@ where
         if let Some(mask) = active_channels_mask {
             self.channel_mask.copy_from_slice(mask);
         } else {
-            update_mask_from_buffers(wave_in, &mut self.channel_mask);
+            update_mask_from_buffers(&mut self.channel_mask);
         };
 
         validate_buffers(
@@ -884,12 +884,14 @@ mod tests {
         let mut resampler =
             FastFixedIn::<f64>::new(1.2, 1.0, PolynomialDegree::Cubic, 1024, 2).unwrap();
         let waves = vec![vec![0.0f64; 1024], Vec::new()];
-        let out = resampler.process(&waves, None).unwrap();
+        let mask = vec![true, false];
+        let out = resampler.process(&waves, Some(&mask)).unwrap();
         assert_eq!(out.len(), 2);
         assert!(out[0].len() > 1150 && out[0].len() < 1250);
         assert!(out[1].is_empty());
         let waves = vec![Vec::new(), vec![0.0f64; 1024]];
-        let out = resampler.process(&waves, None).unwrap();
+        let mask = vec![false, true];
+        let out = resampler.process(&waves, Some(&mask)).unwrap();
         assert_eq!(out.len(), 2);
         assert!(out[1].len() > 1150 && out[0].len() < 1250);
         assert!(out[0].is_empty());
@@ -1018,8 +1020,9 @@ mod tests {
         println!("{}", frames);
         assert!(frames > 800 && frames < 900);
         let mut waves = vec![vec![0.0f64; frames], Vec::new()];
+        let mask = vec![true, false];
         waves[0][100] = 3.0;
-        let out = resampler.process(&waves, None).unwrap();
+        let out = resampler.process(&waves, Some(&mask)).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].len(), 1024);
         assert!(out[1].is_empty());
@@ -1031,8 +1034,9 @@ mod tests {
 
         let frames = resampler.input_frames_next();
         let mut waves = vec![Vec::new(), vec![0.0f64; frames]];
+        let mask = vec![false, true];
         waves[1][10] = 3.0;
-        let out = resampler.process(&waves, None).unwrap();
+        let out = resampler.process(&waves, Some(&mask)).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[1].len(), 1024);
         assert!(out[0].is_empty());

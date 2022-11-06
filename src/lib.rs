@@ -13,17 +13,17 @@
 //! beginning processing. The [log feature](#log-enable-logging) feature should be disabled
 //! for realtime use (it is disabled by default).
 //!
-//! ### Input and output data format
+//! # Input and output data format
 //!
 //! Input and output data is stored non-interleaved.
 //!
-//! The output data is stored in a vector of vectors, `Vec<Vec<f32>>` or `Vec<Vec<f64>>`.
-//! The inner vectors (`Vec<f32>` or `Vec<f64>`) hold the sample values for one channel each.
+//! Input and output data are stored as slices of references, `&[AsRef<[f32]>]` or `&[AsRef<[f64]>]`.
+//! The inner vectors (`AsRef<[f32]>` or `AsRef<[f64]>`) hold the sample values for one channel each.
 //!
-//! The input data is similar, except that it allows the inner vectors to be `AsRef<[f32]>` or `AsRef<[f64]>`.
-//! Normal vectors can be used since `Vec` implements the `AsRef` trait.
+//! Since normal vectors implement the `AsRef` trait,
+//! `Vec<Vec<f32>>` and `Vec<Vec<f64>>` can be used for both input and output.
 //!
-//! ### Asynchronous resampling
+//! # Asynchronous resampling
 //!
 //! The asynchronous resamplers are available with and without anti-aliasing filters.
 //!
@@ -35,15 +35,15 @@
 //! Resampling without anti-aliasing omits the cpu-heavy sinc interpolation.
 //! This runs much faster but produces a lower quality result.
 //!
-//! ### Synchronous resampling
+//! # Synchronous resampling
 //!
 //! Synchronous resampling is implemented via FFT. The data is FFT:ed, the spectrum modified,
 //! and then inverse FFT:ed to get the resampled data.
 //! This type of resampler is considerably faster but doesn't support changing the resampling ratio.
 //!
-//! ### SIMD acceleration
+//! # SIMD acceleration
 //!
-//! #### Asynchronous resampling with anti-aliasing
+//! ## Asynchronous resampling with anti-aliasing
 //!
 //! The asynchronous resampler supports SIMD on x86_64 and on aarch64.
 //! The SIMD capabilities of the CPU are determined at runtime.
@@ -53,20 +53,20 @@
 //!
 //! On aarch64 (64-bit Arm) it will use Neon if available.
 //!
-//! #### Synchronous resampling
+//! ## Synchronous resampling
 //!
 //! The synchronous resamplers benefit from the SIMD support of the RustFFT library.
 //!
-//! ### Cargo features
+//! # Cargo features
 //!
-//! ##### `log`: Enable logging
+//! ## `log`: Enable logging
 //!
 //! This feature enables logging via the `log` crate. This is intended for debugging purposes.
 //! Note that outputting logs allocates a [std::string::String] and most logging implementations involve various other system calls.
 //! These calls may take some (unpredictable) time to return, during which the application is blocked.
 //! This means that logging should be avoided if using this library in a realtime application.
 //!
-//! ## Example
+//! # Example
 //!
 //! Resample a single chunk of a dummy audio file from 44100 to 48000 Hz.
 //! See also the "fixedin64" example that can be used to process a file from disk.
@@ -91,13 +91,14 @@
 //! let waves_out = resampler.process(&waves_in, None).unwrap();
 //! ```
 //!
-//! ## Compatibility
+//! # Compatibility
 //!
 //! The `rubato` crate requires rustc version 1.61 or newer.
 //!
-//! ## Changelog
+//! # Changelog
 //!
 //! - v0.13.0
+//!   - Switch to slices of references for input and output data.
 //!   - Add faster (lower quality) asynchronous resamplers.
 //!   - Optional smooth ramping of ratio changes to avoid audible steps.
 //!   - Add convenience methods for handling last frames in a stream.
@@ -115,6 +116,10 @@
 //!   - Add an object-safe wrapper trait for Resampler.
 //! - v0.9.0
 //!   - Accept any AsRef<\[T\]> as input.
+//!
+//! ## License
+//!
+//!  MIT
 
 #[cfg(feature = "log")]
 extern crate log;
@@ -173,7 +178,7 @@ pub use crate::sample::Sample;
 pub use crate::synchro::{FftFixedIn, FftFixedInOut, FftFixedOut};
 pub use crate::windows::{calculate_cutoff, WindowFunction};
 
-/// A resampler that us used to resample a chunk of audio to a new sample rate.
+/// A resampler that is used to resample a chunk of audio to a new sample rate.
 /// For asynchronous resamplers, the rate can be adjusted as required.
 ///
 /// This trait is not object safe. If you need an object safe resampler,
@@ -195,17 +200,7 @@ where
         let channels = self.nbr_channels();
         let mut wave_out = Vec::with_capacity(channels);
         for chan in 0..channels {
-            let chan_out = if active_channels_mask.map(|mask| mask[chan]).unwrap_or(true)
-                // An empty input buffer is implicitly interpreted as if the
-                // corresponding flag in the channel mask is set to `false`
-                // according to the documentation of `process_into_buffer`():
-                //
-                // "If `None` is given, all channels will be considered active unless their length is 0."
-                //
-                // TODO: Disable this feature, because it is inconsistent with
-                // the behavior of `process_partial_into_buffer()`
-                && !wave_in[chan].as_ref().is_empty()
-            {
+            let chan_out = if active_channels_mask.map(|mask| mask[chan]).unwrap_or(true) {
                 vec![T::zero(); frames]
             } else {
                 vec![]
@@ -230,7 +225,7 @@ where
     /// as a slice ([AsRef<\[T\]>](AsRef)) which contains the samples for a single channel.
     /// Because [Vec<T>] implements [AsRef<\[T\]>](AsRef), the input may be [`Vec<Vec<T>>`](Vec).
     ///
-    /// The output data is a slice, where each element of the slice is a [T] which contains
+    /// The output data is a slice, where each element of the slice is a `[T]` which contains
     /// the samples for a single channel. If the output channel slices do not have sufficient
     /// capacity for all output samples, the function will return an error with the expected
     /// size. You could allocate the required output buffer with
@@ -240,10 +235,14 @@ where
     /// The `active_channels_mask` is optional.
     /// Any channel marked as inactive by a false value will be skipped during processing
     /// and the corresponding output will be left unchanged.
-    /// If `None` is given, all channels will be considered active unless their length is 0.
+    /// If `None` is given, all channels will be considered active.
     ///
-    /// Returns the number of input samples consumed and the number output samples written
-    /// per channel.
+    /// Before processing, it checks that the input and outputs are valid.
+    /// If either has the wrong number of channels, or if the buffer for any channel is too short,
+    /// a [ResampleError] is returned.
+    /// Both input and output are allowed to be longer than required.
+    /// The number of input samples consumed and the number output samples written
+    /// per channel is returned in a tuple, `(input_frames, output_frames)`.
     fn process_into_buffer<Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
         &mut self,
         wave_in: &[Vin],
@@ -535,12 +534,9 @@ where
     }
 }
 
-/// Helper to make a mask for the active channels based on which ones are empty.
-fn update_mask_from_buffers<T, V: AsRef<[T]>>(wave_in: &[V], mask: &mut [bool]) {
-    for (wave, active) in wave_in.iter().zip(mask.iter_mut()) {
-        let wave = wave.as_ref();
-        *active = !wave.is_empty();
-    }
+/// Helper to make a mask where all channels are marked as active.
+fn update_mask_from_buffers(mask: &mut [bool]) {
+    mask.iter_mut().for_each(|v| *v = true);
 }
 
 pub(crate) fn validate_buffers<T, Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
