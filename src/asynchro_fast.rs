@@ -279,12 +279,12 @@ where
         for (chan, active) in self.channel_mask.iter().enumerate() {
             if *active {
                 self.buffer[chan][2 * POLYNOMIAL_LEN_U..2 * POLYNOMIAL_LEN_U + self.chunk_size]
-                    .copy_from_slice(wave_in[chan].as_ref());
+                    .copy_from_slice(&wave_in[chan].as_ref()[..self.chunk_size]);
             }
         }
 
-        let mut t_ratio = 1.0 / self.resample_ratio as f64;
-        let t_ratio_end = 1.0 / self.target_ratio as f64;
+        let mut t_ratio = 1.0 / self.resample_ratio;
+        let t_ratio_end = 1.0 / self.target_ratio;
         let approximate_nbr_frames =
             self.chunk_size as f64 * (0.5 * self.resample_ratio + 0.5 * self.target_ratio);
         let t_ratio_increment = (t_ratio_end - t_ratio) / approximate_nbr_frames;
@@ -585,13 +585,13 @@ where
             .filter(|(chan, _)| self.channel_mask[*chan])
         {
             debug_assert!(self.chunk_size <= wave_out[chan].as_mut().len());
-            self.buffer[chan][2 * POLYNOMIAL_LEN_U..2 * POLYNOMIAL_LEN_U + wave_in.as_ref().len()]
-                .copy_from_slice(wave_in.as_ref());
+            self.buffer[chan][2 * POLYNOMIAL_LEN_U..2 * POLYNOMIAL_LEN_U + self.needed_input_size]
+                .copy_from_slice(&wave_in.as_ref()[..self.needed_input_size]);
         }
 
         let mut idx = self.last_index;
-        let mut t_ratio = 1.0 / self.resample_ratio as f64;
-        let t_ratio_end = 1.0 / self.target_ratio as f64;
+        let mut t_ratio = 1.0 / self.resample_ratio;
+        let t_ratio_end = 1.0 / self.target_ratio;
         let t_ratio_increment = (t_ratio_end - t_ratio) / self.chunk_size as f64;
 
         match self.interpolation {

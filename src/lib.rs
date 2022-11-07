@@ -69,7 +69,7 @@
 //! # Example
 //!
 //! Resample a single chunk of a dummy audio file from 44100 to 48000 Hz.
-//! See also the "fixedin64" example that can be used to process a file from disk.
+//! See also the "process_f64" example that can be used to process a file from disk.
 //! ```
 //! use rubato::{Resampler, SincFixedIn, SincInterpolationType, SincInterpolationParameters, WindowFunction};
 //! let params = SincInterpolationParameters {
@@ -100,6 +100,7 @@
 //! - v0.13.0
 //!   - Switch to slices of references for input and output data.
 //!   - Add faster (lower quality) asynchronous resamplers.
+//!   - Add a macro to help implement custom object safe resamplers.
 //!   - Optional smooth ramping of ratio changes to avoid audible steps.
 //!   - Add convenience methods for handling last frames in a stream.
 //!   - Add resampler reset method.
@@ -384,155 +385,170 @@ where
     fn reset(&mut self);
 }
 
-/// This is a helper trait that can be used when a [Resampler] must be object safe.
+use crate as rubato;
+/// A macro for implementing wrapper traits for when a [Resampler] must be object safe.
+/// The wrapper trait locks the generic type parameters or the [Resampler] trait to specific types,
+/// which is needed to make the trait into an object.
 ///
-/// It differs from [Resampler] only by fixing the type of the input of `process()`
-/// and `process_into_buffer` to `&[Vec<T>]`.
-/// This allows it to be made into a trait object like this:
+/// One wrapper trait, [VecResampler], is included per default.
+/// It differs from [Resampler] by fixing the generic types
+/// `&[AsRef<[T]>]` and `&mut [AsMut<[T]>]` to `&[Vec<T>]` and `&mut [Vec<T>]`.
+/// This allows a [VecResampler] to be made into a trait object like this:
 /// ```
 /// # use rubato::{FftFixedIn, VecResampler};
 /// let boxed: Box<dyn VecResampler<f64>> = Box::new(FftFixedIn::<f64>::new(44100, 88200, 1024, 2, 2).unwrap());
 /// ```
 /// Use this implementation as an example if you need to fix the input type to something else.
-pub trait VecResampler<T>: Send {
-    /// Refer to [Resampler::process]
-    fn process(
-        &mut self,
-        wave_in: &[Vec<T>],
-        active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<Vec<Vec<T>>>;
+#[macro_export]
+macro_rules! implement_resampler {
+    ($trait_name:ident, $in_type:ty, $out_type:ty) => {
+        #[doc = "This is an wrapper trait implemented via the [implement_resampler] macro."]
+        #[doc = "The generic input and output types `&[AsRef<[T]>]` and `&mut [AsMut<[T]>]`"]
+        #[doc = concat!("are locked to `", stringify!($in_type), "` and `", stringify!($out_type), "`.")]
+        pub trait $trait_name<T>: Send {
 
-    /// Refer to [Resampler::process_into_buffer]
-    fn process_into_buffer(
-        &mut self,
-        wave_in: &[Vec<T>],
-        wave_out: &mut [Vec<T>],
-        active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<(usize, usize)>;
+            /// Refer to [Resampler::process]
+            fn process(
+                &mut self,
+                wave_in: $in_type,
+                active_channels_mask: Option<&[bool]>,
+            ) -> rubato::ResampleResult<Vec<Vec<T>>>;
 
-    /// Refer to [Resampler::process_partial_into_buffer]
-    fn process_partial_into_buffer(
-        &mut self,
-        wave_in: Option<&[Vec<T>]>,
-        wave_out: &mut [Vec<T>],
-        active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<(usize, usize)>;
+            /// Refer to [Resampler::process_into_buffer]
+            fn process_into_buffer(
+                &mut self,
+                wave_in: $in_type,
+                wave_out: $out_type,
+                active_channels_mask: Option<&[bool]>,
+            ) -> rubato::ResampleResult<(usize, usize)>;
 
-    /// Refer to [Resampler::process_partial]
-    fn process_partial(
-        &mut self,
-        wave_in: Option<&[Vec<T>]>,
-        active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<Vec<Vec<T>>>;
+            /// Refer to [Resampler::process_partial_into_buffer]
+            fn process_partial_into_buffer(
+                &mut self,
+                wave_in: Option<$in_type>,
+                wave_out: $out_type,
+                active_channels_mask: Option<&[bool]>,
+            ) -> rubato::ResampleResult<(usize, usize)>;
 
-    /// Refer to [Resampler::input_buffer_allocate]
-    fn input_buffer_allocate(&self) -> Vec<Vec<T>>;
+            /// Refer to [Resampler::process_partial]
+            fn process_partial(
+                &mut self,
+                wave_in: Option<$in_type>,
+                active_channels_mask: Option<&[bool]>,
+            ) -> rubato::ResampleResult<Vec<Vec<T>>>;
 
-    /// Refer to [Resampler::input_frames_max]
-    fn input_frames_max(&self) -> usize;
+            /// Refer to [Resampler::input_buffer_allocate]
+            fn input_buffer_allocate(&self) -> Vec<Vec<T>>;
 
-    /// Refer to [Resampler::input_frames_next]
-    fn input_frames_next(&self) -> usize;
+            /// Refer to [Resampler::input_frames_max]
+            fn input_frames_max(&self) -> usize;
 
-    /// Refer to [Resampler::nbr_channels]
-    fn nbr_channels(&self) -> usize;
+            /// Refer to [Resampler::input_frames_next]
+            fn input_frames_next(&self) -> usize;
 
-    /// Refer to [Resampler::output_buffer_allocate]
-    fn output_buffer_allocate(&self) -> Vec<Vec<T>>;
+            /// Refer to [Resampler::nbr_channels]
+            fn nbr_channels(&self) -> usize;
 
-    /// Refer to [Resampler::output_frames_max]
-    fn output_frames_max(&self) -> usize;
+            /// Refer to [Resampler::output_buffer_allocate]
+            fn output_buffer_allocate(&self) -> Vec<Vec<T>>;
 
-    /// Refer to [Resampler::output_frames_next]
-    fn output_frames_next(&self) -> usize;
+            /// Refer to [Resampler::output_frames_max]
+            fn output_frames_max(&self) -> usize;
 
-    /// Refer to [Resampler::set_resample_ratio]
-    fn set_resample_ratio(&mut self, new_ratio: f64, ramp: bool) -> ResampleResult<()>;
+            /// Refer to [Resampler::output_frames_next]
+            fn output_frames_next(&self) -> usize;
 
-    /// Refer to [Resampler::set_resample_ratio_relative]
-    fn set_resample_ratio_relative(&mut self, rel_ratio: f64, ramp: bool) -> ResampleResult<()>;
+            /// Refer to [Resampler::set_resample_ratio]
+            fn set_resample_ratio(&mut self, new_ratio: f64, ramp: bool) -> rubato::ResampleResult<()>;
+
+            /// Refer to [Resampler::set_resample_ratio_relative]
+            fn set_resample_ratio_relative(&mut self, rel_ratio: f64, ramp: bool) -> rubato::ResampleResult<()>;
+        }
+
+        impl<T, U> $trait_name<T> for U
+        where
+            U: rubato::Resampler<T>,
+            T: rubato::Sample,
+        {
+            fn process(
+                &mut self,
+                wave_in: $in_type,
+                active_channels_mask: Option<&[bool]>,
+            ) -> rubato::ResampleResult<Vec<Vec<T>>> {
+                rubato::Resampler::process(self, wave_in, active_channels_mask)
+            }
+
+            fn process_into_buffer(
+                &mut self,
+                wave_in: $in_type,
+                wave_out: $out_type,
+                active_channels_mask: Option<&[bool]>,
+            ) -> rubato::ResampleResult<(usize, usize)> {
+                rubato::Resampler::process_into_buffer(self, wave_in, wave_out, active_channels_mask)
+            }
+
+            fn process_partial_into_buffer(
+                &mut self,
+                wave_in: Option<$in_type>,
+                wave_out: $out_type,
+                active_channels_mask: Option<&[bool]>,
+            ) -> rubato::ResampleResult<(usize, usize)> {
+                rubato::Resampler::process_partial_into_buffer(
+                    self,
+                    wave_in.map(AsRef::as_ref),
+                    wave_out,
+                    active_channels_mask,
+                )
+            }
+
+            fn process_partial(
+                &mut self,
+                wave_in: Option<$in_type>,
+                active_channels_mask: Option<&[bool]>,
+            ) -> rubato::ResampleResult<Vec<Vec<T>>> {
+                rubato::Resampler::process_partial(self, wave_in, active_channels_mask)
+            }
+
+            fn output_buffer_allocate(&self) -> Vec<Vec<T>> {
+                rubato::Resampler::output_buffer_allocate(self)
+            }
+
+            fn output_frames_next(&self) -> usize {
+                rubato::Resampler::output_frames_next(self)
+            }
+
+            fn output_frames_max(&self) -> usize {
+                rubato::Resampler::output_frames_max(self)
+            }
+
+            fn input_frames_next(&self) -> usize {
+                rubato::Resampler::input_frames_next(self)
+            }
+
+            fn nbr_channels(&self) -> usize {
+                rubato::Resampler::nbr_channels(self)
+            }
+
+            fn input_frames_max(&self) -> usize {
+                rubato::Resampler::input_frames_max(self)
+            }
+
+            fn input_buffer_allocate(&self) -> Vec<Vec<T>> {
+                rubato::Resampler::input_buffer_allocate(self)
+            }
+
+            fn set_resample_ratio(&mut self, new_ratio: f64, ramp: bool) -> rubato::ResampleResult<()> {
+                rubato::Resampler::set_resample_ratio(self, new_ratio, ramp)
+            }
+
+            fn set_resample_ratio_relative(&mut self, rel_ratio: f64, ramp: bool) -> rubato::ResampleResult<()> {
+                rubato::Resampler::set_resample_ratio_relative(self, rel_ratio, ramp)
+            }
+        }
+    }
 }
 
-impl<T, U> VecResampler<T> for U
-where
-    U: Resampler<T>,
-    T: sample::Sample,
-{
-    fn process(
-        &mut self,
-        wave_in: &[Vec<T>],
-        active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<Vec<Vec<T>>> {
-        Resampler::process(self, wave_in, active_channels_mask)
-    }
-
-    fn process_into_buffer(
-        &mut self,
-        wave_in: &[Vec<T>],
-        wave_out: &mut [Vec<T>],
-        active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<(usize, usize)> {
-        Resampler::process_into_buffer(self, wave_in, wave_out, active_channels_mask)
-    }
-
-    fn process_partial_into_buffer(
-        &mut self,
-        wave_in: Option<&[Vec<T>]>,
-        wave_out: &mut [Vec<T>],
-        active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<(usize, usize)> {
-        Resampler::process_partial_into_buffer(
-            self,
-            wave_in.map(AsRef::as_ref),
-            wave_out,
-            active_channels_mask,
-        )
-    }
-
-    fn process_partial(
-        &mut self,
-        wave_in: Option<&[Vec<T>]>,
-        active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<Vec<Vec<T>>> {
-        Resampler::process_partial(self, wave_in, active_channels_mask)
-    }
-
-    fn output_buffer_allocate(&self) -> Vec<Vec<T>> {
-        Resampler::output_buffer_allocate(self)
-    }
-
-    fn output_frames_next(&self) -> usize {
-        Resampler::output_frames_next(self)
-    }
-
-    fn output_frames_max(&self) -> usize {
-        Resampler::output_frames_max(self)
-    }
-
-    fn input_frames_next(&self) -> usize {
-        Resampler::input_frames_next(self)
-    }
-
-    fn nbr_channels(&self) -> usize {
-        Resampler::nbr_channels(self)
-    }
-
-    fn input_frames_max(&self) -> usize {
-        Resampler::input_frames_max(self)
-    }
-
-    fn input_buffer_allocate(&self) -> Vec<Vec<T>> {
-        Resampler::input_buffer_allocate(self)
-    }
-
-    fn set_resample_ratio(&mut self, new_ratio: f64, ramp: bool) -> ResampleResult<()> {
-        Resampler::set_resample_ratio(self, new_ratio, ramp)
-    }
-
-    fn set_resample_ratio_relative(&mut self, rel_ratio: f64, ramp: bool) -> ResampleResult<()> {
-        Resampler::set_resample_ratio_relative(self, rel_ratio, ramp)
-    }
-}
+implement_resampler!(VecResampler, &[Vec<T>], &mut [Vec<T>]);
 
 /// Helper to make a mask where all channels are marked as active.
 fn update_mask_from_buffers(mask: &mut [bool]) {

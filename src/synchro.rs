@@ -264,8 +264,8 @@ where
         for (channel, active) in self.channel_mask.iter().enumerate() {
             if *active {
                 self.resampler.resample_unit(
-                    wave_in[channel].as_ref(),
-                    wave_out[channel].as_mut(),
+                    &wave_in[channel].as_ref()[..self.chunk_size_in],
+                    &mut wave_out[channel].as_mut()[..self.chunk_size_out],
                     &mut self.overlaps[channel],
                 )
             }
@@ -401,9 +401,13 @@ where
         for (chan, active) in self.channel_mask.iter().enumerate() {
             if *active {
                 debug_assert!(self.chunk_size_out <= wave_out[chan].as_mut().len());
-                for (in_chunk, out_chunk) in wave_in[chan].as_ref().chunks(self.fft_size_in).zip(
-                    self.output_buffers[chan][self.saved_frames..].chunks_mut(self.fft_size_out),
-                ) {
+                for (in_chunk, out_chunk) in wave_in[chan].as_ref()[..self.frames_needed]
+                    .chunks(self.fft_size_in)
+                    .zip(
+                        self.output_buffers[chan][self.saved_frames..]
+                            .chunks_mut(self.fft_size_out),
+                    )
+                {
                     self.resampler
                         .resample_unit(in_chunk, out_chunk, &mut self.overlaps[chan]);
                 }

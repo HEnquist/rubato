@@ -99,13 +99,13 @@ impl CoerceFrom<f64> for f32 {
 
 impl CoerceFrom<f64> for f64 {
     fn coerce_from(value: f64) -> Self {
-        value as f64
+        value
     }
 }
 
 impl CoerceFrom<f32> for f32 {
     fn coerce_from(value: f32) -> Self {
-        value as f32
+        value
     }
 }
 

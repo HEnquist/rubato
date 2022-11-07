@@ -72,7 +72,7 @@ This means that logging should be avoided if using this library in a realtime ap
 ## Example
 
 Resample a single chunk of a dummy audio file from 44100 to 48000 Hz.
-See also the "fixedin64" example that can be used to process a file from disk.
+See also the "process_f64" example that can be used to process a file from disk.
 ```rust
 use rubato::{Resampler, SincFixedIn, SincInterpolationType, SincInterpolationParameters, WindowFunction};
 let params = SincInterpolationParameters {
@@ -103,6 +103,7 @@ The `rubato` crate requires rustc version 1.61 or newer.
 - v0.13.0
   - Switch to slices of references for input and output data.
   - Add faster (lower quality) asynchronous resamplers.
+  - Add a macro to help implement custom object safe resamplers.
   - Optional smooth ramping of ratio changes to avoid audible steps.
   - Add convenience methods for handling last frames in a stream.
   - Add resampler reset method.
