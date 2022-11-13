@@ -421,8 +421,7 @@ where
             self.saved_frames = processed_frames - self.chunk_size_out;
             for (chan, active) in self.channel_mask.iter().enumerate() {
                 if *active {
-                    wave_out[chan]
-                        .as_mut()
+                    wave_out[chan].as_mut()[..self.chunk_size_out]
                         .copy_from_slice(&self.output_buffers[chan][..self.chunk_size_out]);
                     self.output_buffers[chan].copy_within(
                         self.chunk_size_out..(self.chunk_size_out + self.saved_frames),

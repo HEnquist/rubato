@@ -1,8 +1,8 @@
 extern crate rubato;
 use rubato::{
     calculate_cutoff, implement_resampler, FastFixedIn, FastFixedOut, FftFixedIn, FftFixedInOut,
-    FftFixedOut, PolynomialDegree, Resampler, SincFixedIn, SincFixedOut,
-    SincInterpolationParameters, SincInterpolationType, WindowFunction,
+    FftFixedOut, PolynomialDegree, SincFixedIn, SincFixedOut, SincInterpolationParameters,
+    SincInterpolationType, WindowFunction,
 };
 use std::convert::TryInto;
 use std::env;
@@ -82,7 +82,7 @@ fn main() {
 
     let resampler_type = env::args()
         .nth(1)
-        .expect("Please specify a resampler type.");
+        .expect("Please specify a resampler type, one of:\nSincFixedIn\nSincFixedOut\nFastFixedIn\nFastFixedOut\nFftFixedIn\nFftFixedOut\nFftFixedInOut");
 
     let file_in = env::args().nth(2).expect("Please specify an input file.");
     let file_out = env::args().nth(3).expect("Please specify an output file.");
@@ -172,7 +172,7 @@ fn main() {
     };
 
     // Prepare
-    let input_frames_next = resampler.input_frames_next();
+    let mut input_frames_next = resampler.input_frames_next();
     let mut outbuffer = vec![vec![0.0f64; resampler.output_frames_max()]; channels];
     let mut indata_slices: Vec<&[f64]> = indata.iter().map(|v| &v[..]).collect();
 
@@ -186,6 +186,7 @@ fn main() {
             *chan = &chan[nbr_in..];
         }
         append_frames(&mut outdata, &outbuffer, nbr_out);
+        input_frames_next = resampler.input_frames_next();
     }
 
     // Process a partial chunk with the last frames.

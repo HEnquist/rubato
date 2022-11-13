@@ -272,9 +272,12 @@ where
         }
         if let Some(input) = wave_in {
             for (ch_input, ch_padded) in input.iter().zip(wave_in_padded.iter_mut()) {
-                let frames_in = ch_input.as_ref().len();
+                let mut frames_in = ch_input.as_ref().len();
+                if frames_in > frames {
+                    frames_in = frames;
+                }
                 if frames_in > 0 {
-                    ch_padded[0..frames_in].copy_from_slice(ch_input.as_ref());
+                    ch_padded[..frames_in].copy_from_slice(&ch_input.as_ref()[..frames_in]);
                 } else {
                     ch_padded.clear();
                 }
