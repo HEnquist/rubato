@@ -15,7 +15,7 @@ edition = "2021"
 
 [dependencies]
 log = { version = "0.4.14", optional = true }
-realfft = "3.0.0"
+realfft = "3.1.0"
 num-complex = "0.4"
 num-integer = "0.1.44"
 num-traits = "0.2"

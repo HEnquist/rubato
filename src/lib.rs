@@ -106,6 +106,7 @@
 //!   - Add resampler reset method.
 //!   - Refactoring for a more logical structure.
 //!   - Add helper function for calculating cutoff frequency.
+//!   - Add quadratic interpolation for sinc resampler.
 //! - v0.12.0
 //!   - Always enable all simd acceleration (and remove the simd Cargo features).
 //! - v0.11.0
