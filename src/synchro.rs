@@ -416,7 +416,6 @@ where
         let processed_frames =
             self.saved_frames + self.fft_size_out * (self.frames_needed / self.fft_size_in);
 
-        println!("processed {processed_frames}");
         // copy to output, and save extra frames for next round
         if processed_frames >= self.chunk_size_out {
             self.saved_frames = processed_frames - self.chunk_size_out;
