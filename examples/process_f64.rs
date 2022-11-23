@@ -123,8 +123,8 @@ fn main() {
     let mut resampler: Box<dyn SliceResampler<f64>> = match resampler_type.as_str() {
         "SincFixedIn" => {
             let sinc_len = 128;
-            let oversampling_factor = 2048;
-            let interpolation = SincInterpolationType::Linear;
+            let oversampling_factor = 256;
+            let interpolation = SincInterpolationType::Quadratic;
             let window = WindowFunction::Blackman2;
 
             let f_cutoff = calculate_cutoff(sinc_len, window);
@@ -135,12 +135,12 @@ fn main() {
                 oversampling_factor,
                 window,
             };
-            Box::new(SincFixedIn::<f64>::new(f_ratio, 2.0, params, 1024, channels).unwrap())
+            Box::new(SincFixedIn::<f64>::new(f_ratio, 1.1, params, 1024, channels).unwrap())
         }
         "SincFixedOut" => {
             let sinc_len = 128;
-            let oversampling_factor = 2048;
-            let interpolation = SincInterpolationType::Linear;
+            let oversampling_factor = 512;
+            let interpolation = SincInterpolationType::Cubic;
             let window = WindowFunction::Blackman2;
 
             let f_cutoff = calculate_cutoff(sinc_len, window);
@@ -151,13 +151,13 @@ fn main() {
                 oversampling_factor,
                 window,
             };
-            Box::new(SincFixedOut::<f64>::new(f_ratio, 2.0, params, 1024, channels).unwrap())
+            Box::new(SincFixedOut::<f64>::new(f_ratio, 1.1, params, 1024, channels).unwrap())
         }
         "FastFixedIn" => {
-            Box::new(FastFixedIn::<f64>::new(f_ratio, 1.1, PolynomialDegree::Cubic, 1024, channels).unwrap())
+            Box::new(FastFixedIn::<f64>::new(f_ratio, 1.1, PolynomialDegree::Septic, 1024, channels).unwrap())
         }
         "FastFixedOut" => {
-            Box::new(FastFixedOut::<f64>::new(f_ratio, 1.1, PolynomialDegree::Cubic, 1024, channels).unwrap())
+            Box::new(FastFixedOut::<f64>::new(f_ratio, 1.1, PolynomialDegree::Septic, 1024, channels).unwrap())
         }
         "FftFixedIn" => {
             Box::new(FftFixedIn::<f64>::new(fs_in, fs_out, 1024, 2, channels).unwrap())

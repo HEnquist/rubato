@@ -416,6 +416,7 @@ where
         let processed_frames =
             self.saved_frames + self.fft_size_out * (self.frames_needed / self.fft_size_in);
 
+        println!("processed {processed_frames}");
         // copy to output, and save extra frames for next round
         if processed_frames >= self.chunk_size_out {
             self.saved_frames = processed_frames - self.chunk_size_out;
@@ -438,9 +439,10 @@ where
         } else {
             0
         };
+        let input_frames_used = self.frames_needed;
         let chunks_needed = (frames_needed_out as f32 / self.fft_size_out as f32).ceil() as usize;
         self.frames_needed = chunks_needed * self.fft_size_in;
-        Ok((self.frames_needed, processed_frames - self.saved_frames))
+        Ok((input_frames_used, self.chunk_size_out))
     }
 
     fn input_frames_max(&self) -> usize {

@@ -715,6 +715,7 @@ where
         }
 
         // store last index for next iteration
+        let input_frames_used = self.needed_input_size;
         self.last_index = idx - self.current_buffer_fill as f64;
         self.resample_ratio = self.target_ratio;
         self.needed_input_size = (self.last_index as f32
@@ -730,7 +731,7 @@ where
             self.needed_input_size,
             self.last_index
         );
-        Ok((self.needed_input_size, self.chunk_size))
+        Ok((input_frames_used, self.chunk_size))
     }
 
     fn input_frames_max(&self) -> usize {

@@ -46,9 +46,14 @@ pub enum SincInterpolationType {
     /// For cubic interpolation, the four nearest intermediate points are calculated
     /// using sinc interpolation.
     /// Then a cubic polynomial is fitted to these points, and is then used to calculate the new sample value.
-    /// The computation time as about twice the one for linear interpolation,
+    /// The computation time is about twice the one for linear interpolation,
     /// but it requires much fewer intermediate points for a good result.
     Cubic,
+    /// For quadratic interpolation, the three nearest intermediate points are calculated
+    /// using sinc interpolation.
+    /// Then a quadratic polynomial is fitted to these points, and is then used to calculate the new sample value.
+    /// The computation time lies abouhalfway between linear and quadratic interpolation.
+    Quadratic,
     /// With linear interpolation the new sample value is calculated by linear interpolation
     /// between the two nearest points.
     /// This requires two intermediate points to be calculated using sinc interpolation,
@@ -183,6 +188,19 @@ where
     let x2 = x * x;
     let x3 = x2 * x;
     a0 + a1 * x + a2 * x2 + a3 * x3
+}
+
+/// Perform cubic polynomial interpolation to get value at x.
+/// Input points are assumed to be at x = 0, 1, 2
+fn interp_quad<T>(x: T, yvals: &[T; 3]) -> T
+where
+    T: Sample,
+{
+    let a2 = yvals[0] - T::coerce(2.0) * yvals[1] + yvals[2];
+    let a1 = -T::coerce(3.0) * yvals[0] + T::coerce(4.0) * yvals[1] - yvals[2];
+    let a0 = T::coerce(2.0) * yvals[0];
+    let x2 = x * x;
+    T::coerce(0.5) * (a0 + a1 * x + a2 * x2)
 }
 
 /// Linear interpolation between two points at x=0 and x=1
@@ -367,6 +385,32 @@ where
                                 );
                             }
                             wave_out[chan].as_mut()[n] = interp_cubic(frac_offset, &points);
+                        }
+                    }
+                    n += 1;
+                }
+            }
+            SincInterpolationType::Quadratic => {
+                let mut points = [T::zero(); 3];
+                let mut nearest = [(0isize, 0isize); 3];
+                while idx < end_idx as f64 {
+                    t_ratio += t_ratio_increment;
+                    idx += t_ratio;
+                    get_nearest_times_3(idx, oversampling_factor as isize, &mut nearest);
+                    let frac = idx * oversampling_factor as f64
+                        - (idx * oversampling_factor as f64).floor();
+                    let frac_offset = T::coerce(frac);
+                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                        if *active {
+                            let buf = &self.buffer[chan];
+                            for (n, p) in nearest.iter().zip(points.iter_mut()) {
+                                *p = self.interpolator.get_sinc_interpolated(
+                                    buf,
+                                    (n.0 + 2 * sinc_len as isize) as usize,
+                                    n.1 as usize,
+                                );
+                            }
+                            wave_out[chan].as_mut()[n] = interp_quad(frac_offset, &points);
                         }
                     }
                     n += 1;
@@ -651,6 +695,31 @@ where
                     }
                 }
             }
+            SincInterpolationType::Quadratic => {
+                let mut points = [T::zero(); 3];
+                let mut nearest = [(0isize, 0isize); 3];
+                for n in 0..self.chunk_size {
+                    t_ratio += t_ratio_increment;
+                    idx += t_ratio;
+                    get_nearest_times_3(idx, oversampling_factor as isize, &mut nearest);
+                    let frac = idx * oversampling_factor as f64
+                        - (idx * oversampling_factor as f64).floor();
+                    let frac_offset = T::coerce(frac);
+                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                        if *active {
+                            let buf = &self.buffer[chan];
+                            for (n, p) in nearest.iter().zip(points.iter_mut()) {
+                                *p = self.interpolator.get_sinc_interpolated(
+                                    buf,
+                                    (n.0 + 2 * sinc_len as isize) as usize,
+                                    n.1 as usize,
+                                );
+                            }
+                            wave_out[chan].as_mut()[n] = interp_quad(frac_offset, &points);
+                        }
+                    }
+                }
+            }
             SincInterpolationType::Linear => {
                 let mut points = [T::zero(); 2];
                 let mut nearest = [(0isize, 0isize); 2];
@@ -699,6 +768,7 @@ where
         }
 
         // store last index for next iteration
+        let input_frames_used = self.needed_input_size;
         self.last_index = idx - self.current_buffer_fill as f64;
         self.resample_ratio = self.target_ratio;
         self.needed_input_size = (self.last_index as f32
@@ -714,7 +784,7 @@ where
             self.needed_input_size,
             self.last_index
         );
-        Ok((self.needed_input_size, self.chunk_size))
+        Ok((input_frames_used, self.chunk_size))
     }
 
     fn input_frames_max(&self) -> usize {

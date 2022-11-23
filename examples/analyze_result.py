@@ -2,11 +2,8 @@
 
 import numpy as np
 import numpy.fft as fft
-import csv
-import yaml
 import sys
 from matplotlib import pyplot as plt
-from matplotlib.patches import Rectangle
 import math
 
 def blackman_harris(npoints):
