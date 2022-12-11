@@ -24,7 +24,8 @@ where
         + AvxSample
         + SseSample
         + NeonSample
-        + Send,
+        + Send
+        + audio::Sample,
 {
     const PI: Self;
 

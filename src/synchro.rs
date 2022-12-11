@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use crate::error::{ResampleError, ResampleResult};
 use crate::{calculate_cutoff, update_mask_from_buffers, validate_buffers, Resampler, Sample};
+use audio::{buf::Sequential as SequentialBuffer, BufMut, ExactSizeBuf, Channel, ChannelMut};
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 
 /// A helper for resampling a single chunk of data.
@@ -240,12 +241,16 @@ impl<T> Resampler<T> for FftFixedInOut<T>
 where
     T: Sample,
 {
-    fn process_into_buffer<Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
+    fn process_into_buffer<In, Out>(
         &mut self,
-        wave_in: &[Vin],
-        wave_out: &mut [Vout],
+        wave_in: &In,
+        wave_out: &mut Out,
         active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<(usize, usize)> {
+    ) -> ResampleResult<(usize, usize)>
+    where
+        In: ExactSizeBuf<Sample = T>,
+        Out: ExactSizeBuf<Sample = T> + BufMut<Sample = T>,
+    {
         if let Some(mask) = active_channels_mask {
             self.channel_mask.copy_from_slice(mask);
         } else {
@@ -377,12 +382,16 @@ impl<T> Resampler<T> for FftFixedOut<T>
 where
     T: Sample,
 {
-    fn process_into_buffer<Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
+    fn process_into_buffer<In, Out>(
         &mut self,
-        wave_in: &[Vin],
-        wave_out: &mut [Vout],
+        wave_in: &In,
+        wave_out: &mut Out,
         active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<(usize, usize)> {
+    ) -> ResampleResult<(usize, usize)>
+    where
+        In: ExactSizeBuf<Sample = T>,
+        Out: ExactSizeBuf<Sample = T> + BufMut<Sample = T>,
+    {
         if let Some(mask) = active_channels_mask {
             self.channel_mask.copy_from_slice(mask);
         } else {
@@ -398,9 +407,9 @@ where
             self.chunk_size_out,
         )?;
 
+        debug_assert!(self.chunk_size_out <= wave_out.frames());
         for (chan, active) in self.channel_mask.iter().enumerate() {
             if *active {
-                debug_assert!(self.chunk_size_out <= wave_out[chan].as_mut().len());
                 for (in_chunk, out_chunk) in wave_in[chan].as_ref()[..self.frames_needed]
                     .chunks(self.fft_size_in)
                     .zip(
@@ -550,12 +559,16 @@ impl<T> Resampler<T> for FftFixedIn<T>
 where
     T: Sample,
 {
-    fn process_into_buffer<Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
+    fn process_into_buffer<In, Out>(
         &mut self,
-        wave_in: &[Vin],
-        wave_out: &mut [Vout],
+        wave_in: &In,
+        wave_out: &mut Out,
         active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<(usize, usize)> {
+    ) -> ResampleResult<(usize, usize)>
+    where
+        In: ExactSizeBuf<Sample = T>,
+        Out: ExactSizeBuf<Sample = T> + BufMut<Sample = T>,
+    {
         if let Some(mask) = active_channels_mask {
             self.channel_mask.copy_from_slice(mask);
         } else {
@@ -592,9 +605,9 @@ where
 
         self.saved_frames = next_saved_frames;
 
+        debug_assert!(needed_len <= wave_out.frames());
         for (chan, active) in self.channel_mask.iter().enumerate() {
             if *active {
-                debug_assert!(needed_len <= wave_out[chan].as_mut().len());
                 for (in_chunk, out_chunk) in self.input_buffers[chan]
                     .chunks(self.fft_size_in)
                     .take(nbr_chunks_ready)

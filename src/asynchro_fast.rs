@@ -1,6 +1,8 @@
 use crate::error::{ResampleError, ResampleResult, ResamplerConstructionError};
 use crate::{update_mask_from_buffers, validate_buffers, Resampler, Sample};
 
+use audio::{buf::Sequential as SequentialBuffer, BufMut, Channel, ChannelMut, ExactSizeBuf};
+
 const POLYNOMIAL_LEN_U: usize = 8;
 const POLYNOMIAL_LEN_I: isize = 8;
 
@@ -48,7 +50,7 @@ pub struct FastFixedIn<T> {
     resample_ratio_original: f64,
     target_ratio: f64,
     max_relative_ratio: f64,
-    buffer: Vec<Vec<T>>,
+    buffer: SequentialBuffer<T>,
     interpolation: PolynomialDegree,
     channel_mask: Vec<bool>,
 }
@@ -78,25 +80,25 @@ pub struct FastFixedOut<T> {
     resample_ratio_original: f64,
     target_ratio: f64,
     max_relative_ratio: f64,
-    buffer: Vec<Vec<T>>,
+    buffer: SequentialBuffer<T>,
     interpolation: PolynomialDegree,
     channel_mask: Vec<bool>,
 }
 
 /// Perform septic polynomial interpolation to get value at x.
 /// Input points are assumed to be at x = -3, -2, -1, 0, 1, 2, 3, 4
-fn interp_septic<T>(x: T, yvals: &[T]) -> T
+fn interp_septic<T>(x: T, yvals: &impl Channel<Sample = T>) -> T
 where
     T: Sample,
 {
-    let a = yvals[0];
-    let b = yvals[1];
-    let c = yvals[2];
-    let d = yvals[3];
-    let e = yvals[4];
-    let f = yvals[5];
-    let g = yvals[6];
-    let h = yvals[7];
+    let a = yvals.get(0).unwrap();
+    let b = yvals.get(1).unwrap();
+    let c = yvals.get(2).unwrap();
+    let d = yvals.get(3).unwrap();
+    let e = yvals.get(4).unwrap();
+    let f = yvals.get(5).unwrap();
+    let g = yvals.get(6).unwrap();
+    let h = yvals.get(7).unwrap();
     let k7 = -a + t!(7.0) * b - t!(21.0) * c + t!(35.0) * d - t!(35.0) * e + t!(21.0) * f
         - t!(7.0) * g
         + h;
@@ -134,16 +136,16 @@ where
 
 /// Perform quintic polynomial interpolation to get value at x.
 /// Input points are assumed to be at x = -2, -1, 0, 1, 2, 3
-fn interp_quintic<T>(x: T, yvals: &[T]) -> T
+fn interp_quintic<T>(x: T, yvals: &impl Channel<Sample = T>) -> T
 where
     T: Sample,
 {
-    let a = yvals[0];
-    let b = yvals[1];
-    let c = yvals[2];
-    let d = yvals[3];
-    let e = yvals[4];
-    let f = yvals[5];
+    let a = yvals.get(0).unwrap();
+    let b = yvals.get(1).unwrap();
+    let c = yvals.get(2).unwrap();
+    let d = yvals.get(3).unwrap();
+    let e = yvals.get(4).unwrap();
+    let f = yvals.get(5).unwrap();
     let k5 = -a + t!(5.0) * b - t!(10.0) * c + t!(10.0) * d - t!(5.0) * e + f;
     let k4 = t!(5.0) * a - t!(20.0) * b + t!(30.0) * c - t!(20.0) * d + t!(5.0) * e;
     let k3 = -t!(5.0) * a - t!(5.0) * b + t!(50.0) * c - t!(70.0) * d + t!(35.0) * e - t!(5.0) * f;
@@ -160,25 +162,25 @@ where
 
 /// Perform cubic polynomial interpolation to get value at x.
 /// Input points are assumed to be at x = -1, 0, 1, 2
-fn interp_cubic<T>(x: T, yvals: &[T]) -> T
+fn interp_cubic<T>(x: T, yvals: &impl Channel<Sample = T>) -> T
 where
     T: Sample,
 {
-    let a0 = yvals[1];
-    let a1 = -t!(1.0 / 3.0) * yvals[0] - t!(0.5) * yvals[1] + yvals[2] - t!(1.0 / 6.0) * yvals[3];
-    let a2 = t!(0.5) * (yvals[0] + yvals[2]) - yvals[1];
-    let a3 = t!(0.5) * (yvals[1] - yvals[2]) + t!(1.0 / 6.0) * (yvals[3] - yvals[0]);
+    let a0 = yvals.get(1).unwrap();
+    let a1 = -t!(1.0 / 3.0) * yvals.get(0).unwrap() - t!(0.5) * yvals.get(1).unwrap() + yvals.get(2).unwrap() - t!(1.0 / 6.0) * yvals.get(3).unwrap();
+    let a2 = t!(0.5) * (yvals.get(0).unwrap() + yvals.get(2).unwrap()) - yvals.get(1).unwrap();
+    let a3 = t!(0.5) * (yvals.get(1).unwrap() - yvals.get(2).unwrap()) + t!(1.0 / 6.0) * (yvals.get(3).unwrap() - yvals.get(0).unwrap());
     let x2 = x * x;
     let x3 = x2 * x;
     a0 + a1 * x + a2 * x2 + a3 * x3
 }
 
 /// Linear interpolation between two points at x=0 and x=1
-fn interp_lin<T>(x: T, yvals: &[T]) -> T
+fn interp_lin<T>(x: T, yvals: &impl Channel<Sample = T>) -> T
 where
     T: Sample,
 {
-    yvals[0] + x * (yvals[1] - yvals[0])
+    yvals.get(0).unwrap() + x * (yvals.get(1).unwrap() - yvals.get(0).unwrap())
 }
 
 fn validate_ratios(
@@ -222,7 +224,8 @@ where
 
         validate_ratios(resample_ratio, max_resample_ratio_relative)?;
 
-        let buffer = vec![vec![T::zero(); chunk_size + 2 * POLYNOMIAL_LEN_U]; nbr_channels];
+        let buffer =
+            SequentialBuffer::with_topology(nbr_channels, chunk_size + 2 * POLYNOMIAL_LEN_U);
 
         let channel_mask = vec![true; nbr_channels];
 
@@ -245,12 +248,16 @@ impl<T> Resampler<T> for FastFixedIn<T>
 where
     T: Sample,
 {
-    fn process_into_buffer<Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
+    fn process_into_buffer<In, Out>(
         &mut self,
-        wave_in: &[Vin],
-        wave_out: &mut [Vout],
+        wave_in: &In,
+        wave_out: &mut Out,
         active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<(usize, usize)> {
+    ) -> ResampleResult<(usize, usize)>
+    where
+        In: ExactSizeBuf<Sample = T>,
+        Out: ExactSizeBuf<Sample = T> + BufMut<Sample = T>,
+    {
         if let Some(mask) = active_channels_mask {
             self.channel_mask.copy_from_slice(mask);
         } else {
@@ -272,14 +279,23 @@ where
         )?;
 
         //update buffer with new data
-        for buf in self.buffer.iter_mut() {
-            buf.copy_within(self.chunk_size..self.chunk_size + 2 * POLYNOMIAL_LEN_U, 0);
+        for mut buf in self.buffer.iter_channels_mut() {
+            buf.as_mut()
+                .copy_within(self.chunk_size..self.chunk_size + 2 * POLYNOMIAL_LEN_U, 0);
         }
 
-        for (chan, active) in self.channel_mask.iter().enumerate() {
+        for ((buffer_channel, input_channel), active) in self
+            .buffer
+            .iter_channels_mut()
+            .zip(wave_in.iter_channels())
+            .zip(&self.channel_mask)
+        {
             if *active {
-                self.buffer[chan][2 * POLYNOMIAL_LEN_U..2 * POLYNOMIAL_LEN_U + self.chunk_size]
-                    .copy_from_slice(&wave_in[chan].as_ref()[..self.chunk_size]);
+                audio::channel::copy(
+                    input_channel.range(..self.chunk_size),
+                    buffer_channel
+                        .range(2 * POLYNOMIAL_LEN_U..2 * POLYNOMIAL_LEN_U + self.chunk_size),
+                );
             }
         }
 
@@ -311,18 +327,19 @@ where
                     let start_idx = idx_floor as isize - 3;
                     let frac = idx - idx_floor;
                     let frac_offset = T::coerce(frac);
-                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                    for ((buffer_channel, mut output_channel), active) in self
+                        .buffer
+                        .iter_channels()
+                        .zip(wave_out.iter_channels_mut())
+                        .zip(&self.channel_mask)
+                    {
                         if *active {
-                            unsafe {
-                                let buf = self.buffer.get_unchecked(chan).get_unchecked(
-                                    (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
-                                        ..(start_idx + 2 * POLYNOMIAL_LEN_I + 8) as usize,
-                                );
-                                *wave_out
-                                    .get_unchecked_mut(chan)
-                                    .as_mut()
-                                    .get_unchecked_mut(n) = interp_septic(frac_offset, buf);
-                            }
+                            let buffer_range = buffer_channel.range(
+                                (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
+                                    ..(start_idx + 2 * POLYNOMIAL_LEN_I + 8) as usize,
+                            );
+                            *output_channel.get_mut(n).unwrap() =
+                                interp_septic(frac_offset, &buffer_range);
                         }
                     }
                     n += 1;
@@ -336,18 +353,18 @@ where
                     let start_idx = idx_floor as isize - 2;
                     let frac = idx - idx_floor;
                     let frac_offset = T::coerce(frac);
-                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                    for ((buffer_channel, mut output_channel), active) in self
+                        .buffer
+                        .iter_channels()
+                        .zip(wave_out.iter_channels_mut())
+                        .zip(&self.channel_mask)
+                    {
                         if *active {
-                            unsafe {
-                                let buf = self.buffer.get_unchecked(chan).get_unchecked(
-                                    (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
-                                        ..(start_idx + 2 * POLYNOMIAL_LEN_I + 6) as usize,
-                                );
-                                *wave_out
-                                    .get_unchecked_mut(chan)
-                                    .as_mut()
-                                    .get_unchecked_mut(n) = interp_quintic(frac_offset, buf);
-                            }
+                            let buffer_range = buffer_channel.range(
+                                (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
+                                ..(start_idx + 2 * POLYNOMIAL_LEN_I + 6) as usize
+                            );
+                            *output_channel.get_mut(n).unwrap() = interp_quintic(frac_offset, &buffer_range);
                         }
                     }
                     n += 1;
@@ -361,18 +378,18 @@ where
                     let start_idx = idx_floor as isize - 1;
                     let frac = idx - idx_floor;
                     let frac_offset = T::coerce(frac);
-                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                    for ((buffer_channel, mut output_channel), active) in self
+                        .buffer
+                        .iter_channels()
+                        .zip(wave_out.iter_channels_mut())
+                        .zip(&self.channel_mask)
+                    {
                         if *active {
-                            unsafe {
-                                let buf = self.buffer.get_unchecked(chan).get_unchecked(
-                                    (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
-                                        ..(start_idx + 2 * POLYNOMIAL_LEN_I + 4) as usize,
-                                );
-                                *wave_out
-                                    .get_unchecked_mut(chan)
-                                    .as_mut()
-                                    .get_unchecked_mut(n) = interp_cubic(frac_offset, buf);
-                            }
+                            let buffer_range = buffer_channel.range(
+                                (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
+                                ..(start_idx + 2 * POLYNOMIAL_LEN_I + 4) as usize
+                            );
+                            *output_channel.get_mut(n).unwrap() = interp_cubic(frac_offset, &buffer_range);
                         }
                     }
                     n += 1;
@@ -386,18 +403,18 @@ where
                     let start_idx = idx_floor as isize;
                     let frac = idx - idx_floor;
                     let frac_offset = T::coerce(frac);
-                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                    for ((buffer_channel, mut output_channel), active) in self
+                        .buffer
+                        .iter_channels()
+                        .zip(wave_out.iter_channels_mut())
+                        .zip(&self.channel_mask)
+                    {
                         if *active {
-                            unsafe {
-                                let buf = self.buffer.get_unchecked(chan).get_unchecked(
-                                    (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
-                                        ..(start_idx + 2 * POLYNOMIAL_LEN_I + 2) as usize,
-                                );
-                                *wave_out
-                                    .get_unchecked_mut(chan)
-                                    .as_mut()
-                                    .get_unchecked_mut(n) = interp_lin(frac_offset, buf);
-                            }
+                            let buffer_range = buffer_channel.range(
+                                (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
+                                ..(start_idx + 2 * POLYNOMIAL_LEN_I + 2) as usize
+                            );
+                            *output_channel.get_mut(n).unwrap() = interp_lin(frac_offset, &buffer_range);
                         }
                     }
                     n += 1;
@@ -408,18 +425,14 @@ where
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     let start_idx = idx.floor() as isize;
-                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                    for ((buffer_channel, mut output_channel), active) in self
+                        .buffer
+                        .iter_channels()
+                        .zip(wave_out.iter_channels_mut())
+                        .zip(&self.channel_mask)
+                    {
                         if *active {
-                            unsafe {
-                                let point = self
-                                    .buffer
-                                    .get_unchecked(chan)
-                                    .get_unchecked((start_idx + 2 * POLYNOMIAL_LEN_I) as usize);
-                                *wave_out
-                                    .get_unchecked_mut(chan)
-                                    .as_mut()
-                                    .get_unchecked_mut(n) = *point;
-                            }
+                            *output_channel.get_mut(n).unwrap() = buffer_channel.get((start_idx + 2 * POLYNOMIAL_LEN_I) as usize).unwrap();
                         }
                     }
                     n += 1;
@@ -487,9 +500,7 @@ where
     }
 
     fn reset(&mut self) {
-        self.buffer
-            .iter_mut()
-            .for_each(|ch| ch.iter_mut().for_each(|s| *s = T::zero()));
+        self.buffer.fill(T::zero());
         self.channel_mask.iter_mut().for_each(|val| *val = true);
         self.last_index = -(POLYNOMIAL_LEN_I / 2) as f64;
         self.resample_ratio = self.resample_ratio_original;
@@ -527,7 +538,7 @@ where
         let buffer_channel_length = ((max_resample_ratio_relative + 1.0) * needed_input_size as f64)
             as usize
             + 2 * POLYNOMIAL_LEN_U;
-        let buffer = vec![vec![T::zero(); buffer_channel_length]; nbr_channels];
+        let buffer = SequentialBuffer::with_topology(nbr_channels, buffer_channel_length);
         let channel_mask = vec![true; nbr_channels];
 
         Ok(FastFixedOut {
@@ -551,12 +562,16 @@ impl<T> Resampler<T> for FastFixedOut<T>
 where
     T: Sample,
 {
-    fn process_into_buffer<Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
+    fn process_into_buffer<In, Out>(
         &mut self,
-        wave_in: &[Vin],
-        wave_out: &mut [Vout],
+        wave_in: &In,
+        wave_out: &mut Out,
         active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<(usize, usize)> {
+    ) -> ResampleResult<(usize, usize)>
+    where
+        In: ExactSizeBuf<Sample = T>,
+        Out: ExactSizeBuf<Sample = T> + BufMut<Sample = T>,
+    {
         if let Some(mask) = active_channels_mask {
             self.channel_mask.copy_from_slice(mask);
         } else {
@@ -571,22 +586,27 @@ where
             self.needed_input_size,
             self.chunk_size,
         )?;
-        for buf in self.buffer.iter_mut() {
-            buf.copy_within(
+        for mut channel in self.buffer.iter_channels_mut() {
+            channel.as_mut().copy_within(
                 self.current_buffer_fill..self.current_buffer_fill + 2 * POLYNOMIAL_LEN_U,
                 0,
             );
         }
         self.current_buffer_fill = self.needed_input_size;
 
-        for (chan, wave_in) in wave_in
-            .iter()
-            .enumerate()
-            .filter(|(chan, _)| self.channel_mask[*chan])
+        debug_assert!(self.chunk_size <= wave_out.frames());
+        for ((buffer_channel, input_channel), active) in self
+            .buffer
+            .iter_channels_mut()
+            .zip(wave_in.iter_channels())
+            .zip(&self.channel_mask)
         {
-            debug_assert!(self.chunk_size <= wave_out[chan].as_mut().len());
-            self.buffer[chan][2 * POLYNOMIAL_LEN_U..2 * POLYNOMIAL_LEN_U + self.needed_input_size]
-                .copy_from_slice(&wave_in.as_ref()[..self.needed_input_size]);
+            if *active {
+                audio::channel::copy(
+                    input_channel.range(..self.needed_input_size),
+                    buffer_channel.range(2 * POLYNOMIAL_LEN_U..2 * POLYNOMIAL_LEN_U + self.needed_input_size)
+                );
+            }
         }
 
         let mut idx = self.last_index;
@@ -603,18 +623,19 @@ where
                     let start_idx = idx_floor as isize - 3;
                     let frac = idx - idx_floor;
                     let frac_offset = T::coerce(frac);
-                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                    for ((buffer_channel, mut output_channel), active) in self
+                        .buffer
+                        .iter_channels()
+                        .zip(wave_out.iter_channels_mut())
+                        .zip(&self.channel_mask)
+                    {
                         if *active {
-                            unsafe {
-                                let buf = self.buffer.get_unchecked(chan).get_unchecked(
-                                    (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
-                                        ..(start_idx + 2 * POLYNOMIAL_LEN_I + 8) as usize,
-                                );
-                                *wave_out
-                                    .get_unchecked_mut(chan)
-                                    .as_mut()
-                                    .get_unchecked_mut(n) = interp_septic(frac_offset, buf);
-                            }
+                            let buffer_range = buffer_channel.range(
+                                (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
+                                    ..(start_idx + 2 * POLYNOMIAL_LEN_I + 8) as usize,
+                            );
+                            *output_channel.get_mut(n).unwrap() =
+                                interp_septic(frac_offset, &buffer_range);
                         }
                     }
                 }
@@ -627,18 +648,18 @@ where
                     let start_idx = idx_floor as isize - 2;
                     let frac = idx - idx_floor;
                     let frac_offset = T::coerce(frac);
-                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                    for ((buffer_channel, mut output_channel), active) in self
+                        .buffer
+                        .iter_channels()
+                        .zip(wave_out.iter_channels_mut())
+                        .zip(&self.channel_mask)
+                    {
                         if *active {
-                            unsafe {
-                                let buf = self.buffer.get_unchecked(chan).get_unchecked(
-                                    (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
-                                        ..(start_idx + 2 * POLYNOMIAL_LEN_I + 6) as usize,
-                                );
-                                *wave_out
-                                    .get_unchecked_mut(chan)
-                                    .as_mut()
-                                    .get_unchecked_mut(n) = interp_quintic(frac_offset, buf);
-                            }
+                            let buffer_range = buffer_channel.range(
+                                (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
+                                ..(start_idx + 2 * POLYNOMIAL_LEN_I + 6) as usize
+                            );
+                            *output_channel.get_mut(n).unwrap() = interp_quintic(frac_offset, &buffer_range);
                         }
                     }
                 }
@@ -651,18 +672,18 @@ where
                     let start_idx = idx_floor as isize - 1;
                     let frac = idx - idx_floor;
                     let frac_offset = T::coerce(frac);
-                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                    for ((buffer_channel, mut output_channel), active) in self
+                        .buffer
+                        .iter_channels()
+                        .zip(wave_out.iter_channels_mut())
+                        .zip(&self.channel_mask)
+                    {
                         if *active {
-                            unsafe {
-                                let buf = self.buffer.get_unchecked(chan).get_unchecked(
-                                    (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
-                                        ..(start_idx + 2 * POLYNOMIAL_LEN_I + 4) as usize,
-                                );
-                                *wave_out
-                                    .get_unchecked_mut(chan)
-                                    .as_mut()
-                                    .get_unchecked_mut(n) = interp_cubic(frac_offset, buf);
-                            }
+                            let buffer_range = buffer_channel.range(
+                                (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
+                                ..(start_idx + 2 * POLYNOMIAL_LEN_I + 4) as usize
+                            );
+                            *output_channel.get_mut(n).unwrap() = interp_cubic(frac_offset, &buffer_range);
                         }
                     }
                 }
@@ -675,18 +696,18 @@ where
                     let start_idx = idx_floor as isize;
                     let frac = idx - idx_floor;
                     let frac_offset = T::coerce(frac);
-                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                    for ((buffer_channel, mut output_channel), active) in self
+                        .buffer
+                        .iter_channels()
+                        .zip(wave_out.iter_channels_mut())
+                        .zip(&self.channel_mask)
+                    {
                         if *active {
-                            unsafe {
-                                let buf = self.buffer.get_unchecked(chan).get_unchecked(
-                                    (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
-                                        ..(start_idx + 2 * POLYNOMIAL_LEN_I + 2) as usize,
-                                );
-                                *wave_out
-                                    .get_unchecked_mut(chan)
-                                    .as_mut()
-                                    .get_unchecked_mut(n) = interp_lin(frac_offset, buf);
-                            }
+                            let buffer_range = buffer_channel.range(
+                                (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
+                                ..(start_idx + 2 * POLYNOMIAL_LEN_I + 2) as usize
+                            );
+                            *output_channel.get_mut(n).unwrap() = interp_lin(frac_offset, &buffer_range);
                         }
                     }
                 }
@@ -696,18 +717,14 @@ where
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     let start_idx = idx.floor() as isize;
-                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                    for ((buffer_channel, mut output_channel), active) in self
+                        .buffer
+                        .iter_channels()
+                        .zip(wave_out.iter_channels_mut())
+                        .zip(&self.channel_mask)
+                    {
                         if *active {
-                            unsafe {
-                                let point = self
-                                    .buffer
-                                    .get_unchecked(chan)
-                                    .get_unchecked((start_idx + 2 * POLYNOMIAL_LEN_I) as usize);
-                                *wave_out
-                                    .get_unchecked_mut(chan)
-                                    .as_mut()
-                                    .get_unchecked_mut(n) = *point;
-                            }
+                            *output_channel.get_mut(n).unwrap() = buffer_channel.get((start_idx + 2 * POLYNOMIAL_LEN_I) as usize).unwrap();
                         }
                     }
                 }
@@ -788,9 +805,7 @@ where
     }
 
     fn reset(&mut self) {
-        self.buffer
-            .iter_mut()
-            .for_each(|ch| ch.iter_mut().for_each(|s| *s = T::zero()));
+        self.buffer.fill(T::zero());
         self.needed_input_size = (self.chunk_size as f64 / self.resample_ratio_original).ceil()
             as usize
             + 2

@@ -10,6 +10,8 @@ use crate::sinc_interpolator::{ScalarInterpolator, SincInterpolator};
 use crate::windows::WindowFunction;
 use crate::{update_mask_from_buffers, validate_buffers, Resampler, Sample};
 
+use audio::{buf::Sequential as SequentialBuffer, BufMut, ExactSizeBuf, Channel, ChannelMut};
+
 /// A struct holding the parameters for sinc interpolation.
 #[derive(Debug)]
 pub struct SincInterpolationParameters {
@@ -92,7 +94,7 @@ pub struct SincFixedIn<T> {
     target_ratio: f64,
     max_relative_ratio: f64,
     interpolator: Box<dyn SincInterpolator<T>>,
-    buffer: Vec<Vec<T>>,
+    buffer: SequentialBuffer<T>,
     interpolation: SincInterpolationType,
     channel_mask: Vec<bool>,
 }
@@ -122,7 +124,7 @@ pub struct SincFixedOut<T> {
     target_ratio: f64,
     max_relative_ratio: f64,
     interpolator: Box<dyn SincInterpolator<T>>,
-    buffer: Vec<Vec<T>>,
+    buffer: SequentialBuffer<T>,
     interpolation: SincInterpolationType,
     channel_mask: Vec<bool>,
 }
@@ -286,7 +288,7 @@ where
         nbr_channels: usize,
     ) -> Result<Self, ResamplerConstructionError> {
         validate_ratios(resample_ratio, max_resample_ratio_relative)?;
-        let buffer = vec![vec![T::zero(); chunk_size + 2 * interpolator.len()]; nbr_channels];
+        let buffer = SequentialBuffer::with_topology(nbr_channels, chunk_size + 2 * interpolator.len());
 
         let channel_mask = vec![true; nbr_channels];
 
@@ -310,12 +312,16 @@ impl<T> Resampler<T> for SincFixedIn<T>
 where
     T: Sample,
 {
-    fn process_into_buffer<Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
+    fn process_into_buffer<In, Out>(
         &mut self,
-        wave_in: &[Vin],
-        wave_out: &mut [Vout],
+        wave_in: &In,
+        wave_out: &mut Out,
         active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<(usize, usize)> {
+    ) -> ResampleResult<(usize, usize)>
+    where
+        In: ExactSizeBuf<Sample = T>,
+        Out: ExactSizeBuf<Sample = T> + BufMut<Sample = T>,
+    {
         if let Some(mask) = active_channels_mask {
             self.channel_mask.copy_from_slice(mask);
         } else {
@@ -347,15 +353,22 @@ where
             self.chunk_size as isize - (sinc_len as isize + 1) - t_ratio_end.ceil() as isize;
 
         //update buffer with new data
-        for buf in self.buffer.iter_mut() {
-            buf.copy_within(self.chunk_size..self.chunk_size + 2 * sinc_len, 0);
+        for mut channel in self.buffer.iter_channels_mut() {
+            channel.as_mut().copy_within(self.chunk_size..self.chunk_size + 2 * sinc_len, 0);
         }
 
-        for (chan, active) in self.channel_mask.iter().enumerate() {
+        debug_assert!(needed_len <= wave_out.frames());
+        for ((buffer_channel, input_channel), active) in self
+            .buffer
+            .iter_channels_mut()
+            .zip(wave_in.iter_channels())
+            .zip(&self.channel_mask)
+        {
             if *active {
-                debug_assert!(needed_len <= wave_out[chan].as_mut().len());
-                self.buffer[chan][2 * sinc_len..2 * sinc_len + self.chunk_size]
-                    .copy_from_slice(&wave_in[chan].as_ref()[..self.chunk_size]);
+                audio::channel::copy(
+                    input_channel.range(..self.chunk_size),
+                    buffer_channel.range(2 * sinc_len..2 * sinc_len + self.chunk_size)
+                );
             }
         }
 
@@ -374,17 +387,21 @@ where
                     let frac = idx * oversampling_factor as f64
                         - (idx * oversampling_factor as f64).floor();
                     let frac_offset = T::coerce(frac);
-                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                    for ((buffer_channel, mut output_channel), active) in self
+                        .buffer
+                        .iter_channels()
+                        .zip(wave_out.iter_channels_mut())
+                        .zip(&self.channel_mask)
+                    {
                         if *active {
-                            let buf = &self.buffer[chan];
                             for (n, p) in nearest.iter().zip(points.iter_mut()) {
                                 *p = self.interpolator.get_sinc_interpolated(
-                                    buf,
+                                    buffer_channel.as_ref(),
                                     (n.0 + 2 * sinc_len as isize) as usize,
                                     n.1 as usize,
                                 );
                             }
-                            wave_out[chan].as_mut()[n] = interp_cubic(frac_offset, &points);
+                            *output_channel.get_mut(n).unwrap() = interp_cubic(frac_offset, &points);
                         }
                     }
                     n += 1;
@@ -400,17 +417,21 @@ where
                     let frac = idx * oversampling_factor as f64
                         - (idx * oversampling_factor as f64).floor();
                     let frac_offset = T::coerce(frac);
-                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                    for ((buffer_channel, mut output_channel), active) in self
+                        .buffer
+                        .iter_channels()
+                        .zip(wave_out.iter_channels_mut())
+                        .zip(&self.channel_mask)
+                    {
                         if *active {
-                            let buf = &self.buffer[chan];
                             for (n, p) in nearest.iter().zip(points.iter_mut()) {
                                 *p = self.interpolator.get_sinc_interpolated(
-                                    buf,
+                                    buffer_channel.as_ref(),
                                     (n.0 + 2 * sinc_len as isize) as usize,
                                     n.1 as usize,
                                 );
                             }
-                            wave_out[chan].as_mut()[n] = interp_quad(frac_offset, &points);
+                            *output_channel.get_mut(n).unwrap() = interp_quad(frac_offset, &points);
                         }
                     }
                     n += 1;
@@ -426,17 +447,21 @@ where
                     let frac = idx * oversampling_factor as f64
                         - (idx * oversampling_factor as f64).floor();
                     let frac_offset = T::coerce(frac);
-                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                    for ((buffer_channel, mut output_channel), active) in self
+                        .buffer
+                        .iter_channels()
+                        .zip(wave_out.iter_channels_mut())
+                        .zip(&self.channel_mask)
+                    {
                         if *active {
-                            let buf = &self.buffer[chan];
                             for (n, p) in nearest.iter().zip(points.iter_mut()) {
                                 *p = self.interpolator.get_sinc_interpolated(
-                                    buf,
+                                    buffer_channel.as_ref(),
                                     (n.0 + 2 * sinc_len as isize) as usize,
                                     n.1 as usize,
                                 );
                             }
-                            wave_out[chan].as_mut()[n] = interp_lin(frac_offset, &points);
+                            *output_channel.get_mut(n).unwrap() = interp_lin(frac_offset, &points);
                         }
                     }
                     n += 1;
@@ -449,15 +474,19 @@ where
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     nearest = get_nearest_time(idx, oversampling_factor as isize);
-                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                    for ((buffer_channel, mut output_channel), active) in self
+                        .buffer
+                        .iter_channels()
+                        .zip(wave_out.iter_channels_mut())
+                        .zip(&self.channel_mask)
+                    {
                         if *active {
-                            let buf = &self.buffer[chan];
                             point = self.interpolator.get_sinc_interpolated(
-                                buf,
+                                buffer_channel.as_ref(),
                                 (nearest.0 + 2 * sinc_len as isize) as usize,
                                 nearest.1 as usize,
                             );
-                            wave_out[chan].as_mut()[n] = point;
+                            *output_channel.get_mut(n).unwrap() = point;
                         }
                     }
                     n += 1;
@@ -525,9 +554,7 @@ where
     }
 
     fn reset(&mut self) {
-        self.buffer
-            .iter_mut()
-            .for_each(|ch| ch.iter_mut().for_each(|s| *s = T::zero()));
+        self.buffer.fill(T::zero());
         self.channel_mask.iter_mut().for_each(|val| *val = true);
         self.last_index = -((self.interpolator.len() / 2) as f64);
         self.resample_ratio = self.resample_ratio_original;
@@ -600,7 +627,7 @@ where
         let buffer_channel_length = ((max_resample_ratio_relative + 1.0) * needed_input_size as f64)
             as usize
             + 2 * interpolator.len();
-        let buffer = vec![vec![T::zero(); buffer_channel_length]; nbr_channels];
+        let buffer = SequentialBuffer::with_topology(nbr_channels, buffer_channel_length);
         let channel_mask = vec![true; nbr_channels];
 
         Ok(SincFixedOut {
@@ -625,12 +652,16 @@ impl<T> Resampler<T> for SincFixedOut<T>
 where
     T: Sample,
 {
-    fn process_into_buffer<Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
+    fn process_into_buffer<In, Out>(
         &mut self,
-        wave_in: &[Vin],
-        wave_out: &mut [Vout],
+        wave_in: &In,
+        wave_out: &mut Out,
         active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<(usize, usize)> {
+    ) -> ResampleResult<(usize, usize)>
+    where
+        In: ExactSizeBuf<Sample = T>,
+        Out: ExactSizeBuf<Sample = T> + BufMut<Sample = T>,
+    {
         if let Some(mask) = active_channels_mask {
             self.channel_mask.copy_from_slice(mask);
         } else {
@@ -648,19 +679,26 @@ where
         let sinc_len = self.interpolator.len();
         let oversampling_factor = self.interpolator.nbr_sincs();
 
-        for buf in self.buffer.iter_mut() {
-            buf.copy_within(
+        for mut channel in self.buffer.iter_channels_mut() {
+            channel.as_mut().copy_within(
                 self.current_buffer_fill..self.current_buffer_fill + 2 * sinc_len,
                 0,
             );
         }
         self.current_buffer_fill = self.needed_input_size;
 
-        for (chan, active) in self.channel_mask.iter().enumerate() {
+        debug_assert!(self.chunk_size <= wave_out.frames());
+        for ((buffer_channel, input_channel), active) in self
+            .buffer
+            .iter_channels_mut()
+            .zip(wave_in.iter_channels())
+            .zip(&self.channel_mask)
+        {
             if *active {
-                debug_assert!(self.chunk_size <= wave_out[chan].as_mut().len());
-                self.buffer[chan][2 * sinc_len..2 * sinc_len + self.needed_input_size]
-                    .copy_from_slice(&wave_in[chan].as_ref()[..self.needed_input_size]);
+                audio::channel::copy(
+                    input_channel.range(..self.needed_input_size),
+                    buffer_channel.range(2 * sinc_len..2 * sinc_len + self.needed_input_size)
+                );
             }
         }
 
@@ -680,17 +718,21 @@ where
                     let frac = idx * oversampling_factor as f64
                         - (idx * oversampling_factor as f64).floor();
                     let frac_offset = T::coerce(frac);
-                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                    for ((buffer_channel, mut output_channel), active) in self
+                        .buffer
+                        .iter_channels()
+                        .zip(wave_out.iter_channels_mut())
+                        .zip(&self.channel_mask)
+                    {
                         if *active {
-                            let buf = &self.buffer[chan];
                             for (n, p) in nearest.iter().zip(points.iter_mut()) {
                                 *p = self.interpolator.get_sinc_interpolated(
-                                    buf,
+                                    buffer_channel.as_ref(),
                                     (n.0 + 2 * sinc_len as isize) as usize,
                                     n.1 as usize,
                                 );
                             }
-                            wave_out[chan].as_mut()[n] = interp_cubic(frac_offset, &points);
+                            *output_channel.get_mut(n).unwrap() = interp_cubic(frac_offset, &points);
                         }
                     }
                 }
@@ -705,17 +747,21 @@ where
                     let frac = idx * oversampling_factor as f64
                         - (idx * oversampling_factor as f64).floor();
                     let frac_offset = T::coerce(frac);
-                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                    for ((buffer_channel, mut output_channel), active) in self
+                        .buffer
+                        .iter_channels()
+                        .zip(wave_out.iter_channels_mut())
+                        .zip(&self.channel_mask)
+                    {
                         if *active {
-                            let buf = &self.buffer[chan];
                             for (n, p) in nearest.iter().zip(points.iter_mut()) {
                                 *p = self.interpolator.get_sinc_interpolated(
-                                    buf,
+                                    buffer_channel.as_ref(),
                                     (n.0 + 2 * sinc_len as isize) as usize,
                                     n.1 as usize,
                                 );
                             }
-                            wave_out[chan].as_mut()[n] = interp_quad(frac_offset, &points);
+                            *output_channel.get_mut(n).unwrap() = interp_quad(frac_offset, &points);
                         }
                     }
                 }
@@ -730,17 +776,21 @@ where
                     let frac = idx * oversampling_factor as f64
                         - (idx * oversampling_factor as f64).floor();
                     let frac_offset = T::coerce(frac);
-                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                    for ((buffer_channel, mut output_channel), active) in self
+                        .buffer
+                        .iter_channels()
+                        .zip(wave_out.iter_channels_mut())
+                        .zip(&self.channel_mask)
+                    {
                         if *active {
-                            let buf = &self.buffer[chan];
                             for (n, p) in nearest.iter().zip(points.iter_mut()) {
                                 *p = self.interpolator.get_sinc_interpolated(
-                                    buf,
+                                    buffer_channel.as_ref(),
                                     (n.0 + 2 * sinc_len as isize) as usize,
                                     n.1 as usize,
                                 );
                             }
-                            wave_out[chan].as_mut()[n] = interp_lin(frac_offset, &points);
+                            *output_channel.get_mut(n).unwrap() = interp_lin(frac_offset, &points);
                         }
                     }
                 }
@@ -752,15 +802,19 @@ where
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     nearest = get_nearest_time(idx, oversampling_factor as isize);
-                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                    for ((buffer_channel, mut output_channel), active) in self
+                        .buffer
+                        .iter_channels()
+                        .zip(wave_out.iter_channels_mut())
+                        .zip(&self.channel_mask)
+                    {
                         if *active {
-                            let buf = &self.buffer[chan];
                             point = self.interpolator.get_sinc_interpolated(
-                                buf,
+                                buffer_channel.as_ref(),
                                 (nearest.0 + 2 * sinc_len as isize) as usize,
                                 nearest.1 as usize,
                             );
-                            wave_out[chan].as_mut()[n] = point;
+                            *output_channel.get_mut(n).unwrap() = point;
                         }
                     }
                 }
@@ -842,9 +896,7 @@ where
     }
 
     fn reset(&mut self) {
-        self.buffer
-            .iter_mut()
-            .for_each(|ch| ch.iter_mut().for_each(|s| *s = T::zero()));
+        self.buffer.fill(T::zero());
         self.needed_input_size = (self.chunk_size as f64 / self.resample_ratio_original).ceil()
             as usize
             + 2
