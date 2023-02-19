@@ -1,7 +1,7 @@
 use crate::Sample;
 
 /// Different window functions that can be used to window the sinc function.
-/// The window created is periodic, which means it is not symmetrical.
+/// The window created is periodic, and so it is not symmetrical.
 #[derive(Debug, Clone, Copy)]
 pub enum WindowFunction {
     /// Blackman. Intermediate rolloff and intermediate attenuation.
