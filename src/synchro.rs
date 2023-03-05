@@ -293,6 +293,10 @@ where
         self.output_frames_max()
     }
 
+    fn output_delay(&self) -> usize {
+        self.chunk_size_out / 2
+    }
+
     /// Update the resample ratio. This is not supported by this resampler and
     /// always returns an [ResampleError::SyncNotAdjustable].
     fn set_resample_ratio(&mut self, _new_ratio: f64, _ramp: bool) -> ResampleResult<()> {
@@ -462,6 +466,10 @@ where
 
     fn output_frames_next(&self) -> usize {
         self.output_frames_max()
+    }
+
+    fn output_delay(&self) -> usize {
+        self.fft_size_out / 2
     }
 
     /// Update the resample ratio. This is not supported by this resampler and
@@ -641,6 +649,10 @@ where
         (((self.saved_frames + self.chunk_size_in) as f32) / self.fft_size_in as f32).floor()
             as usize
             * self.fft_size_out
+    }
+
+    fn output_delay(&self) -> usize {
+        self.fft_size_out / 2
     }
 
     /// Update the resample ratio. This is not supported by this resampler and

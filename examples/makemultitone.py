@@ -6,7 +6,7 @@ t = np.linspace(0, 1.0, num=int(1.0*44100), endpoint=False)
 #freqs = [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000]
 #ampls = [500000/(f*f) for f in freqs]
 
-freqs = [1000, 2000, 3000]
+freqs = list(range(1000, 21000, 1000)) 
 ampls = [1.0/len(freqs)]*len(freqs)
 
 wave = np.zeros(len(t))

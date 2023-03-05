@@ -107,6 +107,7 @@
 //!   - Refactoring for a more logical structure.
 //!   - Add helper function for calculating cutoff frequency.
 //!   - Add quadratic interpolation for sinc resampler.
+//!   - Add method to get the delay through a resampler as a number of output frames.
 //! - v0.12.0
 //!   - Always enable all simd acceleration (and remove the simd Cargo features).
 //! - v0.11.0
@@ -358,6 +359,9 @@ where
     /// [process_into_buffer](Resampler::process_into_buffer) or [process](Resampler::process)
     fn output_frames_next(&self) -> usize;
 
+    /// Get the delay for the resampler, reported as a number of output frames.
+    fn output_delay(&self) -> usize;
+
     /// Update the resample ratio
     ///
     /// For asynchronous resamplers, the ratio must be within
@@ -462,6 +466,9 @@ macro_rules! implement_resampler {
             /// Refer to [Resampler::output_frames_next]
             fn output_frames_next(&self) -> usize;
 
+            /// Refer to [Resampler::output_delay]
+            fn output_delay(&self) -> usize;
+
             /// Refer to [Resampler::set_resample_ratio]
             fn set_resample_ratio(&mut self, new_ratio: f64, ramp: bool) -> rubato::ResampleResult<()>;
 
@@ -527,6 +534,10 @@ macro_rules! implement_resampler {
 
             fn input_frames_next(&self) -> usize {
                 rubato::Resampler::input_frames_next(self)
+            }
+
+            fn output_delay(&self) -> usize {
+                rubato::Resampler::output_delay(self)
             }
 
             fn nbr_channels(&self) -> usize {

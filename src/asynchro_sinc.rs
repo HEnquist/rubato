@@ -488,6 +488,10 @@ where
             as usize
     }
 
+    fn output_delay(&self) -> usize {
+        (self.interpolator.len() as f64 * self.resample_ratio / 2.0) as usize
+    }
+
     fn nbr_channels(&self) -> usize {
         self.nbr_channels
     }
@@ -808,6 +812,10 @@ where
 
     fn output_frames_next(&self) -> usize {
         self.chunk_size
+    }
+
+    fn output_delay(&self) -> usize {
+        (self.interpolator.len() as f64 * self.resample_ratio / 2.0) as usize
     }
 
     fn set_resample_ratio(&mut self, new_ratio: f64, ramp: bool) -> ResampleResult<()> {
