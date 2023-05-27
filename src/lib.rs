@@ -91,6 +91,25 @@
 //! let waves_out = resampler.process(&waves_in, None).unwrap();
 //! ```
 //!
+//! # Included examples
+//!
+//! The `examples` directory contains a few sample applications for testing the resamplers.
+//! There are also Python scripts for generating simple test signals,
+//! as well as analyzing the resampled results.
+//!
+//! The examples read and write raw audio data in 64-bit float format.
+//! They can be used to process .wav files if the files are first converted to the right format.
+//! Use `sox` to convert a .wav to raw samples:
+//! ```
+//! sox some_file.wav -e floating-point -b 64 some_file_f64.raw
+//! ```
+//! After processing, the result can be converted back to new .wav. This examples converts to 16-bits at 44.1 kHz:
+//! ```
+//! sox -e floating-point -b 64 -r 44100 -c 2 resampler_output.raw -e signed-integer -b 16 some_file_resampled.wav
+//! ```
+//!
+//! Many audio editors, for example Audacity, are also able to directly import and export the raw samples.
+//!
 //! # Compatibility
 //!
 //! The `rubato` crate requires rustc version 1.61 or newer.
@@ -120,9 +139,6 @@
 //! - v0.9.0
 //!   - Accept any AsRef<\[T\]> as input.
 //!
-//! ## License
-//!
-//!  MIT
 
 #[cfg(feature = "log")]
 extern crate log;
