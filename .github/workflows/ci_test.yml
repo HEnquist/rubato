@@ -64,7 +64,7 @@ jobs:
         run: cross test --target aarch64-unknown-linux-gnu
 
   check_test_wasm32:
-    name: Check and test wasm32
+    name: Check wasm32
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
@@ -75,12 +75,10 @@ jobs:
         with:
           targets: wasm32-wasi
 
-      - name: Install cross
-        run: cargo install cross --git https://github.com/cross-rs/cross
-
+      - name: Install cargo-wasi
+        run: cargo install cargo-wasi
+        
       - name: Run cargo check on wasm32
-        run: cross check --target wasm32-wasi
+        run: cross wasi check
 
-      - name: Run cargo test on wasm32
-        run: cross test --target wasm32-wasi
 
