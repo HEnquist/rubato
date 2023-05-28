@@ -73,14 +73,14 @@ jobs:
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: wasm32-unknown-unknown
+          targets: wasm32-wasi
 
       - name: Install cross
         run: cargo install cross --git https://github.com/cross-rs/cross
 
       - name: Run cargo check on wasm32
-        run: cross check --target wasm32-unknown-unknown
+        run: cross check --target wasm32-wasi
 
       - name: Run cargo test on wasm32
-        run: cross test --target wasm32-unknown-unknown
+        run: cross test --target wasm32-wasi
 
