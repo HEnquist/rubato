@@ -13,32 +13,37 @@
 //! beginning processing. The [log feature](#log-enable-logging) feature should be disabled
 //! for realtime use (it is disabled by default).
 //!
-//! ### Input and output data format
+//! # Input and output data format
 //!
 //! Input and output data is stored non-interleaved.
 //!
-//! The output data is stored in a vector of vectors, `Vec<Vec<f32>>` or `Vec<Vec<f64>>`.
-//! The inner vectors (`Vec<f32>` or `Vec<f64>`) hold the sample values for one channel each.
+//! Input and output data are stored as slices of references, `&[AsRef<[f32]>]` or `&[AsRef<[f64]>]`.
+//! The inner vectors (`AsRef<[f32]>` or `AsRef<[f64]>`) hold the sample values for one channel each.
 //!
-//! The input data is similar, except that it allows the inner vectors to be `AsRef<[f32]>` or `AsRef<[f64]>`.
-//! Normal vectors can be used since `Vec` implements the `AsRef` trait.
+//! Since normal vectors implement the `AsRef` trait,
+//! `Vec<Vec<f32>>` and `Vec<Vec<f64>>` can be used for both input and output.
 //!
-//! ### Asynchronous resampling
+//! # Asynchronous resampling
 //!
-//! The resampling is based on band-limited interpolation using sinc
+//! The asynchronous resamplers are available with and without anti-aliasing filters.
+//!
+//! Resampling with anti-aliasing is based on band-limited interpolation using sinc
 //! interpolation filters. The sinc interpolation upsamples by an adjustable factor,
 //! and then the new sample points are calculated by interpolating between these points.
 //! The resampling ratio can be updated at any time.
 //!
-//! ### Synchronous resampling
+//! Resampling without anti-aliasing omits the cpu-heavy sinc interpolation.
+//! This runs much faster but produces a lower quality result.
+//!
+//! # Synchronous resampling
 //!
 //! Synchronous resampling is implemented via FFT. The data is FFT:ed, the spectrum modified,
 //! and then inverse FFT:ed to get the resampled data.
 //! This type of resampler is considerably faster but doesn't support changing the resampling ratio.
 //!
-//! ### SIMD acceleration
+//! # SIMD acceleration
 //!
-//! #### Asynchronous resampling
+//! ## Asynchronous resampling with anti-aliasing
 //!
 //! The asynchronous resampler supports SIMD on x86_64 and on aarch64.
 //! The SIMD capabilities of the CPU are determined at runtime.
@@ -48,29 +53,29 @@
 //!
 //! On aarch64 (64-bit Arm) it will use Neon if available.
 //!
-//! #### Synchronous resampling
+//! ## Synchronous resampling
 //!
 //! The synchronous resamplers benefit from the SIMD support of the RustFFT library.
 //!
-//! ### Cargo features
+//! # Cargo features
 //!
-//! ##### `log`: Enable logging
+//! ## `log`: Enable logging
 //!
 //! This feature enables logging via the `log` crate. This is intended for debugging purposes.
 //! Note that outputting logs allocates a [std::string::String] and most logging implementations involve various other system calls.
 //! These calls may take some (unpredictable) time to return, during which the application is blocked.
 //! This means that logging should be avoided if using this library in a realtime application.
 //!
-//! ## Example
+//! # Example
 //!
 //! Resample a single chunk of a dummy audio file from 44100 to 48000 Hz.
-//! See also the "fixedin64" example that can be used to process a file from disk.
+//! See also the "process_f64" example that can be used to process a file from disk.
 //! ```
-//! use rubato::{Resampler, SincFixedIn, InterpolationType, InterpolationParameters, WindowFunction};
-//! let params = InterpolationParameters {
+//! use rubato::{Resampler, SincFixedIn, SincInterpolationType, SincInterpolationParameters, WindowFunction};
+//! let params = SincInterpolationParameters {
 //!     sinc_len: 256,
 //!     f_cutoff: 0.95,
-//!     interpolation: InterpolationType::Linear,
+//!     interpolation: SincInterpolationType::Linear,
 //!     oversampling_factor: 256,
 //!     window: WindowFunction::BlackmanHarris2,
 //! };
@@ -86,12 +91,42 @@
 //! let waves_out = resampler.process(&waves_in, None).unwrap();
 //! ```
 //!
-//! ## Compatibility
+//! # Included examples
+//!
+//! The `examples` directory contains a few sample applications for testing the resamplers.
+//! There are also Python scripts for generating simple test signals,
+//! as well as analyzing the resampled results.
+//!
+//! The examples read and write raw audio data in 64-bit float format.
+//! They can be used to process .wav files if the files are first converted to the right format.
+//! Use `sox` to convert a .wav to raw samples:
+//! ```sh
+//! sox some_file.wav -e floating-point -b 64 some_file_f64.raw
+//! ```
+//! After processing, the result can be converted back to new .wav. This examples converts to 16-bits at 44.1 kHz:
+//! ```sh
+//! sox -e floating-point -b 64 -r 44100 -c 2 resampler_output.raw -e signed-integer -b 16 some_file_resampled.wav
+//! ```
+//!
+//! Many audio editors, for example Audacity, are also able to directly import and export the raw samples.
+//!
+//! # Compatibility
 //!
 //! The `rubato` crate requires rustc version 1.61 or newer.
 //!
-//! ## Changelog
+//! # Changelog
 //!
+//! - v0.13.0
+//!   - Switch to slices of references for input and output data.
+//!   - Add faster (lower quality) asynchronous resamplers.
+//!   - Add a macro to help implement custom object safe resamplers.
+//!   - Optional smooth ramping of ratio changes to avoid audible steps.
+//!   - Add convenience methods for handling last frames in a stream.
+//!   - Add resampler reset method.
+//!   - Refactoring for a more logical structure.
+//!   - Add helper function for calculating cutoff frequency.
+//!   - Add quadratic interpolation for sinc resampler.
+//!   - Add method to get the delay through a resampler as a number of output frames.
 //! - v0.12.0
 //!   - Always enable all simd acceleration (and remove the simd Cargo features).
 //! - v0.11.0
@@ -102,7 +137,8 @@
 //! - v0.10.0
 //!   - Add an object-safe wrapper trait for Resampler.
 //! - v0.9.0
-//!   - Accept any AsRef<[T]> as input.
+//!   - Accept any AsRef<\[T\]> as input.
+//!
 
 #[cfg(feature = "log")]
 extern crate log;
@@ -139,7 +175,8 @@ macro_rules! error { ($($x:tt)*) => (
     }
 ) }
 
-mod asynchro;
+mod asynchro_fast;
+mod asynchro_sinc;
 mod error;
 mod interpolation;
 mod sample;
@@ -147,120 +184,28 @@ mod sinc;
 mod synchro;
 mod windows;
 
-pub use crate::asynchro::{ScalarInterpolator, SincFixedIn, SincFixedOut};
+pub mod sinc_interpolator;
+
+pub use crate::asynchro_fast::{FastFixedIn, FastFixedOut, PolynomialDegree};
+pub use crate::asynchro_sinc::{
+    SincFixedIn, SincFixedOut, SincInterpolationParameters, SincInterpolationType,
+};
 pub use crate::error::{
     CpuFeature, MissingCpuFeature, ResampleError, ResampleResult, ResamplerConstructionError,
 };
 pub use crate::sample::Sample;
 pub use crate::synchro::{FftFixedIn, FftFixedInOut, FftFixedOut};
-pub use crate::windows::WindowFunction;
+pub use crate::windows::{calculate_cutoff, WindowFunction};
 
-/// Helper macro to define a dummy implementation of the sample trait if a
-/// feature is not supported.
-macro_rules! interpolator {
-    (
-    #[cfg($($cond:tt)*)]
-    mod $mod:ident;
-    trait $trait:ident;
-    ) => {
-        #[cfg($($cond)*)]
-        pub mod $mod;
-
-        #[cfg($($cond)*)]
-        use self::$mod::$trait;
-
-        /// Dummy trait when not supported.
-        #[cfg(not($($cond)*))]
-        pub trait $trait {
-        }
-
-        /// Dummy impl of trait when not supported.
-        #[cfg(not($($cond)*))]
-        impl<T> $trait for T where T: Sample {
-        }
-    }
-}
-
-interpolator! {
-    #[cfg(target_arch = "x86_64")]
-    mod interpolator_avx;
-    trait AvxSample;
-}
-
-interpolator! {
-    #[cfg(target_arch = "x86_64")]
-    mod interpolator_sse;
-    trait SseSample;
-}
-
-interpolator! {
-    #[cfg(target_arch = "aarch64")]
-    mod interpolator_neon;
-    trait NeonSample;
-}
-
-/// A struct holding the parameters for interpolation.
-#[derive(Debug)]
-pub struct InterpolationParameters {
-    /// Length of the windowed sinc interpolation filter.
-    /// Higher values can allow a higher cut-off frequency leading to less high frequency roll-off
-    /// at the expense of higher cpu usage. 256 is a good starting point.
-    /// The value will be rounded up to the nearest multiple of 8.
-    pub sinc_len: usize,
-    /// Relative cutoff frequency of the sinc interpolation filter
-    /// (relative to the lowest one of fs_in/2 or fs_out/2). Start at 0.95, and increase if needed.
-    pub f_cutoff: f32,
-    /// The number of intermediate points to use for interpolation.
-    /// Higher values use more memory for storing the sinc filters.
-    /// Only the points actually needed are calculated during processing
-    /// so a larger number does not directly lead to higher cpu usage.
-    /// But keeping it down helps in keeping the sincs in the cpu cache. Start at 128.
-    pub oversampling_factor: usize,
-    /// Interpolation type, see `InterpolationType`
-    pub interpolation: InterpolationType,
-    /// Window function to use.
-    pub window: WindowFunction,
-}
-
-/// Interpolation methods that can be selected. For asynchronous interpolation where the
-/// ratio between input and output sample rates can be any number, it's not possible to
-/// pre-calculate all the needed interpolation filters.
-/// Instead they have to be computed as needed, which becomes impractical since the
-/// sincs are very expensive to generate in terms of cpu time.
-/// It's more efficient to combine the sinc filters with some other interpolation technique.
-/// Then sinc filters are used to provide a fixed number of interpolated points between input samples,
-/// and then the new value is calculated by interpolation between those points.
-#[derive(Debug)]
-pub enum InterpolationType {
-    /// For cubic interpolation, the four nearest intermediate points are calculated
-    /// using sinc interpolation.
-    /// Then a cubic polynomial is fitted to these points, and is then used to calculate the new sample value.
-    /// The computation time as about twice the one for linear interpolation,
-    /// but it requires much fewer intermediate points for a good result.
-    Cubic,
-    /// With linear interpolation the new sample value is calculated by linear interpolation
-    /// between the two nearest points.
-    /// This requires two intermediate points to be calculated using sinc interpolation,
-    /// and te output is a weighted average of these two.
-    /// This is relatively fast, but needs a large number of intermediate points to
-    /// push the resampling artefacts below the noise floor.
-    Linear,
-    /// The Nearest mode doesn't do any interpolation, but simply picks the nearest intermediate point.
-    /// This is useful when the nearest point is actually the correct one, for example when upsampling by a factor 2,
-    /// like 48kHz->96kHz.
-    /// Then setting the oversampling_factor to 2, and using Nearest mode,
-    /// no unnecessary computations are performed and the result is the same as for synchronous resampling.
-    /// This also works for other ratios that can be expressed by a fraction. For 44.1kHz -> 48 kHz,
-    /// setting oversampling_factor to 160 gives the desired result (since 48kHz = 160/147 * 44.1kHz).
-    Nearest,
-}
-
-/// A resampler that us used to resample a chunk of audio to a new sample rate.
+/// A resampler that is used to resample a chunk of audio to a new sample rate.
 /// For asynchronous resamplers, the rate can be adjusted as required.
 ///
 /// This trait is not object safe. If you need an object safe resampler,
 /// use the [VecResampler] wrapper trait.
-pub trait Resampler<T>: Send {
+pub trait Resampler<T>: Send
+where
+    T: Sample,
+{
     /// This is a convenience wrapper for [process_into_buffer](Resampler::process_into_buffer)
     /// that allocates the output buffer with each call. For realtime applications, use
     /// [process_into_buffer](Resampler::process_into_buffer) with a buffer allocated by
@@ -273,10 +218,19 @@ pub trait Resampler<T>: Send {
         let frames = self.output_frames_next();
         let channels = self.nbr_channels();
         let mut wave_out = Vec::with_capacity(channels);
-        for _ in 0..channels {
-            wave_out.push(Vec::with_capacity(frames));
+        for chan in 0..channels {
+            let chan_out = if active_channels_mask.map(|mask| mask[chan]).unwrap_or(true) {
+                vec![T::zero(); frames]
+            } else {
+                vec![]
+            };
+            wave_out.push(chan_out);
         }
-        self.process_into_buffer(wave_in, &mut wave_out, active_channels_mask)?;
+        let (_, out_len) =
+            self.process_into_buffer(wave_in, &mut wave_out, active_channels_mask)?;
+        for chan_out in wave_out.iter_mut() {
+            chan_out.truncate(out_len);
+        }
         Ok(wave_out)
     }
 
@@ -290,23 +244,93 @@ pub trait Resampler<T>: Send {
     /// as a slice ([AsRef<\[T\]>](AsRef)) which contains the samples for a single channel.
     /// Because [Vec<T>] implements [AsRef<\[T\]>](AsRef), the input may be [`Vec<Vec<T>>`](Vec).
     ///
-    /// The output data is a slice, where each element of the slice is a [Vec] which contains
-    /// the samples for a single channel. If the output channel vectors do not have sufficient
-    /// capacity for all output samples, they will be resized by this function. To avoid these
-    /// allocations during this function, allocate the output buffer with
+    /// The output data is a slice, where each element of the slice is a `[T]` which contains
+    /// the samples for a single channel. If the output channel slices do not have sufficient
+    /// capacity for all output samples, the function will return an error with the expected
+    /// size. You could allocate the required output buffer with
     /// [output_buffer_allocate](Resampler::output_buffer_allocate) before calling this function
     /// and reuse the same buffer for each call.
     ///
     /// The `active_channels_mask` is optional.
     /// Any channel marked as inactive by a false value will be skipped during processing
     /// and the corresponding output will be left unchanged.
-    /// If `None` is given, all channels will be considered active unless their length is 0.
-    fn process_into_buffer<V: AsRef<[T]>>(
+    /// If `None` is given, all channels will be considered active.
+    ///
+    /// Before processing, it checks that the input and outputs are valid.
+    /// If either has the wrong number of channels, or if the buffer for any channel is too short,
+    /// a [ResampleError] is returned.
+    /// Both input and output are allowed to be longer than required.
+    /// The number of input samples consumed and the number output samples written
+    /// per channel is returned in a tuple, `(input_frames, output_frames)`.
+    fn process_into_buffer<Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
         &mut self,
-        wave_in: &[V],
-        wave_out: &mut [Vec<T>],
+        wave_in: &[Vin],
+        wave_out: &mut [Vout],
         active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<()>;
+    ) -> ResampleResult<(usize, usize)>;
+
+    /// This is a convenience method for processing the last frames at the end of a stream.
+    /// Use this when there are fewer frames remaining than what the resampler requires as input.
+    /// Calling this function is equivalent to padding the input buffer with zeros
+    /// to make it the right input length, and then calling [process_into_buffer](Resampler::process_into_buffer).
+    /// The method can also be called without any input frames, by providing `None` as input buffer.
+    /// This can be utilized to push any remaining delayed frames out from the internal buffers.
+    /// Note that this method allocates space for a temporary input buffer.
+    /// Real-time applications should instead call `process_into_buffer` with a zero-padded pre-allocated input buffer.
+    fn process_partial_into_buffer<Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
+        &mut self,
+        wave_in: Option<&[Vin]>,
+        wave_out: &mut [Vout],
+        active_channels_mask: Option<&[bool]>,
+    ) -> ResampleResult<(usize, usize)> {
+        let frames = self.input_frames_next();
+        let mut wave_in_padded = Vec::with_capacity(self.nbr_channels());
+        for _ in 0..self.nbr_channels() {
+            wave_in_padded.push(vec![T::zero(); frames]);
+        }
+        if let Some(input) = wave_in {
+            for (ch_input, ch_padded) in input.iter().zip(wave_in_padded.iter_mut()) {
+                let mut frames_in = ch_input.as_ref().len();
+                if frames_in > frames {
+                    frames_in = frames;
+                }
+                if frames_in > 0 {
+                    ch_padded[..frames_in].copy_from_slice(&ch_input.as_ref()[..frames_in]);
+                } else {
+                    ch_padded.clear();
+                }
+            }
+        }
+        self.process_into_buffer(&wave_in_padded, wave_out, active_channels_mask)
+    }
+
+    /// This is a convenience method for processing the last frames at the end of a stream.
+    /// It is similar to [process_partial_into_buffer](Resampler::process_partial_into_buffer)
+    /// but allocates the output buffer with each call.
+    /// Note that this method allocates space for both input and output.
+    fn process_partial<V: AsRef<[T]>>(
+        &mut self,
+        wave_in: Option<&[V]>,
+        active_channels_mask: Option<&[bool]>,
+    ) -> ResampleResult<Vec<Vec<T>>> {
+        let frames = self.output_frames_next();
+        let channels = self.nbr_channels();
+        let mut wave_out = Vec::with_capacity(channels);
+        for chan in 0..channels {
+            let chan_out = if active_channels_mask.map(|mask| mask[chan]).unwrap_or(true) {
+                vec![T::zero(); frames]
+            } else {
+                vec![]
+            };
+            wave_out.push(chan_out);
+        }
+        let (_, out_len) =
+            self.process_partial_into_buffer(wave_in, &mut wave_out, active_channels_mask)?;
+        for chan_out in wave_out.iter_mut() {
+            chan_out.truncate(out_len);
+        }
+        Ok(wave_out)
+    }
 
     /// Convenience method for allocating an input buffer suitable for use with
     /// [process_into_buffer](Resampler::process_into_buffer). The buffer's capacity
@@ -341,11 +365,7 @@ pub trait Resampler<T>: Send {
     fn output_buffer_allocate(&self) -> Vec<Vec<T>> {
         let frames = self.output_frames_max();
         let channels = self.nbr_channels();
-        let mut buffer = Vec::with_capacity(channels);
-        for _ in 0..channels {
-            buffer.push(Vec::with_capacity(frames));
-        }
-        buffer
+        vec![Vec::with_capacity(frames); channels]
     }
 
     /// Get the max number of output frames per channel
@@ -355,6 +375,9 @@ pub trait Resampler<T>: Send {
     /// [process_into_buffer](Resampler::process_into_buffer) or [process](Resampler::process)
     fn output_frames_next(&self) -> usize;
 
+    /// Get the delay for the resampler, reported as a number of output frames.
+    fn output_delay(&self) -> usize;
+
     /// Update the resample ratio
     ///
     /// For asynchronous resamplers, the ratio must be within
@@ -363,7 +386,11 @@ pub trait Resampler<T>: Send {
     /// outside these bounds will return [ResampleError::RatioOutOfBounds].
     ///
     /// For synchronous resamplers, this will always return [ResampleError::SyncNotAdjustable].
-    fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()>;
+    ///
+    /// If the argument `ramp` is set to true, the ratio will be ramped from the old to the new value
+    /// during processing of the next chunk. This allows smooth transitions from one ratio to another.
+    /// If `ramp` is false, the new ratio will be applied from the start of the next chunk.
+    fn set_resample_ratio(&mut self, new_ratio: f64, ramp: bool) -> ResampleResult<()>;
 
     /// Update the resample ratio as a factor relative to the original one
     ///
@@ -376,135 +403,196 @@ pub trait Resampler<T>: Send {
     /// below 1.0 speed up the output and raise the pitch.
     ///
     /// For synchronous resamplers, this will always return [ResampleError::SyncNotAdjustable].
-    fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> ResampleResult<()>;
+    fn set_resample_ratio_relative(&mut self, rel_ratio: f64, ramp: bool) -> ResampleResult<()>;
+
+    /// Reset the resampler state and clear all internal buffers.
+    fn reset(&mut self);
 }
 
-/// This is a helper trait that can be used when a [Resampler] must be object safe.
+use crate as rubato;
+/// A macro for implementing wrapper traits for when a [Resampler] must be object safe.
+/// The wrapper trait locks the generic type parameters or the [Resampler] trait to specific types,
+/// which is needed to make the trait into an object.
 ///
-/// It differs from [Resampler] only by fixing the type of the input of `process()`
-/// and `process_into_buffer` to `&[Vec<T>]`.
-/// This allows it to be made into a trait object like this:
+/// One wrapper trait, [VecResampler], is included per default.
+/// It differs from [Resampler] by fixing the generic types
+/// `&[AsRef<[T]>]` and `&mut [AsMut<[T]>]` to `&[Vec<T>]` and `&mut [Vec<T>]`.
+/// This allows a [VecResampler] to be made into a trait object like this:
 /// ```
 /// # use rubato::{FftFixedIn, VecResampler};
 /// let boxed: Box<dyn VecResampler<f64>> = Box::new(FftFixedIn::<f64>::new(44100, 88200, 1024, 2, 2).unwrap());
 /// ```
 /// Use this implementation as an example if you need to fix the input type to something else.
-pub trait VecResampler<T>: Send {
-    /// Refer to [Resampler::process]
-    fn process(
-        &mut self,
-        wave_in: &[Vec<T>],
-        active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<Vec<Vec<T>>>;
+#[macro_export]
+macro_rules! implement_resampler {
+    ($trait_name:ident, $in_type:ty, $out_type:ty) => {
+        #[doc = "This is an wrapper trait implemented via the [implement_resampler] macro."]
+        #[doc = "The generic input and output types `&[AsRef<[T]>]` and `&mut [AsMut<[T]>]`"]
+        #[doc = concat!("are locked to `", stringify!($in_type), "` and `", stringify!($out_type), "`.")]
+        pub trait $trait_name<T>: Send {
 
-    /// Refer to [Resampler::process_into_buffer]
-    fn process_into_buffer(
-        &mut self,
-        wave_in: &[Vec<T>],
-        wave_out: &mut [Vec<T>],
-        active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<()>;
+            /// Refer to [Resampler::process]
+            fn process(
+                &mut self,
+                wave_in: $in_type,
+                active_channels_mask: Option<&[bool]>,
+            ) -> rubato::ResampleResult<Vec<Vec<T>>>;
 
-    /// Refer to [Resampler::input_buffer_allocate]
-    fn input_buffer_allocate(&self) -> Vec<Vec<T>>;
+            /// Refer to [Resampler::process_into_buffer]
+            fn process_into_buffer(
+                &mut self,
+                wave_in: $in_type,
+                wave_out: $out_type,
+                active_channels_mask: Option<&[bool]>,
+            ) -> rubato::ResampleResult<(usize, usize)>;
 
-    /// Refer to [Resampler::input_frames_max]
-    fn input_frames_max(&self) -> usize;
+            /// Refer to [Resampler::process_partial_into_buffer]
+            fn process_partial_into_buffer(
+                &mut self,
+                wave_in: Option<$in_type>,
+                wave_out: $out_type,
+                active_channels_mask: Option<&[bool]>,
+            ) -> rubato::ResampleResult<(usize, usize)>;
 
-    /// Refer to [Resampler::input_frames_next]
-    fn input_frames_next(&self) -> usize;
+            /// Refer to [Resampler::process_partial]
+            fn process_partial(
+                &mut self,
+                wave_in: Option<$in_type>,
+                active_channels_mask: Option<&[bool]>,
+            ) -> rubato::ResampleResult<Vec<Vec<T>>>;
 
-    /// Refer to [Resampler::nbr_channels]
-    fn nbr_channels(&self) -> usize;
+            /// Refer to [Resampler::input_buffer_allocate]
+            fn input_buffer_allocate(&self) -> Vec<Vec<T>>;
 
-    /// Refer to [Resampler::output_buffer_allocate]
-    fn output_buffer_allocate(&self) -> Vec<Vec<T>>;
+            /// Refer to [Resampler::input_frames_max]
+            fn input_frames_max(&self) -> usize;
 
-    /// Refer to [Resampler::output_frames_max]
-    fn output_frames_max(&self) -> usize;
+            /// Refer to [Resampler::input_frames_next]
+            fn input_frames_next(&self) -> usize;
 
-    /// Refer to [Resampler::output_frames_next]
-    fn output_frames_next(&self) -> usize;
+            /// Refer to [Resampler::nbr_channels]
+            fn nbr_channels(&self) -> usize;
 
-    /// Refer to [Resampler::set_resample_ratio]
-    fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()>;
+            /// Refer to [Resampler::output_buffer_allocate]
+            fn output_buffer_allocate(&self) -> Vec<Vec<T>>;
 
-    /// Refer to [Resampler::set_resample_ratio_relative]
-    fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> ResampleResult<()>;
+            /// Refer to [Resampler::output_frames_max]
+            fn output_frames_max(&self) -> usize;
+
+            /// Refer to [Resampler::output_frames_next]
+            fn output_frames_next(&self) -> usize;
+
+            /// Refer to [Resampler::output_delay]
+            fn output_delay(&self) -> usize;
+
+            /// Refer to [Resampler::set_resample_ratio]
+            fn set_resample_ratio(&mut self, new_ratio: f64, ramp: bool) -> rubato::ResampleResult<()>;
+
+            /// Refer to [Resampler::set_resample_ratio_relative]
+            fn set_resample_ratio_relative(&mut self, rel_ratio: f64, ramp: bool) -> rubato::ResampleResult<()>;
+        }
+
+        impl<T, U> $trait_name<T> for U
+        where
+            U: rubato::Resampler<T>,
+            T: rubato::Sample,
+        {
+            fn process(
+                &mut self,
+                wave_in: $in_type,
+                active_channels_mask: Option<&[bool]>,
+            ) -> rubato::ResampleResult<Vec<Vec<T>>> {
+                rubato::Resampler::process(self, wave_in, active_channels_mask)
+            }
+
+            fn process_into_buffer(
+                &mut self,
+                wave_in: $in_type,
+                wave_out: $out_type,
+                active_channels_mask: Option<&[bool]>,
+            ) -> rubato::ResampleResult<(usize, usize)> {
+                rubato::Resampler::process_into_buffer(self, wave_in, wave_out, active_channels_mask)
+            }
+
+            fn process_partial_into_buffer(
+                &mut self,
+                wave_in: Option<$in_type>,
+                wave_out: $out_type,
+                active_channels_mask: Option<&[bool]>,
+            ) -> rubato::ResampleResult<(usize, usize)> {
+                rubato::Resampler::process_partial_into_buffer(
+                    self,
+                    wave_in.map(AsRef::as_ref),
+                    wave_out,
+                    active_channels_mask,
+                )
+            }
+
+            fn process_partial(
+                &mut self,
+                wave_in: Option<$in_type>,
+                active_channels_mask: Option<&[bool]>,
+            ) -> rubato::ResampleResult<Vec<Vec<T>>> {
+                rubato::Resampler::process_partial(self, wave_in, active_channels_mask)
+            }
+
+            fn output_buffer_allocate(&self) -> Vec<Vec<T>> {
+                rubato::Resampler::output_buffer_allocate(self)
+            }
+
+            fn output_frames_next(&self) -> usize {
+                rubato::Resampler::output_frames_next(self)
+            }
+
+            fn output_frames_max(&self) -> usize {
+                rubato::Resampler::output_frames_max(self)
+            }
+
+            fn input_frames_next(&self) -> usize {
+                rubato::Resampler::input_frames_next(self)
+            }
+
+            fn output_delay(&self) -> usize {
+                rubato::Resampler::output_delay(self)
+            }
+
+            fn nbr_channels(&self) -> usize {
+                rubato::Resampler::nbr_channels(self)
+            }
+
+            fn input_frames_max(&self) -> usize {
+                rubato::Resampler::input_frames_max(self)
+            }
+
+            fn input_buffer_allocate(&self) -> Vec<Vec<T>> {
+                rubato::Resampler::input_buffer_allocate(self)
+            }
+
+            fn set_resample_ratio(&mut self, new_ratio: f64, ramp: bool) -> rubato::ResampleResult<()> {
+                rubato::Resampler::set_resample_ratio(self, new_ratio, ramp)
+            }
+
+            fn set_resample_ratio_relative(&mut self, rel_ratio: f64, ramp: bool) -> rubato::ResampleResult<()> {
+                rubato::Resampler::set_resample_ratio_relative(self, rel_ratio, ramp)
+            }
+        }
+    }
 }
 
-impl<T, U> VecResampler<T> for U
-where
-    U: Resampler<T>,
-{
-    fn process(
-        &mut self,
-        wave_in: &[Vec<T>],
-        active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<Vec<Vec<T>>> {
-        Resampler::process(self, wave_in, active_channels_mask)
-    }
+implement_resampler!(VecResampler, &[Vec<T>], &mut [Vec<T>]);
 
-    fn process_into_buffer(
-        &mut self,
-        wave_in: &[Vec<T>],
-        wave_out: &mut [Vec<T>],
-        active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<()> {
-        Resampler::process_into_buffer(self, wave_in, wave_out, active_channels_mask)
-    }
-
-    fn output_buffer_allocate(&self) -> Vec<Vec<T>> {
-        Resampler::output_buffer_allocate(self)
-    }
-
-    fn output_frames_next(&self) -> usize {
-        Resampler::output_frames_next(self)
-    }
-
-    fn output_frames_max(&self) -> usize {
-        Resampler::output_frames_max(self)
-    }
-
-    fn input_frames_next(&self) -> usize {
-        Resampler::input_frames_next(self)
-    }
-
-    fn nbr_channels(&self) -> usize {
-        Resampler::nbr_channels(self)
-    }
-
-    fn input_frames_max(&self) -> usize {
-        Resampler::input_frames_max(self)
-    }
-
-    fn input_buffer_allocate(&self) -> Vec<Vec<T>> {
-        Resampler::input_buffer_allocate(self)
-    }
-
-    fn set_resample_ratio(&mut self, new_ratio: f64) -> ResampleResult<()> {
-        Resampler::set_resample_ratio(self, new_ratio)
-    }
-
-    fn set_resample_ratio_relative(&mut self, rel_ratio: f64) -> ResampleResult<()> {
-        Resampler::set_resample_ratio_relative(self, rel_ratio)
-    }
+/// Helper to make a mask where all channels are marked as active.
+fn update_mask_from_buffers(mask: &mut [bool]) {
+    mask.iter_mut().for_each(|v| *v = true);
 }
 
-/// Helper to make a mask for the active channels based on which ones are empty.
-fn update_mask_from_buffers<T, V: AsRef<[T]>>(wave_in: &[V], mask: &mut [bool]) {
-    for (wave, active) in wave_in.iter().zip(mask.iter_mut()) {
-        let wave = wave.as_ref();
-        *active = !wave.is_empty();
-    }
-}
-
-pub(crate) fn validate_buffers<T, V: AsRef<[T]>>(
-    wave_in: &[V],
-    wave_out: &mut [Vec<T>],
+pub(crate) fn validate_buffers<T, Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
+    wave_in: &[Vin],
+    wave_out: &mut [Vout],
     mask: &[bool],
     channels: usize,
-    needed_len: usize,
+    min_input_len: usize,
+    min_output_len: usize,
 ) -> ResampleResult<()> {
     if wave_in.len() != channels {
         return Err(ResampleError::WrongNumberOfInputChannels {
@@ -518,13 +606,13 @@ pub(crate) fn validate_buffers<T, V: AsRef<[T]>>(
             actual: wave_in.len(),
         });
     }
-    for (chan, wave) in wave_in.iter().enumerate() {
-        let wave = wave.as_ref();
-        if wave.len() != needed_len && mask[chan] {
-            return Err(ResampleError::WrongNumberOfInputFrames {
+    for (chan, wave_in) in wave_in.iter().enumerate().filter(|(chan, _)| mask[*chan]) {
+        let actual_len = wave_in.as_ref().len();
+        if actual_len < min_input_len {
+            return Err(ResampleError::InsufficientInputBufferSize {
                 channel: chan,
-                expected: needed_len,
-                actual: wave.len(),
+                expected: min_input_len,
+                actual: actual_len,
             });
         }
     }
@@ -534,11 +622,25 @@ pub(crate) fn validate_buffers<T, V: AsRef<[T]>>(
             actual: wave_out.len(),
         });
     }
+    for (chan, wave_out) in wave_out
+        .iter_mut()
+        .enumerate()
+        .filter(|(chan, _)| mask[*chan])
+    {
+        let actual_len = wave_out.as_mut().len();
+        if actual_len < min_output_len {
+            return Err(ResampleError::InsufficientOutputBufferSize {
+                channel: chan,
+                expected: min_output_len,
+                actual: actual_len,
+            });
+        }
+    }
     Ok(())
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use crate::VecResampler;
     use crate::{FftFixedIn, FftFixedInOut, FftFixedOut};
     use crate::{SincFixedIn, SincFixedOut};
@@ -574,5 +676,57 @@ mod tests {
     fn test_impl_send() {
         impl_send::<f32>();
         impl_send::<f64>();
+    }
+
+    #[macro_export]
+    macro_rules! check_output {
+        ($name:ident, $resampler:ident) => {
+            let mut val = 0.0;
+            let mut prev_last = -0.1;
+            for n in 0..5 {
+                let frames = $resampler.input_frames_next();
+                let mut waves = vec![vec![0.0f64; frames]; 2];
+                for m in 0..frames {
+                    for ch in 0..2 {
+                        waves[ch][m] = val;
+                    }
+                    val = val + 0.1;
+                }
+                let out = $resampler.process(&waves, None).unwrap();
+                let frames_out = out[0].len();
+                for ch in 0..2 {
+                    assert!(
+                        out[ch][0] > prev_last,
+                        "Iteration {}, first value {} prev last value {}",
+                        n,
+                        out[ch][0],
+                        prev_last
+                    );
+                    let expected_diff = frames as f64 * 0.1;
+                    let diff = out[ch][frames_out - 1] - out[ch][0];
+                    assert!(
+                        diff < 1.5 * expected_diff && diff > 0.25 * expected_diff,
+                        "Iteration {}, last value {} first value {}",
+                        n,
+                        out[ch][frames_out - 1],
+                        out[ch][0]
+                    );
+                }
+                prev_last = out[0][frames_out - 1];
+                for m in 0..frames_out - 1 {
+                    for ch in 0..2 {
+                        let diff = out[ch][m + 1] - out[ch][m];
+                        assert!(
+                            diff < 0.15 && diff > -0.05,
+                            "Frame {}:{} next value {} value {}",
+                            n,
+                            m,
+                            out[ch][m + 1],
+                            out[ch][m]
+                        );
+                    }
+                }
+            }
+        };
     }
 }

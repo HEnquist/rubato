@@ -3,123 +3,82 @@ on: [push, pull_request]
 name: CI test and lint
 
 jobs:
-  check:
-    name: Check
+  check_test:
+    name: Check and test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
-      - name: Install nightly toolchain
-        uses: actions-rs/toolchain@v1
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
-          toolchain: nightly
-          override: true
+          components: rustfmt, clippy
 
       - name: Run cargo check
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
+        run: cargo check
 
-      - name: Run cargo check nodefault
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: --no-default-features
-
-  test:
-    name: Test Suite
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v2
-
-      - name: Install nightly toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly
-          override: true
+      - name: Run cargo check no features
+        run: cargo check --no-default-features
 
       - name: Run cargo test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
+        run: cargo test
 
   lints:
     name: Lints
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
-      - name: Install nightly toolchain
-        uses: actions-rs/toolchain@v1
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
-          toolchain: nightly
-          override: true
           components: rustfmt, clippy
 
       - name: Run cargo fmt
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
+        run: cargo fmt --all -- --check
 
       - name: Run cargo clippy
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: -- -D warnings
+        run: cargo clippy -- -D warnings
 
   check_test_aarch64:
     name: Check and test Linux arm 64bit
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
-      - name: Install nightly toolchain
-        uses: actions-rs/toolchain@v1
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
-          toolchain: nightly
-          target: aarch64-unknown-linux-gnu
-          override: true
+          targets: aarch64-unknown-linux-gnu
 
-      - name: Run cargo check
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-          use-cross: true
-          args: --target aarch64-unknown-linux-gnu
+      - name: Install cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
 
-      - name: Run cargo test for arm
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          use-cross: true
-          args: --target aarch64-unknown-linux-gnu
+      - name: Run cargo check on arm
+        run: cross check --target aarch64-unknown-linux-gnu
+
+      - name: Run cargo test on arm
+        run: cross test --target aarch64-unknown-linux-gnu
 
   check_test_wasm32:
-    name: Check and test wasm32
+    name: Check wasm32
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
-      - name: Install nightly toolchain
-        uses: actions-rs/toolchain@v1
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
-          toolchain: nightly
-          target: wasm32-unknown-unknown
-          override: true
+          targets: wasm32-wasi
 
-      - name: Run cargo check for wasm32
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: --target wasm32-unknown-unknown
+      - name: Install cargo-wasi
+        run: cargo install cargo-wasi
+
+      - name: Run cargo check on wasm32
+        run: cargo wasi check
+
+

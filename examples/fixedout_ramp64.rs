@@ -1,5 +1,8 @@
 extern crate rubato;
-use rubato::{InterpolationParameters, InterpolationType, Resampler, SincFixedOut, WindowFunction};
+use rubato::{
+    calculate_cutoff, Resampler, SincFixedOut, SincInterpolationParameters, SincInterpolationType,
+    WindowFunction,
+};
 use std::convert::TryInto;
 use std::env;
 use std::fs::File;
@@ -110,13 +113,17 @@ fn main() {
 
     // Balanced for async, see the fixedin64 example for more config examples
     let sinc_len = 128;
-    let f_cutoff = 0.925914648491266;
-    let params = InterpolationParameters {
+    let oversampling_factor = 2048;
+    let interpolation = SincInterpolationType::Linear;
+    let window = WindowFunction::Blackman2;
+
+    let f_cutoff = calculate_cutoff(sinc_len, window);
+    let params = SincInterpolationParameters {
         sinc_len,
         f_cutoff,
-        interpolation: InterpolationType::Linear,
-        oversampling_factor: 2048,
-        window: WindowFunction::Blackman2,
+        interpolation,
+        oversampling_factor,
+        window,
     };
 
     let chunksize = 1024;
@@ -139,7 +146,9 @@ fn main() {
             let rel_time = output_time / duration;
             let rel_ratio = 1.0 + (target_ratio - 1.0) * rel_time;
             println!("time {}, rel ratio {}", output_time, rel_ratio);
-            resampler.set_resample_ratio_relative(rel_ratio).unwrap();
+            resampler
+                .set_resample_ratio_relative(rel_ratio, true)
+                .unwrap();
         }
     }
 

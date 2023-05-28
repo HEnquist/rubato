@@ -12,6 +12,26 @@ pub fn get_nearest_times_2(t: f64, factor: isize, points: &mut [(isize, isize); 
 }
 
 /// Get the four nearest time points for time t in format (index, subindex).
+pub fn get_nearest_times_3(t: f64, factor: isize, points: &mut [(isize, isize); 3]) {
+    let start = t.floor() as isize;
+    let frac = ((t - t.floor()) * (factor as f64)).floor() as isize;
+    let mut index;
+    let mut subindex;
+    for (idx, sub) in (0..3).enumerate() {
+        index = start;
+        subindex = frac + sub;
+        if subindex < 0 {
+            subindex += factor;
+            index -= 1;
+        } else if subindex >= factor {
+            subindex -= factor;
+            index += 1;
+        }
+        points[idx] = (index, subindex);
+    }
+}
+
+/// Get the four nearest time points for time t in format (index, subindex).
 pub fn get_nearest_times_4(t: f64, factor: isize, points: &mut [(isize, isize); 4]) {
     let start = t.floor() as isize;
     let frac = ((t - t.floor()) * (factor as f64)).floor() as isize;
@@ -46,6 +66,7 @@ pub fn get_nearest_time(t: f64, factor: isize) -> (isize, isize) {
 mod tests {
     use crate::interpolation::get_nearest_time;
     use crate::interpolation::get_nearest_times_2;
+    use crate::interpolation::get_nearest_times_3;
     use crate::interpolation::get_nearest_times_4;
 
     #[test]
@@ -66,6 +87,16 @@ mod tests {
         assert_eq!(times[1], (5, 7));
         assert_eq!(times[2], (6, 0));
         assert_eq!(times[3], (6, 1));
+    }
+
+    #[test]
+    fn get_nearest_3() {
+        let t = 5.9f64;
+        let mut times = [(0isize, 0isize); 3];
+        get_nearest_times_3(t, 8, &mut times);
+        assert_eq!(times[0], (5, 7));
+        assert_eq!(times[1], (6, 0));
+        assert_eq!(times[2], (6, 1));
     }
 
     #[test]
