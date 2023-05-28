@@ -56,10 +56,10 @@ fn read_file<R: Read + Seek>(inbuffer: &mut R, channels: usize) -> Vec<Vec<f64>>
 }
 
 /// Helper to write all frames to a file
-fn write_frames<W: Write + Seek>(waves: Vec<Vec<f64>>, output: &mut W) {
+fn write_frames<W: Write + Seek>(waves: Vec<Vec<f64>>, output: &mut W, frames_to_skip: usize, frames_to_write: usize) {
     let channels = waves.len();
-    let nbr = waves[0].len();
-    for frame in 0..nbr {
+    let end = frames_to_skip + frames_to_write;
+    for frame in frames_to_skip..end {
         for chan in 0..channels {
             let value64 = waves[chan][frame];
             let bytes = value64.to_le_bytes();
@@ -173,11 +173,13 @@ fn main() {
 
     // Prepare
     let mut input_frames_next = resampler.input_frames_next();
+    let resampler_delay = resampler.output_delay();
     let mut outbuffer = vec![vec![0.0f64; resampler.output_frames_max()]; channels];
     let mut indata_slices: Vec<&[f64]> = indata.iter().map(|v| &v[..]).collect();
 
     // Process all full chunks
     let start = Instant::now();
+
     while indata_slices[0].len() >= input_frames_next {
         let (nbr_in, nbr_out) = resampler
             .process_into_buffer(&indata_slices, &mut outbuffer, None)
@@ -200,7 +202,10 @@ fn main() {
     let duration = start.elapsed();
     println!("Resampling took: {:?}", duration);
 
-    // Write output to file
+    let nbr_output_frames = (nbr_input_frames as f32 * fs_out as f32 / fs_in as f32) as usize;
+    println!("Processed {} input frames into {} output frames", nbr_input_frames, nbr_output_frames);
+
+    // Write output to file, trimming off the silent frames from both ends.
     let mut file_out_disk = File::create(file_out).unwrap();
-    write_frames(outdata, &mut file_out_disk);
+    write_frames(outdata, &mut file_out_disk, resampler_delay, nbr_output_frames);
 }
