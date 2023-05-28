@@ -102,11 +102,11 @@ as well as analyzing the resampled results.
 The examples read and write raw audio data in 64-bit float format.
 They can be used to process .wav files if the files are first converted to the right format.
 Use `sox` to convert a .wav to raw samples:
-```rust
+```sh
 sox some_file.wav -e floating-point -b 64 some_file_f64.raw
 ```
 After processing, the result can be converted back to new .wav. This examples converts to 16-bits at 44.1 kHz:
-```rust
+```sh
 sox -e floating-point -b 64 -r 44100 -c 2 resampler_output.raw -e signed-integer -b 16 some_file_resampled.wav
 ```
 
