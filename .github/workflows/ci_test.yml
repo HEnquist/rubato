@@ -77,8 +77,8 @@ jobs:
 
       - name: Install cargo-wasi
         run: cargo install cargo-wasi
-        
+
       - name: Run cargo check on wasm32
-        run: cross wasi check
+        run: cargo wasi check
 
 
