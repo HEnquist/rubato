@@ -56,7 +56,12 @@ fn read_file<R: Read + Seek>(inbuffer: &mut R, channels: usize) -> Vec<Vec<f64>>
 }
 
 /// Helper to write all frames to a file
-fn write_frames<W: Write + Seek>(waves: Vec<Vec<f64>>, output: &mut W, frames_to_skip: usize, frames_to_write: usize) {
+fn write_frames<W: Write + Seek>(
+    waves: Vec<Vec<f64>>,
+    output: &mut W,
+    frames_to_skip: usize,
+    frames_to_write: usize,
+) {
     let channels = waves.len();
     let end = frames_to_skip + frames_to_write;
     for frame in frames_to_skip..end {
@@ -203,9 +208,17 @@ fn main() {
     println!("Resampling took: {:?}", duration);
 
     let nbr_output_frames = (nbr_input_frames as f32 * fs_out as f32 / fs_in as f32) as usize;
-    println!("Processed {} input frames into {} output frames", nbr_input_frames, nbr_output_frames);
+    println!(
+        "Processed {} input frames into {} output frames",
+        nbr_input_frames, nbr_output_frames
+    );
 
     // Write output to file, trimming off the silent frames from both ends.
     let mut file_out_disk = File::create(file_out).unwrap();
-    write_frames(outdata, &mut file_out_disk, resampler_delay, nbr_output_frames);
+    write_frames(
+        outdata,
+        &mut file_out_disk,
+        resampler_delay,
+        nbr_output_frames,
+    );
 }
