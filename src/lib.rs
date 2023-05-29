@@ -349,8 +349,7 @@ where
         for _ in 0..channels {
             if filled {
                 buffer.push(vec![T::zero(); frames]);
-            }
-            else {
+            } else {
                 buffer.push(Vec::with_capacity(frames));
             }
         }
@@ -382,8 +381,7 @@ where
         for _ in 0..channels {
             if filled {
                 buffer.push(vec![T::zero(); frames]);
-            }
-            else {
+            } else {
                 buffer.push(Vec::with_capacity(frames));
             }
         }
