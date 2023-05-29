@@ -365,7 +365,11 @@ where
     fn output_buffer_allocate(&self) -> Vec<Vec<T>> {
         let frames = self.output_frames_max();
         let channels = self.nbr_channels();
-        vec![Vec::with_capacity(frames); channels]
+        let mut buffer = Vec::with_capacity(channels);
+        for _ in 0..channels {
+            buffer.push(vec![T::zero(); frames]);
+        }
+        buffer
     }
 
     /// Get the max number of output frames per channel
