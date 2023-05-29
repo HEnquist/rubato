@@ -116,6 +116,8 @@
 //!
 //! # Changelog
 //!
+//! - v0.14.0
+//!   - Add argument to let `input/output_buffer_allocate()` optionally pre-fill buffers with zeros.
 //! - v0.13.0
 //!   - Switch to slices of references for input and output data.
 //!   - Add faster (lower quality) asynchronous resamplers.
@@ -337,12 +339,20 @@ where
     /// is big enough to prevent allocating additional heap memory before any call to
     /// [process_into_buffer](Resampler::process_into_buffer) regardless of the current
     /// resampling ratio.
-    fn input_buffer_allocate(&self) -> Vec<Vec<T>> {
+    ///
+    /// The `filled` argument determines if the vectors should be pre-filled with zeros or not.
+    /// When false, the vectors are only allocated but returned empty.
+    fn input_buffer_allocate(&self, filled: bool) -> Vec<Vec<T>> {
         let frames = self.input_frames_max();
         let channels = self.nbr_channels();
         let mut buffer = Vec::with_capacity(channels);
         for _ in 0..channels {
-            buffer.push(Vec::with_capacity(frames));
+            if filled {
+                buffer.push(vec![T::zero(); frames]);
+            }
+            else {
+                buffer.push(Vec::with_capacity(frames));
+            }
         }
         buffer
     }
@@ -362,10 +372,22 @@ where
     /// is big enough to prevent allocating additional heap memory during any call to
     /// [process_into_buffer](Resampler::process_into_buffer) regardless of the current
     /// resampling ratio.
-    fn output_buffer_allocate(&self) -> Vec<Vec<T>> {
+    ///
+    /// The `filled` argument determines if the vectors should be pre-filled with zeros or not.
+    /// When false, the vectors are only allocated but returned empty.
+    fn output_buffer_allocate(&self, filled: bool) -> Vec<Vec<T>> {
         let frames = self.output_frames_max();
         let channels = self.nbr_channels();
-        vec![Vec::with_capacity(frames); channels]
+        let mut buffer = Vec::with_capacity(channels);
+        for _ in 0..channels {
+            if filled {
+                buffer.push(vec![T::zero(); frames]);
+            }
+            else {
+                buffer.push(Vec::with_capacity(frames));
+            }
+        }
+        buffer
     }
 
     /// Get the max number of output frames per channel
@@ -462,7 +484,7 @@ macro_rules! implement_resampler {
             ) -> rubato::ResampleResult<Vec<Vec<T>>>;
 
             /// Refer to [Resampler::input_buffer_allocate]
-            fn input_buffer_allocate(&self) -> Vec<Vec<T>>;
+            fn input_buffer_allocate(&self, filled: bool) -> Vec<Vec<T>>;
 
             /// Refer to [Resampler::input_frames_max]
             fn input_frames_max(&self) -> usize;
@@ -474,7 +496,7 @@ macro_rules! implement_resampler {
             fn nbr_channels(&self) -> usize;
 
             /// Refer to [Resampler::output_buffer_allocate]
-            fn output_buffer_allocate(&self) -> Vec<Vec<T>>;
+            fn output_buffer_allocate(&self, filled: bool) -> Vec<Vec<T>>;
 
             /// Refer to [Resampler::output_frames_max]
             fn output_frames_max(&self) -> usize;
@@ -536,8 +558,8 @@ macro_rules! implement_resampler {
                 rubato::Resampler::process_partial(self, wave_in, active_channels_mask)
             }
 
-            fn output_buffer_allocate(&self) -> Vec<Vec<T>> {
-                rubato::Resampler::output_buffer_allocate(self)
+            fn output_buffer_allocate(&self, filled: bool) -> Vec<Vec<T>> {
+                rubato::Resampler::output_buffer_allocate(self, filled)
             }
 
             fn output_frames_next(&self) -> usize {
@@ -564,8 +586,8 @@ macro_rules! implement_resampler {
                 rubato::Resampler::input_frames_max(self)
             }
 
-            fn input_buffer_allocate(&self) -> Vec<Vec<T>> {
-                rubato::Resampler::input_buffer_allocate(self)
+            fn input_buffer_allocate(&self, filled: bool) -> Vec<Vec<T>> {
+                rubato::Resampler::input_buffer_allocate(self, filled)
             }
 
             fn set_resample_ratio(&mut self, new_ratio: f64, ramp: bool) -> rubato::ResampleResult<()> {
