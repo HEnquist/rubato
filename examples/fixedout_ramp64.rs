@@ -45,7 +45,7 @@ fn read_frames<R: Read + Seek>(inbuffer: &mut R, nbr: usize, channels: usize) ->
             if inbuffer.read(&mut buffer).unwrap() < 8 {
                 return wfs;
             }
-            value = f64::from_le_bytes(buffer.as_slice().try_into().unwrap()) as f64;
+            value = f64::from_le_bytes(buffer.as_slice().try_into().unwrap());
             //idx += 8;
             wf.push(value);
         }
@@ -56,10 +56,10 @@ fn read_frames<R: Read + Seek>(inbuffer: &mut R, nbr: usize, channels: usize) ->
 fn write_frames<W: Write + Seek>(waves: Vec<Vec<f64>>, outbuffer: &mut W, channels: usize) {
     let nbr = waves[0].len();
     for frame in 0..nbr {
-        for chan in 0..channels {
-            let value64 = waves[chan][frame];
+        for wave in waves.iter().take(channels) {
+            let value64 = wave[frame];
             let bytes = value64.to_le_bytes();
-            outbuffer.write(&bytes).unwrap();
+            outbuffer.write_all(&bytes).unwrap();
         }
     }
 }

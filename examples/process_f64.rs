@@ -47,7 +47,7 @@ fn read_file<R: Read + Seek>(inbuffer: &mut R, channels: usize) -> Vec<Vec<f64>>
             if bytes_read == 0 {
                 break 'outer;
             }
-            let value = f64::from_le_bytes(buffer.as_slice().try_into().unwrap()) as f64;
+            let value = f64::from_le_bytes(buffer.as_slice().try_into().unwrap());
             //idx += 8;
             wf.push(value);
         }
@@ -65,10 +65,10 @@ fn write_frames<W: Write + Seek>(
     let channels = waves.len();
     let end = frames_to_skip + frames_to_write;
     for frame in frames_to_skip..end {
-        for chan in 0..channels {
-            let value64 = waves[chan][frame];
+        for wave in waves.iter().take(channels) {
+            let value64 = wave[frame];
             let bytes = value64.to_le_bytes();
-            output.write(&bytes).unwrap();
+            output.write_all(&bytes).unwrap();
         }
     }
 }

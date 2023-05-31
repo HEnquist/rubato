@@ -685,7 +685,7 @@ pub fn buffer_capacity<T: Sample>(buffer: &[Vec<T>]) -> usize {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::VecResampler;
+    use crate::{buffer_capacity, buffer_length, make_buffer, resize_buffer, VecResampler};
     use crate::{FftFixedIn, FftFixedInOut, FftFixedOut};
     use crate::{SincFixedIn, SincFixedOut};
 
@@ -772,5 +772,26 @@ pub mod tests {
                 }
             }
         };
+    }
+
+    #[test]
+    fn test_buffer_helpers() {
+        let buf1 = vec![vec![0.0f64; 7], vec![0.0f64; 5], vec![0.0f64; 10]];
+        assert_eq!(buffer_length(&buf1), 5);
+        let mut buf2 = vec![Vec::<f32>::with_capacity(5), Vec::<f32>::with_capacity(15)];
+        assert_eq!(buffer_length(&buf2), 0);
+        assert_eq!(buffer_capacity(&buf2), 5);
+
+        resize_buffer(&mut buf2, 3);
+        assert_eq!(buffer_length(&buf2), 3);
+        assert_eq!(buffer_capacity(&buf2), 5);
+
+        let buf3 = make_buffer::<f32>(4, 10, false);
+        assert_eq!(buffer_length(&buf3), 0);
+        assert_eq!(buffer_capacity(&buf3), 10);
+
+        let buf4 = make_buffer::<f32>(4, 10, true);
+        assert_eq!(buffer_length(&buf4), 10);
+        assert_eq!(buffer_capacity(&buf4), 10);
     }
 }
