@@ -642,8 +642,7 @@ where
     }
 
     fn output_frames_max(&self) -> usize {
-        (2.0 * self.chunk_size_in as f32 / self.fft_size_in as f32).floor()
-            as usize
+        (2.0 * self.chunk_size_in as f32 / self.fft_size_in as f32).floor() as usize
             * self.fft_size_out
     }
 
