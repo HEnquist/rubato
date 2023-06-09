@@ -119,6 +119,7 @@
 //! - v0.14.0
 //!   - Add argument to let `input/output_buffer_allocate()` optionally pre-fill buffers with zeros.
 //!   - Add convenience methods for managing buffers.
+//!   - Bugfixes for buffer allocation and max output lenght calculation.
 //! - v0.13.0
 //!   - Switch to slices of references for input and output data.
 //!   - Add faster (lower quality) asynchronous resamplers.
