@@ -116,6 +116,10 @@
 //!
 //! # Changelog
 //!
+//! - v0.14.0
+//!   - Add argument to let `input/output_buffer_allocate()` optionally pre-fill buffers with zeros.
+//!   - Add convenience methods for managing buffers.
+//!   - Bugfixes for buffer allocation and max output length calculation.
 //! - v0.13.0
 //!   - Switch to slices of references for input and output data.
 //!   - Add faster (lower quality) asynchronous resamplers.
@@ -242,7 +246,7 @@ where
     /// The input and output buffers are noninterleaved.
     /// The input is a slice, where each element of the slice is itself referenceable
     /// as a slice ([AsRef<\[T\]>](AsRef)) which contains the samples for a single channel.
-    /// Because [Vec<T>] implements [AsRef<\[T\]>](AsRef), the input may be [`Vec<Vec<T>>`](Vec).
+    /// Because `[Vec<T>]` implements [`AsRef<\[T\]>`](AsRef), the input may be [`Vec<Vec<T>>`](Vec).
     ///
     /// The output data is a slice, where each element of the slice is a `[T]` which contains
     /// the samples for a single channel. If the output channel slices do not have sufficient
@@ -337,14 +341,13 @@ where
     /// is big enough to prevent allocating additional heap memory before any call to
     /// [process_into_buffer](Resampler::process_into_buffer) regardless of the current
     /// resampling ratio.
-    fn input_buffer_allocate(&self) -> Vec<Vec<T>> {
+    ///
+    /// The `filled` argument determines if the vectors should be pre-filled with zeros or not.
+    /// When false, the vectors are only allocated but returned empty.
+    fn input_buffer_allocate(&self, filled: bool) -> Vec<Vec<T>> {
         let frames = self.input_frames_max();
         let channels = self.nbr_channels();
-        let mut buffer = Vec::with_capacity(channels);
-        for _ in 0..channels {
-            buffer.push(Vec::with_capacity(frames));
-        }
-        buffer
+        make_buffer(channels, frames, filled)
     }
 
     /// Get the maximum number of input frames per channel the resampler could require
@@ -362,10 +365,13 @@ where
     /// is big enough to prevent allocating additional heap memory during any call to
     /// [process_into_buffer](Resampler::process_into_buffer) regardless of the current
     /// resampling ratio.
-    fn output_buffer_allocate(&self) -> Vec<Vec<T>> {
+    ///
+    /// The `filled` argument determines if the vectors should be pre-filled with zeros or not.
+    /// When false, the vectors are only allocated but returned empty.
+    fn output_buffer_allocate(&self, filled: bool) -> Vec<Vec<T>> {
         let frames = self.output_frames_max();
         let channels = self.nbr_channels();
-        vec![Vec::with_capacity(frames); channels]
+        make_buffer(channels, frames, filled)
     }
 
     /// Get the max number of output frames per channel
@@ -462,7 +468,7 @@ macro_rules! implement_resampler {
             ) -> rubato::ResampleResult<Vec<Vec<T>>>;
 
             /// Refer to [Resampler::input_buffer_allocate]
-            fn input_buffer_allocate(&self) -> Vec<Vec<T>>;
+            fn input_buffer_allocate(&self, filled: bool) -> Vec<Vec<T>>;
 
             /// Refer to [Resampler::input_frames_max]
             fn input_frames_max(&self) -> usize;
@@ -474,7 +480,7 @@ macro_rules! implement_resampler {
             fn nbr_channels(&self) -> usize;
 
             /// Refer to [Resampler::output_buffer_allocate]
-            fn output_buffer_allocate(&self) -> Vec<Vec<T>>;
+            fn output_buffer_allocate(&self, filled: bool) -> Vec<Vec<T>>;
 
             /// Refer to [Resampler::output_frames_max]
             fn output_frames_max(&self) -> usize;
@@ -536,8 +542,8 @@ macro_rules! implement_resampler {
                 rubato::Resampler::process_partial(self, wave_in, active_channels_mask)
             }
 
-            fn output_buffer_allocate(&self) -> Vec<Vec<T>> {
-                rubato::Resampler::output_buffer_allocate(self)
+            fn output_buffer_allocate(&self, filled: bool) -> Vec<Vec<T>> {
+                rubato::Resampler::output_buffer_allocate(self, filled)
             }
 
             fn output_frames_next(&self) -> usize {
@@ -564,8 +570,8 @@ macro_rules! implement_resampler {
                 rubato::Resampler::input_frames_max(self)
             }
 
-            fn input_buffer_allocate(&self) -> Vec<Vec<T>> {
-                rubato::Resampler::input_buffer_allocate(self)
+            fn input_buffer_allocate(&self, filled: bool) -> Vec<Vec<T>> {
+                rubato::Resampler::input_buffer_allocate(self, filled)
             }
 
             fn set_resample_ratio(&mut self, new_ratio: f64, ramp: bool) -> rubato::ResampleResult<()> {
@@ -639,9 +645,48 @@ pub(crate) fn validate_buffers<T, Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
     Ok(())
 }
 
+/// Convenience method for allocating a buffer to hold a given number of channels and frames.
+/// The `filled` argument determines if the vectors should be pre-filled with zeros or not.
+/// When false, the vectors are only allocated but returned empty.
+pub fn make_buffer<T: Sample>(channels: usize, frames: usize, filled: bool) -> Vec<Vec<T>> {
+    let mut buffer = Vec::with_capacity(channels);
+    for _ in 0..channels {
+        buffer.push(Vec::with_capacity(frames));
+    }
+    if filled {
+        resize_buffer(&mut buffer, frames)
+    }
+    buffer
+}
+
+/// Convenience method for resizing a buffer to new number of frames.
+/// If the new number is no larger than the buffer capacity,
+/// then no reallocation will occur.
+/// If the new length is smaller than the current, the excess elements are dropped.
+/// If it is larger, zeros are inserted for the missing elements.
+pub fn resize_buffer<T: Sample>(buffer: &mut [Vec<T>], frames: usize) {
+    buffer.iter_mut().for_each(|v| v.resize(frames, T::zero()));
+}
+
+/// Convenience method for getting the current length of a buffer in frames.
+/// Checks the [length](Vec::len) of the vector for each channel and returns the smallest.
+pub fn buffer_length<T: Sample>(buffer: &[Vec<T>]) -> usize {
+    return buffer.iter().map(|v| v.len()).min().unwrap_or_default();
+}
+
+/// Convenience method for getting the current allocated capacity of a buffer in frames.
+/// Checks the [capacity](Vec::capacity) of the vector for each channel and returns the smallest.
+pub fn buffer_capacity<T: Sample>(buffer: &[Vec<T>]) -> usize {
+    return buffer
+        .iter()
+        .map(|v| v.capacity())
+        .min()
+        .unwrap_or_default();
+}
+
 #[cfg(test)]
 pub mod tests {
-    use crate::VecResampler;
+    use crate::{buffer_capacity, buffer_length, make_buffer, resize_buffer, VecResampler};
     use crate::{FftFixedIn, FftFixedInOut, FftFixedOut};
     use crate::{SincFixedIn, SincFixedOut};
 
@@ -728,5 +773,26 @@ pub mod tests {
                 }
             }
         };
+    }
+
+    #[test]
+    fn test_buffer_helpers() {
+        let buf1 = vec![vec![0.0f64; 7], vec![0.0f64; 5], vec![0.0f64; 10]];
+        assert_eq!(buffer_length(&buf1), 5);
+        let mut buf2 = vec![Vec::<f32>::with_capacity(5), Vec::<f32>::with_capacity(15)];
+        assert_eq!(buffer_length(&buf2), 0);
+        assert_eq!(buffer_capacity(&buf2), 5);
+
+        resize_buffer(&mut buf2, 3);
+        assert_eq!(buffer_length(&buf2), 3);
+        assert_eq!(buffer_capacity(&buf2), 5);
+
+        let buf3 = make_buffer::<f32>(4, 10, false);
+        assert_eq!(buffer_length(&buf3), 0);
+        assert_eq!(buffer_capacity(&buf3), 10);
+
+        let buf4 = make_buffer::<f32>(4, 10, true);
+        assert_eq!(buffer_length(&buf4), 10);
+        assert_eq!(buffer_capacity(&buf4), 10);
     }
 }

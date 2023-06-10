@@ -38,8 +38,8 @@ fn read_frames<R: Read + Seek>(inbuffer: &mut R, nbr: usize, channels: usize) ->
     let mut value: f64;
     for _frame in 0..nbr {
         for wf in wfs.iter_mut().take(channels) {
-            inbuffer.read(&mut buffer).unwrap();
-            value = f64::from_le_bytes(buffer.as_slice().try_into().unwrap()) as f64;
+            inbuffer.read_exact(&mut buffer).unwrap();
+            value = f64::from_le_bytes(buffer.as_slice().try_into().unwrap());
             //idx += 8;
             wf.push(value);
         }
@@ -51,10 +51,10 @@ fn read_frames<R: Read + Seek>(inbuffer: &mut R, nbr: usize, channels: usize) ->
 fn write_frames<W: Write + Seek>(waves: Vec<Vec<f64>>, outbuffer: &mut W, channels: usize) {
     let nbr = waves[0].len();
     for frame in 0..nbr {
-        for chan in 0..channels {
-            let value64 = waves[chan][frame];
+        for wave in waves.iter().take(channels) {
+            let value64 = wave[frame];
             let bytes = value64.to_le_bytes();
-            outbuffer.write(&bytes).unwrap();
+            outbuffer.write_all(&bytes).unwrap();
         }
     }
 }
