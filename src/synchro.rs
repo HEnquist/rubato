@@ -552,6 +552,23 @@ where
             channel_mask,
         })
     }
+
+    #[cfg(test)]
+    fn output_frames_max_is_sensible(&mut self) -> bool {
+        let audio_chunk = vec![vec![T::zero(); self.chunk_size_in]; self.nbr_channels];
+        let mut output_buf = self.output_buffer_allocate(true);
+
+        for _ in 0..50 {
+            if self
+                .process_into_buffer(&audio_chunk, &mut output_buf, None)
+                .is_err()
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 }
 
 impl<T> Resampler<T> for FftFixedIn<T>
@@ -642,7 +659,9 @@ where
     }
 
     fn output_frames_max(&self) -> usize {
-        (2.0 * self.chunk_size_in as f32 / self.fft_size_in as f32).floor() as usize
+        (2.0 * self.chunk_size_in as f32 / self.fft_size_in as f32)
+            .floor()
+            .max(1.0) as usize
             * self.fft_size_out
     }
 
@@ -942,5 +961,17 @@ mod tests {
     fn check_fio_output() {
         let mut resampler = FftFixedInOut::<f64>::new(44100, 48000, 4096, 2).unwrap();
         check_output!(check_fo_output, resampler);
+    }
+
+    #[test]
+    fn check_fi_bigger_output_frames_max() {
+        let mut resampler = FftFixedIn::<f32>::new(44100, 40000, 512, 2, 1).unwrap();
+        assert!(resampler.output_frames_max_is_sensible());
+    }
+
+    #[test]
+    fn check_fi_non_zero_output_frames_max() {
+        let mut resampler = FftFixedIn::<f64>::new(32728, 32000, 512, 2, 1).unwrap();
+        assert!(resampler.output_frames_max_is_sensible());
     }
 }
