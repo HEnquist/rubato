@@ -1028,9 +1028,13 @@ mod tests {
             assert!(resampler.input_frames_max() >= fft_in_len);
             // max needed is when we have none stored
             let max_frames_needed = chunksize;
-            let max_subchunks_needed = (max_frames_needed as f32 / fft_out_len as f32).ceil() as usize;
+            let max_subchunks_needed =
+                (max_frames_needed as f32 / fft_out_len as f32).ceil() as usize;
             let expected_max_in_len = max_subchunks_needed * fft_in_len;
-            println!("Max frames needed: {}, max subchunks_needed: {}, expected max input len: {}", max_frames_needed, max_subchunks_needed, expected_max_in_len);
+            println!(
+                "Max frames needed: {}, max subchunks_needed: {}, expected max input len: {}",
+                max_frames_needed, max_subchunks_needed, expected_max_in_len
+            );
             assert_eq!(resampler.input_frames_max(), expected_max_in_len);
         }
     }
