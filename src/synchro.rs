@@ -642,8 +642,10 @@ where
     }
 
     fn output_frames_max(&self) -> usize {
-        (2.0 * self.chunk_size_in as f32 / self.fft_size_in as f32).floor() as usize
-            * self.fft_size_out
+        let max_stored_frames = self.fft_size_in - 1;
+        let max_available_frames = max_stored_frames + self.chunk_size_in;
+        let max_subchunks_to_process = max_available_frames / self.fft_size_in;
+        max_subchunks_to_process * self.fft_size_out
     }
 
     fn output_frames_next(&self) -> usize {
@@ -942,5 +944,94 @@ mod tests {
     fn check_fio_output() {
         let mut resampler = FftFixedInOut::<f64>::new(44100, 48000, 4096, 2).unwrap();
         check_output!(check_fo_output, resampler);
+    }
+
+    #[test]
+    fn check_fi_max_output_length() {
+        // parameters:
+        // - rate in
+        // - rate out
+        // - requested chunksize
+        // - requested number of subchunks
+        // - expected fft input length
+        // - expected fft output length
+        let params_to_test = [
+            // fft sizes < chunksize
+            [44100, 48000, 1024, 4, 294, 320],
+            [48000, 44100, 1024, 4, 320, 294],
+            // fft sizes << chunksize
+            [44000, 48000, 1024, 100, 11, 12],
+            // fft sizes > chunksize
+            [32728, 32000, 1024, 4, 4091, 4000],
+            [32000, 32728, 1024, 4, 4000, 4091],
+            // fft sizes >> chunksize
+            [37199, 39119, 1024, 4, 37199, 39119],
+            [39119, 37199, 1024, 4, 39119, 37199],
+        ];
+        for params in params_to_test {
+            println!("params: {:?}", params);
+            let [rate_in, rate_out, chunksize, subchunks, fft_in_len, fft_out_len] = params;
+            let resampler =
+                FftFixedIn::<f64>::new(rate_in, rate_out, chunksize, subchunks, 1).unwrap();
+            assert_eq!(resampler.fft_size_in, fft_in_len);
+            assert_eq!(resampler.fft_size_out, fft_out_len);
+            let resampler_max_output_len = resampler.output_frames_max();
+            println!(
+                "Resampler reports max output length: {}",
+                resampler_max_output_len
+            );
+            assert!(resampler.output_frames_max() >= fft_out_len);
+            // expected length
+            let max_stored_frames = fft_in_len - 1;
+            let max_available_samples = max_stored_frames + chunksize;
+            let max_subchunks_to_process = max_available_samples / fft_in_len;
+            let expected_max_out_len = max_subchunks_to_process * fft_out_len;
+            println!("Max stored frames: {}, max avail frames: {}, max ready subchunks: {}, expected max output len: {}", max_stored_frames, max_available_samples, max_subchunks_to_process, expected_max_out_len);
+            assert_eq!(resampler.output_frames_max(), expected_max_out_len);
+        }
+    }
+
+    #[test]
+    fn check_fo_max_input_length() {
+        // parameters:
+        // - rate in
+        // - rate out
+        // - requested chunksize
+        // - requested number of subchunks
+        // - expected fft input length
+        // - expected fft output length
+        let params_to_test = [
+            // fft sizes < chunksize
+            [44100, 48000, 1024, 4, 294, 320],
+            [48000, 44100, 1024, 4, 320, 294],
+            // fft sizes << chunksize
+            [44000, 48000, 1024, 100, 11, 12],
+            // fft sizes > chunksize
+            [32728, 32000, 1024, 4, 4091, 4000],
+            [32000, 32728, 1024, 4, 4000, 4091],
+            // fft sizes >> chunksize
+            [37199, 39119, 1024, 4, 37199, 39119],
+            [39119, 37199, 1024, 4, 39119, 37199],
+        ];
+        for params in params_to_test {
+            println!("params: {:?}", params);
+            let [rate_in, rate_out, chunksize, subchunks, fft_in_len, fft_out_len] = params;
+            let resampler =
+                FftFixedOut::<f64>::new(rate_in, rate_out, chunksize, subchunks, 1).unwrap();
+            assert_eq!(resampler.fft_size_in, fft_in_len);
+            assert_eq!(resampler.fft_size_out, fft_out_len);
+            let resampler_max_input_len = resampler.input_frames_max();
+            println!(
+                "Resampler reports max input length: {}",
+                resampler_max_input_len
+            );
+            assert!(resampler.input_frames_max() >= fft_in_len);
+            // max needed is when we have none stored
+            let max_frames_needed = chunksize;
+            let max_subchunks_needed = (max_frames_needed as f32 / fft_out_len as f32).ceil() as usize;
+            let expected_max_in_len = max_subchunks_needed * fft_in_len;
+            println!("Max frames needed: {}, max subchunks_needed: {}, expected max input len: {}", max_frames_needed, max_subchunks_needed, expected_max_in_len);
+            assert_eq!(resampler.input_frames_max(), expected_max_in_len);
+        }
     }
 }
