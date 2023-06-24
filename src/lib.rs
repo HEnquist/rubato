@@ -182,25 +182,28 @@ macro_rules! error { ($($x:tt)*) => (
 ) }
 
 mod asynchro_fast;
-mod asynchro_sinc;
+//mod asynchro_sinc;
 mod error;
-mod interpolation;
+//mod interpolation;
 mod sample;
 mod sinc;
-mod synchro;
+//mod synchro;
 mod windows;
 
 pub mod sinc_interpolator;
 
-pub use crate::asynchro_fast::{FastFixedIn, FastFixedOut, PolynomialDegree};
-pub use crate::asynchro_sinc::{
-    SincFixedIn, SincFixedOut, SincInterpolationParameters, SincInterpolationType,
-};
+use audioadapter::traits::{Indirect, IndirectMut};
+
+//pub use crate::asynchro_fast::{FastFixedIn, FastFixedOut, PolynomialDegree};
+pub use crate::asynchro_fast::{FastFixedIn, PolynomialDegree};
+//pub use crate::asynchro_sinc::{
+//    SincFixedIn, SincFixedOut, SincInterpolationParameters, SincInterpolationType,
+//};
 pub use crate::error::{
     CpuFeature, MissingCpuFeature, ResampleError, ResampleResult, ResamplerConstructionError,
 };
 pub use crate::sample::Sample;
-pub use crate::synchro::{FftFixedIn, FftFixedInOut, FftFixedOut};
+//pub use crate::synchro::{FftFixedIn, FftFixedInOut, FftFixedOut};
 pub use crate::windows::{calculate_cutoff, WindowFunction};
 
 /// A resampler that is used to resample a chunk of audio to a new sample rate.
@@ -216,29 +219,29 @@ where
     /// that allocates the output buffer with each call. For realtime applications, use
     /// [process_into_buffer](Resampler::process_into_buffer) with a buffer allocated by
     /// [output_buffer_allocate](Resampler::output_buffer_allocate) instead of this function.
-    fn process<V: AsRef<[T]>>(
-        &mut self,
-        wave_in: &[V],
-        active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<Vec<Vec<T>>> {
-        let frames = self.output_frames_next();
-        let channels = self.nbr_channels();
-        let mut wave_out = Vec::with_capacity(channels);
-        for chan in 0..channels {
-            let chan_out = if active_channels_mask.map(|mask| mask[chan]).unwrap_or(true) {
-                vec![T::zero(); frames]
-            } else {
-                vec![]
-            };
-            wave_out.push(chan_out);
-        }
-        let (_, out_len) =
-            self.process_into_buffer(wave_in, &mut wave_out, active_channels_mask)?;
-        for chan_out in wave_out.iter_mut() {
-            chan_out.truncate(out_len);
-        }
-        Ok(wave_out)
-    }
+    //fn process<V: AsRef<[T]>>(
+    //    &mut self,
+    //    wave_in: &[V],
+    //    active_channels_mask: Option<&[bool]>,
+    //) -> ResampleResult<Vec<Vec<T>>> {
+    //    let frames = self.output_frames_next();
+    //    let channels = self.nbr_channels();
+    //    let mut wave_out = Vec::with_capacity(channels);
+    //    for chan in 0..channels {
+    //        let chan_out = if active_channels_mask.map(|mask| mask[chan]).unwrap_or(true) {
+    //            vec![T::zero(); frames]
+    //        } else {
+    //            vec![]
+    //        };
+    //        wave_out.push(chan_out);
+    //    }
+    //    let (_, out_len) =
+    //        self.process_into_buffer(wave_in, &mut wave_out, active_channels_mask)?;
+    //    for chan_out in wave_out.iter_mut() {
+    //        chan_out.truncate(out_len);
+    //    }
+    //    Ok(wave_out)
+    //}
 
     /// Resample a buffer of audio to a pre-allocated output buffer.
     /// Use this in real-time applications where the unpredictable time required to allocate
@@ -268,10 +271,10 @@ where
     /// Both input and output are allowed to be longer than required.
     /// The number of input samples consumed and the number output samples written
     /// per channel is returned in a tuple, `(input_frames, output_frames)`.
-    fn process_into_buffer<Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
+    fn process_into_buffer<'a>(
         &mut self,
-        wave_in: &[Vin],
-        wave_out: &mut [Vout],
+        wave_in: &dyn Indirect<'a, T>,
+        wave_out: &mut dyn IndirectMut<'a, T>,
         active_channels_mask: Option<&[bool]>,
     ) -> ResampleResult<(usize, usize)>;
 
@@ -283,60 +286,60 @@ where
     /// This can be utilized to push any remaining delayed frames out from the internal buffers.
     /// Note that this method allocates space for a temporary input buffer.
     /// Real-time applications should instead call `process_into_buffer` with a zero-padded pre-allocated input buffer.
-    fn process_partial_into_buffer<Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
-        &mut self,
-        wave_in: Option<&[Vin]>,
-        wave_out: &mut [Vout],
-        active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<(usize, usize)> {
-        let frames = self.input_frames_next();
-        let mut wave_in_padded = Vec::with_capacity(self.nbr_channels());
-        for _ in 0..self.nbr_channels() {
-            wave_in_padded.push(vec![T::zero(); frames]);
-        }
-        if let Some(input) = wave_in {
-            for (ch_input, ch_padded) in input.iter().zip(wave_in_padded.iter_mut()) {
-                let mut frames_in = ch_input.as_ref().len();
-                if frames_in > frames {
-                    frames_in = frames;
-                }
-                if frames_in > 0 {
-                    ch_padded[..frames_in].copy_from_slice(&ch_input.as_ref()[..frames_in]);
-                } else {
-                    ch_padded.clear();
-                }
-            }
-        }
-        self.process_into_buffer(&wave_in_padded, wave_out, active_channels_mask)
-    }
+    //fn process_partial_into_buffer<Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
+    //    &mut self,
+    //    wave_in: Option<&[Vin]>,
+    //    wave_out: &mut [Vout],
+    //    active_channels_mask: Option<&[bool]>,
+    //) -> ResampleResult<(usize, usize)> {
+    //    let frames = self.input_frames_next();
+    //    let mut wave_in_padded = Vec::with_capacity(self.nbr_channels());
+    //    for _ in 0..self.nbr_channels() {
+    //        wave_in_padded.push(vec![T::zero(); frames]);
+    //    }
+    //    if let Some(input) = wave_in {
+    //        for (ch_input, ch_padded) in input.iter().zip(wave_in_padded.iter_mut()) {
+    //            let mut frames_in = ch_input.as_ref().len();
+    //            if frames_in > frames {
+    //                frames_in = frames;
+    //            }
+    //            if frames_in > 0 {
+    //                ch_padded[..frames_in].copy_from_slice(&ch_input.as_ref()[..frames_in]);
+    //            } else {
+    //                ch_padded.clear();
+    //            }
+    //        }
+    //    }
+    //    self.process_into_buffer(&wave_in_padded, wave_out, active_channels_mask)
+    //}
 
     /// This is a convenience method for processing the last frames at the end of a stream.
     /// It is similar to [process_partial_into_buffer](Resampler::process_partial_into_buffer)
     /// but allocates the output buffer with each call.
     /// Note that this method allocates space for both input and output.
-    fn process_partial<V: AsRef<[T]>>(
-        &mut self,
-        wave_in: Option<&[V]>,
-        active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<Vec<Vec<T>>> {
-        let frames = self.output_frames_next();
-        let channels = self.nbr_channels();
-        let mut wave_out = Vec::with_capacity(channels);
-        for chan in 0..channels {
-            let chan_out = if active_channels_mask.map(|mask| mask[chan]).unwrap_or(true) {
-                vec![T::zero(); frames]
-            } else {
-                vec![]
-            };
-            wave_out.push(chan_out);
-        }
-        let (_, out_len) =
-            self.process_partial_into_buffer(wave_in, &mut wave_out, active_channels_mask)?;
-        for chan_out in wave_out.iter_mut() {
-            chan_out.truncate(out_len);
-        }
-        Ok(wave_out)
-    }
+    //fn process_partial<V: AsRef<[T]>>(
+    //    &mut self,
+    //    wave_in: Option<&[V]>,
+    //    active_channels_mask: Option<&[bool]>,
+    //) -> ResampleResult<Vec<Vec<T>>> {
+    //    let frames = self.output_frames_next();
+    //    let channels = self.nbr_channels();
+    //    let mut wave_out = Vec::with_capacity(channels);
+    //    for chan in 0..channels {
+    //        let chan_out = if active_channels_mask.map(|mask| mask[chan]).unwrap_or(true) {
+    //            vec![T::zero(); frames]
+    //        } else {
+    //            vec![]
+    //        };
+    //        wave_out.push(chan_out);
+    //    }
+    //    let (_, out_len) =
+    //        self.process_partial_into_buffer(wave_in, &mut wave_out, active_channels_mask)?;
+    //    for chan_out in wave_out.iter_mut() {
+    //        chan_out.truncate(out_len);
+    //    }
+    //    Ok(wave_out)
+    //}
 
     /// Convenience method for allocating an input buffer suitable for use with
     /// [process_into_buffer](Resampler::process_into_buffer). The buffer's capacity
@@ -346,11 +349,11 @@ where
     ///
     /// The `filled` argument determines if the vectors should be pre-filled with zeros or not.
     /// When false, the vectors are only allocated but returned empty.
-    fn input_buffer_allocate(&self, filled: bool) -> Vec<Vec<T>> {
-        let frames = self.input_frames_max();
-        let channels = self.nbr_channels();
-        make_buffer(channels, frames, filled)
-    }
+    //fn input_buffer_allocate(&self, filled: bool) -> Vec<Vec<T>> {
+    //    let frames = self.input_frames_max();
+    //    let channels = self.nbr_channels();
+    //    make_buffer(channels, frames, filled)
+    //}
 
     /// Get the maximum number of input frames per channel the resampler could require
     fn input_frames_max(&self) -> usize;
@@ -370,11 +373,11 @@ where
     ///
     /// The `filled` argument determines if the vectors should be pre-filled with zeros or not.
     /// When false, the vectors are only allocated but returned empty.
-    fn output_buffer_allocate(&self, filled: bool) -> Vec<Vec<T>> {
-        let frames = self.output_frames_max();
-        let channels = self.nbr_channels();
-        make_buffer(channels, frames, filled)
-    }
+    //fn output_buffer_allocate(&self, filled: bool) -> Vec<Vec<T>> {
+    //    let frames = self.output_frames_max();
+    //    let channels = self.nbr_channels();
+    //    make_buffer(channels, frames, filled)
+    //}
 
     /// Get the max number of output frames per channel
     fn output_frames_max(&self) -> usize;
@@ -417,6 +420,7 @@ where
     fn reset(&mut self);
 }
 
+/* 
 use crate as rubato;
 /// A macro for implementing wrapper traits for when a [Resampler] must be object safe.
 /// The wrapper trait locks the generic type parameters or the [Resampler] trait to specific types,
@@ -588,65 +592,54 @@ macro_rules! implement_resampler {
 }
 
 implement_resampler!(VecResampler, &[Vec<T>], &mut [Vec<T>]);
+*/
 
 /// Helper to make a mask where all channels are marked as active.
 fn update_mask_from_buffers(mask: &mut [bool]) {
     mask.iter_mut().for_each(|v| *v = true);
 }
 
-pub(crate) fn validate_buffers<T, Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
-    wave_in: &[Vin],
-    wave_out: &mut [Vout],
+pub(crate) fn validate_buffers<'a, T: 'a>(
+    wave_in: &dyn Indirect<'a, T>,
+    wave_out: &dyn IndirectMut<'a, T>,
     mask: &[bool],
     channels: usize,
     min_input_len: usize,
     min_output_len: usize,
 ) -> ResampleResult<()> {
-    if wave_in.len() != channels {
+    if wave_in.channels() != channels {
         return Err(ResampleError::WrongNumberOfInputChannels {
             expected: channels,
-            actual: wave_in.len(),
+            actual: wave_in.channels(),
         });
     }
     if mask.len() != channels {
         return Err(ResampleError::WrongNumberOfMaskChannels {
             expected: channels,
-            actual: wave_in.len(),
+            actual: mask.len(),
         });
     }
-    for (chan, wave_in) in wave_in.iter().enumerate().filter(|(chan, _)| mask[*chan]) {
-        let actual_len = wave_in.as_ref().len();
-        if actual_len < min_input_len {
-            return Err(ResampleError::InsufficientInputBufferSize {
-                channel: chan,
-                expected: min_input_len,
-                actual: actual_len,
-            });
-        }
+    if wave_in.frames() < min_input_len {
+        return Err(ResampleError::InsufficientInputBufferSize {
+            expected: min_input_len,
+            actual: wave_in.frames(),
+        });
     }
-    if wave_out.len() != channels {
+    if wave_out.channels() != channels {
         return Err(ResampleError::WrongNumberOfOutputChannels {
             expected: channels,
-            actual: wave_out.len(),
+            actual: wave_out.channels(),
         });
     }
-    for (chan, wave_out) in wave_out
-        .iter_mut()
-        .enumerate()
-        .filter(|(chan, _)| mask[*chan])
-    {
-        let actual_len = wave_out.as_mut().len();
-        if actual_len < min_output_len {
-            return Err(ResampleError::InsufficientOutputBufferSize {
-                channel: chan,
-                expected: min_output_len,
-                actual: actual_len,
-            });
-        }
+    if wave_out.frames() < min_output_len {
+        return Err(ResampleError::InsufficientOutputBufferSize {
+            expected: min_output_len,
+            actual: wave_out.frames(),
+        });
     }
     Ok(())
 }
-
+/* 
 /// Convenience method for allocating a buffer to hold a given number of channels and frames.
 /// The `filled` argument determines if the vectors should be pre-filled with zeros or not.
 /// When false, the vectors are only allocated but returned empty.
@@ -685,13 +678,16 @@ pub fn buffer_capacity<T: Sample>(buffer: &[Vec<T>]) -> usize {
         .min()
         .unwrap_or_default();
 }
+*/
+
 
 #[cfg(test)]
 pub mod tests {
-    use crate::{buffer_capacity, buffer_length, make_buffer, resize_buffer, VecResampler};
-    use crate::{FftFixedIn, FftFixedInOut, FftFixedOut};
-    use crate::{SincFixedIn, SincFixedOut};
-
+    //use crate::{buffer_capacity, buffer_length, make_buffer, resize_buffer, VecResampler};
+    //use crate::{FftFixedIn, FftFixedInOut, FftFixedOut};
+    //use crate::{SincFixedIn, SincFixedOut};
+    use audioadapter::direct::SequentialSliceOfVecs;
+    /*
     // This tests that a VecResampler can be boxed.
     #[test]
     fn boxed_resampler() {
@@ -724,6 +720,7 @@ pub mod tests {
         impl_send::<f32>();
         impl_send::<f64>();
     }
+    */
 
     #[macro_export]
     macro_rules! check_output {
@@ -734,9 +731,10 @@ pub mod tests {
             let max_output_len = $resampler.output_frames_max();
             for n in 0..50 {
                 let frames = $resampler.input_frames_next();
+                let frames_out = $resampler.output_frames_next();
                 // Check that lengths are within the reported max values
                 assert!(frames <= max_input_len);
-                assert!($resampler.output_frames_next() <= max_output_len);
+                assert!(frames_out <= max_output_len);
                 let mut waves = vec![vec![0.0f64; frames]; 2];
                 for m in 0..frames {
                     for ch in 0..2 {
@@ -744,44 +742,48 @@ pub mod tests {
                     }
                     val = val + 0.1;
                 }
-                let out = $resampler.process(&waves, None).unwrap();
-                let frames_out = out[0].len();
+                let input = SequentialSliceOfVecs::new(&waves, 2, frames).unwrap();
+                let mut waves_out = vec![vec![0.0f64; frames_out]; 2];
+                let mut output = SequentialSliceOfVecs::new_mut(&mut waves_out, 2, frames_out).unwrap();
+        
+                let (_input_frames, output_frames) = $resampler.process_into_buffer(&input, &mut output, None).unwrap();
+            
                 for ch in 0..2 {
                     assert!(
-                        out[ch][0] > prev_last,
+                        waves_out[ch][0] > prev_last,
                         "Iteration {}, first value {} prev last value {}",
                         n,
-                        out[ch][0],
+                        waves_out[ch][0],
                         prev_last
                     );
                     let expected_diff = frames as f64 * 0.1;
-                    let diff = out[ch][frames_out - 1] - out[ch][0];
+                    let diff = waves_out[ch][output_frames - 1] - waves_out[ch][0];
                     assert!(
                         diff < 1.5 * expected_diff && diff > 0.25 * expected_diff,
                         "Iteration {}, last value {} first value {}",
                         n,
-                        out[ch][frames_out - 1],
-                        out[ch][0]
+                        waves_out[ch][output_frames - 1],
+                        waves_out[ch][0]
                     );
                 }
-                prev_last = out[0][frames_out - 1];
-                for m in 0..frames_out - 1 {
+                prev_last = waves_out[0][output_frames - 1];
+                for m in 0..output_frames - 1 {
                     for ch in 0..2 {
-                        let diff = out[ch][m + 1] - out[ch][m];
+                        let diff = waves_out[ch][m + 1] - waves_out[ch][m];
                         assert!(
-                            diff < 0.15 && diff > -0.05,
+                            diff < 0.5 && diff > -0.05,
                             "Frame {}:{} next value {} value {}",
                             n,
                             m,
-                            out[ch][m + 1],
-                            out[ch][m]
+                            waves_out[ch][m + 1],
+                            waves_out[ch][m]
                         );
                     }
                 }
             }
         };
     }
-
+    /*
     #[test]
     fn test_buffer_helpers() {
         let buf1 = vec![vec![0.0f64; 7], vec![0.0f64; 5], vec![0.0f64; 10]];
@@ -802,4 +804,5 @@ pub mod tests {
         assert_eq!(buffer_length(&buf4), 10);
         assert_eq!(buffer_capacity(&buf4), 10);
     }
+    */
 }

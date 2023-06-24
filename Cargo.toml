@@ -19,6 +19,7 @@ realfft = "3.3.0"
 num-complex = "0.4"
 num-integer = "0.1.45"
 num-traits = "0.2"
+audioadapter = {path = "../audioadapter-rs"}
 
 [dev-dependencies] 
 env_logger = "0.10.0"

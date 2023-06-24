@@ -128,17 +128,15 @@ pub enum ResampleError {
     WrongNumberOfOutputChannels { expected: usize, actual: usize },
     /// Error raised when the number of channels of the mask doesn't match expected.
     WrongNumberOfMaskChannels { expected: usize, actual: usize },
-    /// Error raised when the number of frames in an input channel is less
-    /// than the minimum expected number of frames.
+    /// Error raised when the number of frames in an input buffer is less
+    /// than the minimum required number of frames.
     InsufficientInputBufferSize {
-        channel: usize,
         expected: usize,
         actual: usize,
     },
-    /// Error raised when the number of frames in an output channel is less
-    /// than the minimum expected number of frames.
+    /// Error raised when the number of frames in an output buffer is less
+    /// than the minimum required number of frames.
     InsufficientOutputBufferSize {
-        channel: usize,
         expected: usize,
         actual: usize,
     },
@@ -180,25 +178,23 @@ impl fmt::Display for ResampleError {
                 )
             }
             Self::InsufficientInputBufferSize {
-                channel,
                 expected,
                 actual,
             } => {
                 write!(
                     f,
-                    "Insufficient buffer size {} for input channel {}, expected {}",
-                    actual, channel, expected
+                    "Insufficient input buffer size: {} frames, expected {} frames",
+                    actual, expected
                 )
             }
             Self::InsufficientOutputBufferSize {
-                channel,
                 expected,
                 actual,
             } => {
                 write!(
                     f,
-                    "Insufficient buffer size {} for output channel {}, expected {}",
-                    actual, channel, expected
+                    "Insufficient output buffer size: {} frames, expected {} frames",
+                    actual, expected
                 )
             }
         }

@@ -1,3 +1,5 @@
+use audioadapter::traits::{Indirect, IndirectMut};
+
 use crate::error::{ResampleError, ResampleResult, ResamplerConstructionError};
 use crate::{update_mask_from_buffers, validate_buffers, Resampler, Sample};
 
@@ -53,6 +55,7 @@ pub struct FastFixedIn<T> {
     channel_mask: Vec<bool>,
 }
 
+/*
 /// An asynchronous resampler that return a fixed number of audio frames.
 /// The number of input frames required is given by the
 /// [input_frames_next](Resampler::input_frames_next) function.
@@ -82,7 +85,7 @@ pub struct FastFixedOut<T> {
     interpolation: PolynomialDegree,
     channel_mask: Vec<bool>,
 }
-
+*/
 /// Perform septic polynomial interpolation to get value at x.
 /// Input points are assumed to be at x = -3, -2, -1, 0, 1, 2, 3, 4
 fn interp_septic<T>(x: T, yvals: &[T]) -> T
@@ -245,10 +248,10 @@ impl<T> Resampler<T> for FastFixedIn<T>
 where
     T: Sample,
 {
-    fn process_into_buffer<Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
+    fn process_into_buffer<'a>(
         &mut self,
-        wave_in: &[Vin],
-        wave_out: &mut [Vout],
+        wave_in: &dyn Indirect<'a, T>,
+        wave_out: &mut dyn IndirectMut<'a, T>,
         active_channels_mask: Option<&[bool]>,
     ) -> ResampleResult<(usize, usize)> {
         if let Some(mask) = active_channels_mask {
@@ -278,8 +281,10 @@ where
 
         for (chan, active) in self.channel_mask.iter().enumerate() {
             if *active {
-                self.buffer[chan][2 * POLYNOMIAL_LEN_U..2 * POLYNOMIAL_LEN_U + self.chunk_size]
-                    .copy_from_slice(&wave_in[chan].as_ref()[..self.chunk_size]);
+                let slice = &mut self.buffer[chan][2 * POLYNOMIAL_LEN_U..2 * POLYNOMIAL_LEN_U + self.chunk_size];
+                //self.buffer[chan][2 * POLYNOMIAL_LEN_U..2 * POLYNOMIAL_LEN_U + self.chunk_size]
+                //    .copy_from_slice(&wave_in[chan].as_ref()[..self.chunk_size]);
+                wave_in.write_from_channel_to_slice(chan, 0, slice);
             }
         }
 
@@ -318,10 +323,12 @@ where
                                     (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
                                         ..(start_idx + 2 * POLYNOMIAL_LEN_I + 8) as usize,
                                 );
-                                *wave_out
-                                    .get_unchecked_mut(chan)
-                                    .as_mut()
-                                    .get_unchecked_mut(n) = interp_septic(frac_offset, buf);
+                                //*wave_out
+                                //    .get_unchecked_mut(chan)
+                                //    .as_mut()
+                                //    .get_unchecked_mut(n) = interp_septic(frac_offset, buf);
+                                let value = interp_septic(frac_offset, buf);
+                                wave_out.write_unchecked(chan, n, &value);
                             }
                         }
                     }
@@ -343,10 +350,12 @@ where
                                     (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
                                         ..(start_idx + 2 * POLYNOMIAL_LEN_I + 6) as usize,
                                 );
-                                *wave_out
-                                    .get_unchecked_mut(chan)
-                                    .as_mut()
-                                    .get_unchecked_mut(n) = interp_quintic(frac_offset, buf);
+                                //*wave_out
+                                //    .get_unchecked_mut(chan)
+                                //    .as_mut()
+                                //    .get_unchecked_mut(n) = interp_quintic(frac_offset, buf);
+                                let value = interp_quintic(frac_offset, buf);
+                                wave_out.write_unchecked(chan, n, &value);
                             }
                         }
                     }
@@ -368,10 +377,12 @@ where
                                     (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
                                         ..(start_idx + 2 * POLYNOMIAL_LEN_I + 4) as usize,
                                 );
-                                *wave_out
-                                    .get_unchecked_mut(chan)
-                                    .as_mut()
-                                    .get_unchecked_mut(n) = interp_cubic(frac_offset, buf);
+                                //*wave_out
+                                //    .get_unchecked_mut(chan)
+                                //    .as_mut()
+                                //    .get_unchecked_mut(n) = interp_cubic(frac_offset, buf);
+                                let value = interp_cubic(frac_offset, buf);
+                                wave_out.write_unchecked(chan, n, &value);
                             }
                         }
                     }
@@ -393,10 +404,12 @@ where
                                     (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
                                         ..(start_idx + 2 * POLYNOMIAL_LEN_I + 2) as usize,
                                 );
-                                *wave_out
-                                    .get_unchecked_mut(chan)
-                                    .as_mut()
-                                    .get_unchecked_mut(n) = interp_lin(frac_offset, buf);
+                                //*wave_out
+                                //    .get_unchecked_mut(chan)
+                                //    .as_mut()
+                                //    .get_unchecked_mut(n) = interp_lin(frac_offset, buf);
+                                let value = interp_lin(frac_offset, buf);
+                                wave_out.write_unchecked(chan, n, &value);
                             }
                         }
                     }
@@ -415,10 +428,11 @@ where
                                     .buffer
                                     .get_unchecked(chan)
                                     .get_unchecked((start_idx + 2 * POLYNOMIAL_LEN_I) as usize);
-                                *wave_out
-                                    .get_unchecked_mut(chan)
-                                    .as_mut()
-                                    .get_unchecked_mut(n) = *point;
+                                //*wave_out
+                                //    .get_unchecked_mut(chan)
+                                //    .as_mut()
+                                //    .get_unchecked_mut(n) = *point;
+                                wave_out.write_unchecked(chan, n, point);
                             }
                         }
                     }
@@ -500,7 +514,7 @@ where
         self.target_ratio = self.resample_ratio_original;
     }
 }
-
+ /*
 impl<T> FastFixedOut<T>
 where
     T: Sample,
@@ -555,10 +569,10 @@ impl<T> Resampler<T> for FastFixedOut<T>
 where
     T: Sample,
 {
-    fn process_into_buffer<Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
+    fn process_into_buffer<'a>(
         &mut self,
-        wave_in: &[Vin],
-        wave_out: &mut [Vout],
+        wave_in: &dyn Indirect<'a, T>,
+        wave_out: &mut dyn IndirectMut<'a, T>,
         active_channels_mask: Option<&[bool]>,
     ) -> ResampleResult<(usize, usize)> {
         if let Some(mask) = active_channels_mask {
@@ -567,14 +581,14 @@ where
             update_mask_from_buffers(&mut self.channel_mask);
         };
 
-        validate_buffers(
-            wave_in,
-            wave_out,
-            &self.channel_mask,
-            self.nbr_channels,
-            self.needed_input_size,
-            self.chunk_size,
-        )?;
+        //validate_buffers(
+        //    wave_in,
+        //    wave_out,
+        //    &self.channel_mask,
+        //    self.nbr_channels,
+        //    self.needed_input_size,
+        //    self.chunk_size,
+        //)?;
         for buf in self.buffer.iter_mut() {
             buf.copy_within(
                 self.current_buffer_fill..self.current_buffer_fill + 2 * POLYNOMIAL_LEN_U,
@@ -810,40 +824,58 @@ where
         self.target_ratio = self.resample_ratio_original;
     }
 }
-
+*/
 #[cfg(test)]
 mod tests {
     use crate::check_output;
     use crate::PolynomialDegree;
     use crate::Resampler;
-    use crate::{FastFixedIn, FastFixedOut};
-    use rand::Rng;
+    //use crate::{FastFixedIn, FastFixedOut};
+    use crate::FastFixedIn;
+    //use rand::Rng;
+    //use audioadapter::traits::{Indirect, IndirectMut};
+    use audioadapter::direct::SequentialSliceOfVecs;
 
     #[test]
     fn make_resampler_fi() {
         let mut resampler =
             FastFixedIn::<f64>::new(1.2, 1.0, PolynomialDegree::Cubic, 1024, 2).unwrap();
         let waves = vec![vec![0.0f64; 1024]; 2];
-        let out = resampler.process(&waves, None).unwrap();
-        assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
+        let max_frames_out = resampler.output_frames_max();
+        let nbr_frames_in_next = resampler.input_frames_next();
+
+        let mut waves_out = vec![vec![0.0f64; max_frames_out]; 2];
+        let input = SequentialSliceOfVecs::new(&waves, 2, nbr_frames_in_next).unwrap();
+        let mut output = SequentialSliceOfVecs::new_mut(&mut waves_out, 2, max_frames_out).unwrap();
+
+        let (input_frames, output_frames) = resampler.process_into_buffer(&input, &mut output, None).unwrap();
         assert!(
-            out[0].len() > 1150 && out[0].len() < 1229,
-            "expected {} - {} samples, got {}",
+            output_frames > 1150 && output_frames < 1229,
+            "expected {} - {} output frames, got {}",
             1150,
             1229,
-            out[0].len()
+            output_frames
         );
-        let out2 = resampler.process(&waves, None).unwrap();
-        assert_eq!(out2.len(), 2, "Expected {} channels, got {}", 2, out2.len());
+        assert_eq!(
+            input_frames, nbr_frames_in_next,
+            "expected {} input frames, got {}",
+            nbr_frames_in_next, input_frames
+        );
+        let (input_frames, output_frames) = resampler.process_into_buffer(&input, &mut output, None).unwrap();
         assert!(
-            out2[0].len() > 1226 && out2[0].len() < 1232,
-            "expected {} - {} samples, got {}",
+            output_frames > 1226 && output_frames < 1232,
+            "expected {} - {} output frames, got {}",
             1226,
             1232,
-            out2[0].len()
+            output_frames
+        );
+        assert_eq!(
+            input_frames, nbr_frames_in_next,
+            "expected {} input frames, got {}",
+            nbr_frames_in_next, input_frames
         );
     }
-
+/*
     #[test]
     fn reset_resampler_fi() {
         let mut resampler =
@@ -969,7 +1001,8 @@ mod tests {
             out2[0].len()
         );
     }
-
+*/
+/*
     #[test]
     fn make_resampler_fo() {
         let mut resampler =
@@ -1144,11 +1177,12 @@ mod tests {
             FastFixedOut::<f64>::new(8.0, 1.0, PolynomialDegree::Cubic, 1024, 2).unwrap();
         check_output!(check_fo_output, resampler);
     }
-
+    */
     #[test]
     fn check_fi_output() {
         let mut resampler =
             FastFixedIn::<f64>::new(8.0, 1.0, PolynomialDegree::Cubic, 1024, 2).unwrap();
         check_output!(check_fo_output, resampler);
     }
+
 }
