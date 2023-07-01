@@ -136,9 +136,9 @@ where
         }
     }
 
-    /// Resample a small chunk
+    /// Resample a small chunk.
     fn resample_unit(&mut self, wave_in: &[T], wave_out: &mut [T], overlap: &mut [T]) {
-        // Copy to input buffer and clear padding area
+        // Copy to input buffer and clear padding area.
         self.input_buf[0..self.fft_size_in].copy_from_slice(wave_in);
         for item in self
             .input_buf
@@ -149,7 +149,7 @@ where
             *item = T::zero();
         }
 
-        // FFT and store result in history, update index
+        // FFT and store result in history, update index.
         self.fft
             .process_with_scratch(&mut self.input_buf, &mut self.input_f, &mut self.scratch_fw)
             .unwrap();
@@ -160,7 +160,7 @@ where
             self.fft_size_out
         };
 
-        // multiply with filter FT
+        // Multiply with filter FT.
         self.input_f
             .iter_mut()
             .take(new_len)
@@ -172,7 +172,7 @@ where
         for val in self.output_f[new_len..].iter_mut() {
             *val = Complex::zero();
         }
-        // IFFT result, store result and overlap
+        // IFFT result, store result and overlap.
         self.ifft
             .process_with_scratch(
                 &mut self.output_f,
@@ -191,7 +191,7 @@ impl<T> FftFixedInOut<T>
 where
     T: Sample,
 {
-    /// Create a new FftFixedInOut
+    /// Create a new FftFixedInOut.
     ///
     /// Parameters are:
     /// - `sample_rate_input`: Input sample rate, must be > 0.
@@ -321,7 +321,7 @@ impl<T> FftFixedOut<T>
 where
     T: Sample,
 {
-    /// Create a new FftFixedOut
+    /// Create a new FftFixedOut.
     ///
     /// Parameters are:
     /// - `sample_rate_input`: Input sample rate, must be > 0.
@@ -420,7 +420,7 @@ where
         let processed_frames =
             self.saved_frames + self.fft_size_out * (self.frames_needed / self.fft_size_in);
 
-        // copy to output, and save extra frames for next round
+        // Copy to output, and save extra frames for next round.
         if processed_frames >= self.chunk_size_out {
             self.saved_frames = processed_frames - self.chunk_size_out;
             for (chan, active) in self.channel_mask.iter().enumerate() {
@@ -436,7 +436,7 @@ where
         } else {
             self.saved_frames = processed_frames;
         }
-        //calculate number of needed frames from next round
+        // Calculate number of needed frames from next round.
         let frames_needed_out = if self.chunk_size_out > self.saved_frames {
             self.chunk_size_out - self.saved_frames
         } else {
@@ -502,7 +502,7 @@ impl<T> FftFixedIn<T>
 where
     T: Sample,
 {
-    /// Create a new FftFixedIn
+    /// Create a new FftFixedIn.
     ///
     /// Parameters are:
     /// - `sample_rate_input`: Input sample rate, must be > 0.
@@ -584,7 +584,7 @@ where
             needed_len,
         )?;
 
-        // copy new samples to input buffer
+        // Copy new samples to input buffer.
         for (chan, active) in self.channel_mask.iter().enumerate() {
             if *active {
                 for (input, buffer) in wave_in[chan].as_ref().iter().zip(
@@ -614,7 +614,7 @@ where
             }
         }
 
-        // save extra frames for next round
+        // Save extra frames for next round.
         let frames_in_used = nbr_chunks_ready * self.fft_size_in;
         let extra = self.saved_frames - frames_in_used;
 
@@ -745,7 +745,7 @@ mod tests {
 
     #[test]
     fn make_resampler_fio_skipped() {
-        // asking for 1024 give the nearest which is 1029 -> 1120
+        // Asking for 1024 give the nearest which is 1029 -> 1120.
         let mut resampler = FftFixedInOut::<f64>::new(44100, 48000, 1024, 2).unwrap();
         let frames = resampler.input_frames_next();
         let waves = vec![vec![0.0f64; frames], Vec::new()];
@@ -862,7 +862,7 @@ mod tests {
         assert_eq!(out.len(), 2);
         assert_eq!(consumed_in_len, frames);
         assert_eq!(processed_out_len, 640);
-        // The vectors are not truncated during processing
+        // The vectors are not truncated during processing.
         assert_eq!(allocated_out_len, out[0].len());
         assert_eq!(allocated_out_len, out[1].len());
     }
@@ -906,7 +906,7 @@ mod tests {
 
     #[test]
     fn make_resampler_fio_unusualratio() {
-        // asking for 1024 give the nearest which is 1029 -> 1120
+        // Asking for 1024 give the nearest which is 1029 -> 1120.
         let mut resampler = FftFixedInOut::<f64>::new(44100, 44110, 1024, 2).unwrap();
         let frames = resampler.input_frames_next();
         let waves = vec![vec![0.0f64; frames]; 2];

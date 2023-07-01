@@ -25,7 +25,7 @@ pub struct SincInterpolationParameters {
     /// Higher values use more memory for storing the sinc filters.
     /// Only the points actually needed are calculated during processing
     /// so a larger number does not directly lead to higher cpu usage.
-    /// But keeping it down helps in keeping the sincs in the cpu cache. Start at 128.
+    /// A lower value helps in keeping the sincs in the cpu cache. Start at 128.
     pub oversampling_factor: usize,
     /// Interpolation type, see `SincInterpolationType`
     pub interpolation: SincInterpolationType,
@@ -39,33 +39,33 @@ pub struct SincInterpolationParameters {
 /// Instead they have to be computed as needed, which becomes impractical since the
 /// sincs are very expensive to generate in terms of cpu time.
 /// It's more efficient to combine the sinc filters with some other interpolation technique.
-/// Then sinc filters are used to provide a fixed number of interpolated points between input samples,
-/// and then the new value is calculated by interpolation between those points.
+/// Then, sinc filters are used to provide a fixed number of interpolated points between input samples,
+/// and then, the new value is calculated by interpolation between those points.
 #[derive(Debug)]
 pub enum SincInterpolationType {
     /// For cubic interpolation, the four nearest intermediate points are calculated
     /// using sinc interpolation.
-    /// Then a cubic polynomial is fitted to these points, and is then used to calculate the new sample value.
-    /// The computation time is about twice the one for linear interpolation,
+    /// Then, a cubic polynomial is fitted to these points, and is used to calculate the new sample value.
+    /// The computation time is approximately twice as long as that of linear interpolation,
     /// but it requires much fewer intermediate points for a good result.
     Cubic,
     /// For quadratic interpolation, the three nearest intermediate points are calculated
     /// using sinc interpolation.
-    /// Then a quadratic polynomial is fitted to these points, and is then used to calculate the new sample value.
-    /// The computation time lies abouhalfway between linear and quadratic interpolation.
+    /// Then, a quadratic polynomial is fitted to these points, and is used to calculate the new sample value.
+    /// The computation time lies approximately halfway between that of linear and quadratic interpolation.
     Quadratic,
-    /// With linear interpolation the new sample value is calculated by linear interpolation
+    /// For linear interpolation, the new sample value is calculated by linear interpolation
     /// between the two nearest points.
     /// This requires two intermediate points to be calculated using sinc interpolation,
-    /// and te output is a weighted average of these two.
+    /// and the output is obtained by taking a weighted average of these two points.
     /// This is relatively fast, but needs a large number of intermediate points to
     /// push the resampling artefacts below the noise floor.
     Linear,
     /// The Nearest mode doesn't do any interpolation, but simply picks the nearest intermediate point.
     /// This is useful when the nearest point is actually the correct one, for example when upsampling by a factor 2,
     /// like 48kHz->96kHz.
-    /// Then setting the oversampling_factor to 2, and using Nearest mode,
-    /// no unnecessary computations are performed and the result is the same as for synchronous resampling.
+    /// Then, when setting the oversampling_factor to 2 and using Nearest mode,
+    /// no unnecessary computations are performed and the result is equivalent to that of synchronous resampling.
     /// This also works for other ratios that can be expressed by a fraction. For 44.1kHz -> 48 kHz,
     /// setting oversampling_factor to 160 gives the desired result (since 48kHz = 160/147 * 44.1kHz).
     Nearest,
@@ -80,7 +80,7 @@ pub enum SincInterpolationType {
 /// The resampling ratio can be freely adjusted within the range specified to the constructor.
 /// Adjusting the ratio does not recalculate the sinc functions used by the anti-aliasing filter.
 /// This causes no issue when increasing the ratio (which slows down the output).
-/// However when decreasing more than a few percent (or speeding up the output),
+/// However, when decreasing more than a few percent (or speeding up the output),
 /// the filters can no longer suppress all aliasing and this may lead to some artefacts.
 /// Higher maximum ratios require more memory to be allocated by [Resampler::output_buffer_allocate].
 pub struct SincFixedIn<T> {
@@ -97,7 +97,7 @@ pub struct SincFixedIn<T> {
     channel_mask: Vec<bool>,
 }
 
-/// An asynchronous resampler that return a fixed number of audio frames.
+/// An asynchronous resampler that returns a fixed number of audio frames.
 /// The number of input frames required is given by the
 /// [input_frames_next](Resampler::input_frames_next) function.
 ///
@@ -174,7 +174,7 @@ where
 }
 
 /// Perform cubic polynomial interpolation to get value at x.
-/// Input points are assumed to be at x = -1, 0, 1, 2
+/// Input points are assumed to be at x = -1, 0, 1, 2.
 fn interp_cubic<T>(x: T, yvals: &[T; 4]) -> T
 where
     T: Sample,
@@ -190,8 +190,8 @@ where
     a0 + a1 * x + a2 * x2 + a3 * x3
 }
 
-/// Perform cubic polynomial interpolation to get value at x.
-/// Input points are assumed to be at x = 0, 1, 2
+/// Perform quadratic polynomial interpolation to get value at x.
+/// Input points are assumed to be at x = 0, 1, 2.
 fn interp_quad<T>(x: T, yvals: &[T; 3]) -> T
 where
     T: Sample,
@@ -203,7 +203,7 @@ where
     T::coerce(0.5) * (a0 + a1 * x + a2 * x2)
 }
 
-/// Linear interpolation between two points at x=0 and x=1
+/// Perform linear interpolation between two points at x=0 and x=1.
 fn interp_lin<T>(x: T, yvals: &[T; 2]) -> T
 where
     T: Sample,
@@ -230,7 +230,7 @@ impl<T> SincFixedIn<T>
 where
     T: Sample,
 {
-    /// Create a new SincFixedIn
+    /// Create a new SincFixedIn.
     ///
     /// Parameters are:
     /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
@@ -268,7 +268,7 @@ where
         )
     }
 
-    /// Create a new SincFixedIn using an existing Interpolator
+    /// Create a new SincFixedIn using an existing Interpolator.
     ///
     /// Parameters are:
     /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
@@ -346,7 +346,7 @@ where
         let end_idx =
             self.chunk_size as isize - (sinc_len as isize + 1) - t_ratio_end.ceil() as isize;
 
-        //update buffer with new data
+        // Update buffer with new data.
         for buf in self.buffer.iter_mut() {
             buf.copy_within(self.chunk_size..self.chunk_size + 2 * sinc_len, 0);
         }
@@ -465,7 +465,7 @@ where
             }
         }
 
-        // store last index for next iteration
+        // Store last index for next iteration.
         self.last_index = idx - self.chunk_size as f64;
         self.resample_ratio = self.target_ratio;
         trace!(
@@ -543,7 +543,7 @@ impl<T> SincFixedOut<T>
 where
     T: Sample,
 {
-    /// Create a new SincFixedOut
+    /// Create a new SincFixedOut.
     ///
     /// Parameters are:
     /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
@@ -580,7 +580,7 @@ where
         )
     }
 
-    /// Create a new SincFixedOut using an existing Interpolator
+    /// Create a new SincFixedOut using an existing Interpolator.
     ///
     /// Parameters are:
     /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
@@ -771,7 +771,7 @@ where
             }
         }
 
-        // store last index for next iteration
+        // Store last index for next iteration.
         let input_frames_used = self.needed_input_size;
         self.last_index = idx - self.current_buffer_fill as f64;
         self.resample_ratio = self.target_ratio;
