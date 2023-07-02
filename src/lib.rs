@@ -115,6 +115,9 @@
 //!
 //! # Changelog
 //!
+//! - v0.14.1
+//!   - More bugfixes for buffer allocation and max output length calculation.
+//!   - Fix building with `debug` feature.
 //! - v0.14.0
 //!   - Add argument to let `input/output_buffer_allocate()` optionally pre-fill buffers with zeros.
 //!   - Add convenience methods for managing buffers.
@@ -727,8 +730,13 @@ pub mod tests {
         ($name:ident, $resampler:ident) => {
             let mut val = 0.0;
             let mut prev_last = -0.1;
-            for n in 0..5 {
+            let max_input_len = $resampler.input_frames_max();
+            let max_output_len = $resampler.output_frames_max();
+            for n in 0..50 {
                 let frames = $resampler.input_frames_next();
+                // Check that lengths are within the reported max values
+                assert!(frames <= max_input_len);
+                assert!($resampler.output_frames_next() <= max_output_len);
                 let mut waves = vec![vec![0.0f64; frames]; 2];
                 for m in 0..frames {
                     for ch in 0..2 {
