@@ -53,12 +53,12 @@ pub struct FastFixedIn<T> {
     channel_mask: Vec<bool>,
 }
 
-/// An asynchronous resampler that return a fixed number of audio frames.
+/// An asynchronous resampler that returns a fixed number of audio frames.
 /// The number of input frames required is given by the
 /// [input_frames_next](Resampler::input_frames_next) function.
 ///
 /// The resampling is done by interpolating between the input samples.
-/// The polynomial degree can selected, see [PolynomialDegree] for the available options.
+/// The polynomial degree can be selected, see [PolynomialDegree] for the available options.
 ///
 /// Note that no anti-aliasing filter is used.
 /// This makes it run considerably faster than the corresponding SincFixedOut, which performs anti-aliasing filtering.
@@ -84,7 +84,7 @@ pub struct FastFixedOut<T> {
 }
 
 /// Perform septic polynomial interpolation to get value at x.
-/// Input points are assumed to be at x = -3, -2, -1, 0, 1, 2, 3, 4
+/// Input points are assumed to be at x = -3, -2, -1, 0, 1, 2, 3, 4.
 fn interp_septic<T>(x: T, yvals: &[T]) -> T
 where
     T: Sample,
@@ -133,7 +133,7 @@ where
 }
 
 /// Perform quintic polynomial interpolation to get value at x.
-/// Input points are assumed to be at x = -2, -1, 0, 1, 2, 3
+/// Input points are assumed to be at x = -2, -1, 0, 1, 2, 3.
 fn interp_quintic<T>(x: T, yvals: &[T]) -> T
 where
     T: Sample,
@@ -159,7 +159,7 @@ where
 }
 
 /// Perform cubic polynomial interpolation to get value at x.
-/// Input points are assumed to be at x = -1, 0, 1, 2
+/// Input points are assumed to be at x = -1, 0, 1, 2.
 fn interp_cubic<T>(x: T, yvals: &[T]) -> T
 where
     T: Sample,
@@ -173,7 +173,7 @@ where
     a0 + a1 * x + a2 * x2 + a3 * x3
 }
 
-/// Linear interpolation between two points at x=0 and x=1
+/// Linear interpolation between two points at x=0 and x=1.
 fn interp_lin<T>(x: T, yvals: &[T]) -> T
 where
     T: Sample,
@@ -200,7 +200,7 @@ impl<T> FastFixedIn<T>
 where
     T: Sample,
 {
-    /// Create a new FastFixedIn
+    /// Create a new FastFixedIn.
     ///
     /// Parameters are:
     /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
@@ -216,8 +216,8 @@ where
         nbr_channels: usize,
     ) -> Result<Self, ResamplerConstructionError> {
         debug!(
-            "Create new FastFixedIn, ratio: {}, chunk_size: {}, channels: {}, parameters: {:?}",
-            resample_ratio, chunk_size, nbr_channels, parameters
+            "Create new FastFixedIn, ratio: {}, chunk_size: {}, channels: {}",
+            resample_ratio, chunk_size, nbr_channels,
         );
 
         validate_ratios(resample_ratio, max_resample_ratio_relative)?;
@@ -271,7 +271,7 @@ where
             needed_len,
         )?;
 
-        //update buffer with new data
+        // Update buffer with new data.
         for buf in self.buffer.iter_mut() {
             buf.copy_within(self.chunk_size..self.chunk_size + 2 * POLYNOMIAL_LEN_U, 0);
         }
@@ -290,6 +290,7 @@ where
         let t_ratio_increment = (t_ratio_end - t_ratio) / approximate_nbr_frames;
         let end_idx =
             self.chunk_size as isize - (POLYNOMIAL_LEN_I + 1) - t_ratio_end.ceil() as isize;
+
         //println!(
         //    "start ratio {}, end_ratio {}, frames {}, t_increment {}",
         //    t_ratio,
@@ -427,7 +428,7 @@ where
             }
         }
 
-        // store last index for next iteration
+        // Store last index for next iteration.
         self.last_index = idx - self.chunk_size as f64;
         self.resample_ratio = self.target_ratio;
         trace!(
@@ -505,7 +506,7 @@ impl<T> FastFixedOut<T>
 where
     T: Sample,
 {
-    /// Create a new FastFixedOut
+    /// Create a new FastFixedOut.
     ///
     /// Parameters are:
     /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
@@ -521,8 +522,8 @@ where
         nbr_channels: usize,
     ) -> Result<Self, ResamplerConstructionError> {
         debug!(
-            "Create new FastFixedIn, ratio: {}, chunk_size: {}, channels: {}, parameters: {:?}",
-            resample_ratio, chunk_size, nbr_channels, parameters
+            "Create new FastFixedOut, ratio: {}, chunk_size: {}, channels: {}",
+            resample_ratio, chunk_size, nbr_channels,
         );
         validate_ratios(resample_ratio, max_resample_ratio_relative)?;
 
@@ -718,7 +719,7 @@ where
             }
         }
 
-        // store last index for next iteration
+        // Store last index for next iteration.
         let input_frames_used = self.needed_input_size;
         self.last_index = idx - self.current_buffer_fill as f64;
         self.resample_ratio = self.target_ratio;
@@ -908,7 +909,7 @@ mod tests {
 
     #[test]
     fn make_resampler_fi_downsample() {
-        // Replicate settings from reported issue
+        // Replicate settings from reported issue.
         let mut resampler = FastFixedIn::<f64>::new(
             16000 as f64 / 96000 as f64,
             1.0,
@@ -940,7 +941,7 @@ mod tests {
 
     #[test]
     fn make_resampler_fi_upsample() {
-        // Replicate settings from reported issue
+        // Replicate settings from reported issue.
         let mut resampler = FastFixedIn::<f64>::new(
             192000 as f64 / 44100 as f64,
             1.0,

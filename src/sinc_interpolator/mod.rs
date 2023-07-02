@@ -48,24 +48,24 @@ interpolator! {
     trait NeonSample;
 }
 
-/// Functions for making the scalar product with a sinc
+/// Functions for making the scalar product with a sinc.
 pub trait SincInterpolator<T>: Send {
     /// Make the scalar product between the waveform starting at `index` and the sinc of `subindex`.
     fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T;
 
-    /// Get sinc length
+    /// Get sinc length.
     fn len(&self) -> usize;
 
-    /// Check if sincs are empty
+    /// Check if sincs are empty.
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    /// Get number of sincs used for oversampling
+    /// Get number of sincs used for oversampling.
     fn nbr_sincs(&self) -> usize;
 }
 
-/// A plain scalar interpolator
+/// A plain scalar interpolator.
 pub struct ScalarInterpolator<T> {
     sincs: Vec<Vec<T>>,
     length: usize,
@@ -76,7 +76,7 @@ impl<T> SincInterpolator<T> for ScalarInterpolator<T>
 where
     T: Sample,
 {
-    /// Calculate the scalar produt of an input wave and the selected sinc filter
+    /// Calculate the scalar produt of an input wave and the selected sinc filter.
     fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T {
         assert!(
             (index + self.length) < wave.len(),
@@ -130,7 +130,7 @@ impl<T> ScalarInterpolator<T>
 where
     T: Sample,
 {
-    /// Create a new ScalarInterpolator
+    /// Create a new ScalarInterpolator.
     ///
     /// Parameters are:
     /// - `sinc_len`: Length of sinc functions.
