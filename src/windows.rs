@@ -17,7 +17,8 @@ pub enum WindowFunction {
     Hann2,
 }
 
-/// Helper function. Standard Blackman-Harris window
+/// Helper function. Standard Blackman-Harris window.
+// The window created is periodic.
 pub fn blackman_harris<T>(npoints: usize) -> Vec<T>
 where
     T: Sample,
@@ -40,7 +41,8 @@ where
     window
 }
 
-/// Helper function. Standard Blackman window
+/// Helper function. Standard Blackman window.
+// The window created is periodic.
 pub fn blackman<T>(npoints: usize) -> Vec<T>
 where
     T: Sample,
@@ -60,7 +62,8 @@ where
     window
 }
 
-/// Standard Hann window
+/// Helper function. Standard Hann window.
+// The window created is periodic.
 pub fn hann<T>(npoints: usize) -> Vec<T>
 where
     T: Sample,
@@ -77,7 +80,7 @@ where
     window
 }
 
-/// Make the selected window function
+/// Make the selected window function.
 pub fn make_window<T>(npoints: usize, windowfunc: WindowFunction) -> Vec<T>
 where
     T: Sample,

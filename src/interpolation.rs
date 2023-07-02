@@ -1,4 +1,4 @@
-/// Get the two nearest time points for time t in format (index, subindex)
+/// Get the two nearest time points for time t in format (index, subindex).
 pub fn get_nearest_times_2(t: f64, factor: isize, points: &mut [(isize, isize); 2]) {
     let mut index = t.floor() as isize;
     let mut subindex = ((t - t.floor()) * (factor as f64)).floor() as isize;
@@ -11,7 +11,7 @@ pub fn get_nearest_times_2(t: f64, factor: isize, points: &mut [(isize, isize); 
     points[1] = (index, subindex);
 }
 
-/// Get the four nearest time points for time t in format (index, subindex).
+/// Get the three nearest time points for time t in format (index, subindex).
 pub fn get_nearest_times_3(t: f64, factor: isize, points: &mut [(isize, isize); 3]) {
     let start = t.floor() as isize;
     let frac = ((t - t.floor()) * (factor as f64)).floor() as isize;

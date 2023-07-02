@@ -1,11 +1,13 @@
-use crate::sinc_interpolator::SincInterpolator;
 use crate::error::{CpuFeature, MissingCpuFeature};
 use crate::sinc::make_sincs;
+use crate::sinc_interpolator::SincInterpolator;
 use crate::windows::WindowFunction;
-use core::arch::aarch64::{float32x4_t, float64x2_t};
-use core::arch::aarch64::{vadd_f32, vaddq_f32, vfmaq_f32, vld1q_f32, vmovq_n_f32, vst1_f32, vget_high_f32, vget_low_f32};
-use core::arch::aarch64::{vaddq_f64, vfmaq_f64, vld1q_f64, vmovq_n_f64, vst1q_f64};
 use crate::Sample;
+use core::arch::aarch64::{float32x4_t, float64x2_t};
+use core::arch::aarch64::{
+    vadd_f32, vaddq_f32, vfmaq_f32, vget_high_f32, vget_low_f32, vld1q_f32, vmovq_n_f32, vst1_f32,
+};
+use core::arch::aarch64::{vaddq_f64, vfmaq_f64, vld1q_f64, vmovq_n_f64, vst1q_f64};
 
 /// Collection of cpu features required for this interpolator.
 static FEATURES: &[CpuFeature] = &[CpuFeature::Neon];
@@ -121,9 +123,9 @@ impl NeonSample for f64 {
         let mut s_idx = 0;
         for _ in 0..wave_cut.len() / 8 {
             let w0 = vld1q_f64(wave_cut.get_unchecked(w_idx));
-            let w1 = vld1q_f64(wave_cut.get_unchecked(w_idx+2));
-            let w2 = vld1q_f64(wave_cut.get_unchecked(w_idx+4));
-            let w3 = vld1q_f64(wave_cut.get_unchecked(w_idx+6));
+            let w1 = vld1q_f64(wave_cut.get_unchecked(w_idx + 2));
+            let w2 = vld1q_f64(wave_cut.get_unchecked(w_idx + 4));
+            let w3 = vld1q_f64(wave_cut.get_unchecked(w_idx + 6));
             acc0 = vfmaq_f64(acc0, w0, *sinc.get_unchecked(s_idx));
             acc1 = vfmaq_f64(acc1, w1, *sinc.get_unchecked(s_idx + 1));
             acc2 = vfmaq_f64(acc2, w2, *sinc.get_unchecked(s_idx + 2));
@@ -140,7 +142,7 @@ impl NeonSample for f64 {
     }
 }
 
-/// A SSE accelerated interpolator
+/// A SSE accelerated interpolator.
 pub struct NeonInterpolator<T>
 where
     T: NeonSample,
@@ -154,7 +156,7 @@ impl<T> SincInterpolator<T> for NeonInterpolator<T>
 where
     T: Sample,
 {
-    /// Calculate the scalar produt of an input wave and the selected sinc filter
+    /// Calculate the scalar produt of an input wave and the selected sinc filter.
     fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T {
         assert!(
             (index + self.length) < wave.len(),
@@ -184,7 +186,7 @@ impl<T> NeonInterpolator<T>
 where
     T: Sample,
 {
-    /// Create a new NeonInterpolator
+    /// Create a new NeonInterpolator.
     ///
     /// Parameters are:
     /// - `sinc_len`: Length of sinc functions.
@@ -215,9 +217,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::sinc_interpolator::SincInterpolator;
-    use crate::sinc_interpolator::sinc_interpolator_neon::NeonInterpolator;
     use crate::sinc::make_sincs;
+    use crate::sinc_interpolator::sinc_interpolator_neon::NeonInterpolator;
+    use crate::sinc_interpolator::SincInterpolator;
     use crate::WindowFunction;
     use num_traits::Float;
     use rand::Rng;

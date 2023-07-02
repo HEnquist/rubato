@@ -1,7 +1,7 @@
 use crate::windows::{make_window, WindowFunction};
 use crate::Sample;
 
-/// Helper function: sinc(x) = sin(pi*x)/(pi*x)
+/// Helper function: sinc(x) = sin(pi*x)/(pi*x).
 pub fn sinc<T>(value: T) -> T
 where
     T: Sample,
