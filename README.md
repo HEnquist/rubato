@@ -120,7 +120,7 @@ The `rubato` crate requires rustc version 1.61 or newer.
 
 - v0.14.1
   - More bugfixes for buffer allocation and max output length calculation.
-  - Fix building with `debug` feature.
+  - Fix building with `log` feature.
 - v0.14.0
   - Add argument to let `input/output_buffer_allocate()` optionally pre-fill buffers with zeros.
   - Add convenience methods for managing buffers.
