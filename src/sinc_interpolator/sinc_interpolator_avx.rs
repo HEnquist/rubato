@@ -1,6 +1,6 @@
-use crate::sinc_interpolator::SincInterpolator;
 use crate::error::{CpuFeature, MissingCpuFeature};
 use crate::sinc::make_sincs;
+use crate::sinc_interpolator::SincInterpolator;
 use crate::windows::WindowFunction;
 use crate::Sample;
 use core::arch::x86_64::{
@@ -138,7 +138,7 @@ impl AvxSample for f64 {
     }
 }
 
-/// An AVX accelerated interpolator
+/// An AVX accelerated interpolator.
 pub struct AvxInterpolator<T>
 where
     T: AvxSample,
@@ -152,7 +152,7 @@ impl<T> SincInterpolator<T> for AvxInterpolator<T>
 where
     T: AvxSample,
 {
-    /// Calculate the scalar produt of an input wave and the selected sinc filter
+    /// Calculate the scalar produt of an input wave and the selected sinc filter.
     fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T {
         assert!(
             (index + self.length) < wave.len(),
@@ -182,7 +182,7 @@ impl<T> AvxInterpolator<T>
 where
     T: Sample,
 {
-    /// Create a new AvxInterpolator
+    /// Create a new AvxInterpolator.
     ///
     /// Parameters are:
     /// - `sinc_len`: Length of sinc functions.
@@ -213,9 +213,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::sinc_interpolator::SincInterpolator;
-    use crate::sinc_interpolator::sinc_interpolator_avx::AvxInterpolator;
     use crate::sinc::make_sincs;
+    use crate::sinc_interpolator::sinc_interpolator_avx::AvxInterpolator;
+    use crate::sinc_interpolator::SincInterpolator;
     use crate::WindowFunction;
     use num_traits::Float;
     use rand::Rng;

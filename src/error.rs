@@ -78,7 +78,7 @@ impl fmt::Display for MissingCpuFeature {
 
 impl error::Error for MissingCpuFeature {}
 
-/// The error type returned when constructing [Resampler](crate::Resampler)
+/// The error type returned when constructing [Resampler](crate::Resampler).
 pub enum ResamplerConstructionError {
     InvalidSampleRate { input: usize, output: usize },
     InvalidRelativeRatio(f64),
@@ -122,20 +122,20 @@ pub enum ResampleError {
     /// Error raised when calling [Resampler::set_resample_ratio](crate::Resampler::set_resample_ratio)
     /// on a synchronous resampler.
     SyncNotAdjustable,
-    /// Error raised when the number of channels of the input buffer doesn't match expected.
+    /// Error raised when the number of channels in the input buffer doesn't match the value expected.
     WrongNumberOfInputChannels { expected: usize, actual: usize },
-    /// Error raised when the number of channels of the output buffer doesn't match expected.
+    /// Error raised when the number of channels in the output buffer doesn't match the value expected.
     WrongNumberOfOutputChannels { expected: usize, actual: usize },
-    /// Error raised when the number of channels of the mask doesn't match expected.
+    /// Error raised when the number of channels in the mask doesn't match the value expected.
     WrongNumberOfMaskChannels { expected: usize, actual: usize },
-    /// Error raised when the number of frames in an input buffer is less
-    /// than the minimum required number of frames.
+    /// Error raised when the number of frames in an input channel is less
+    /// than the minimum expected.
     InsufficientInputBufferSize {
         expected: usize,
         actual: usize,
     },
-    /// Error raised when the number of frames in an output buffer is less
-    /// than the minimum required number of frames.
+    /// Error raised when the number of frames in an output channel is less
+    /// than the minimum expected.
     InsufficientOutputBufferSize {
         expected: usize,
         actual: usize,

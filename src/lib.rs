@@ -15,10 +15,10 @@
 //!
 //! # Input and output data format
 //!
-//! Input and output data is stored non-interleaved.
+//! Input and output data are stored in a non-interleaved format.
 //!
 //! Input and output data are stored as slices of references, `&[AsRef<[f32]>]` or `&[AsRef<[f64]>]`.
-//! The inner vectors (`AsRef<[f32]>` or `AsRef<[f64]>`) hold the sample values for one channel each.
+//! The inner references (`AsRef<[f32]>` or `AsRef<[f64]>`) hold the sample values for one channel each.
 //!
 //! Since normal vectors implement the `AsRef` trait,
 //! `Vec<Vec<f32>>` and `Vec<Vec<f64>>` can be used for both input and output.
@@ -49,9 +49,9 @@
 //! The SIMD capabilities of the CPU are determined at runtime.
 //! If no supported SIMD instruction set is available, it falls back to a scalar implementation.
 //!
-//! On x86_64 it will try to use AVX. If AVX isn't available, it will instead try SSE3.
+//! On x86_64, it will try to use AVX. If AVX isn't available, it will instead try SSE3.
 //!
-//! On aarch64 (64-bit Arm) it will use Neon if available.
+//! On aarch64 (64-bit Arm), it will use Neon if available.
 //!
 //! ## Synchronous resampling
 //!
@@ -94,8 +94,7 @@
 //! # Included examples
 //!
 //! The `examples` directory contains a few sample applications for testing the resamplers.
-//! There are also Python scripts for generating simple test signals,
-//! as well as analyzing the resampled results.
+//! There are also Python scripts for generating simple test signals as well as analyzing the resampled results.
 //!
 //! The examples read and write raw audio data in 64-bit float format.
 //! They can be used to process .wav files if the files are first converted to the right format.
@@ -118,6 +117,7 @@
 //!
 //! - v0.14.1
 //!   - More bugfixes for buffer allocation and max output length calculation.
+//!   - Fix building with `log` feature.
 //! - v0.14.0
 //!   - Add argument to let `input/output_buffer_allocate()` optionally pre-fill buffers with zeros.
 //!   - Add convenience methods for managing buffers.
@@ -149,7 +149,7 @@
 #[cfg(feature = "log")]
 extern crate log;
 
-// Logging wrapper macros to avoid cluttering the code with conditionals
+// Logging wrapper macros to avoid cluttering the code with conditionals.
 #[allow(unused)]
 macro_rules! trace { ($($x:tt)*) => (
     #[cfg(feature = "log")] {
@@ -192,7 +192,7 @@ mod windows;
 
 pub mod sinc_interpolator;
 
-use audioadapter::traits::{Indirect, IndirectMut};
+use audioadapter::{Indirect, IndirectMut};
 
 //pub use crate::asynchro_fast::{FastFixedIn, FastFixedOut, PolynomialDegree};
 pub use crate::asynchro_fast::{FastFixedIn, PolynomialDegree};
@@ -248,7 +248,7 @@ where
     /// memory from the heap can cause glitches. If this is not a problem, you may use
     /// the [process](Resampler::process) method instead.
     ///
-    /// The input and output buffers are noninterleaved.
+    /// The input and output buffers are used in a non-interleaved format.
     /// The input is a slice, where each element of the slice is itself referenceable
     /// as a slice ([AsRef<\[T\]>](AsRef)) which contains the samples for a single channel.
     /// Because `[Vec<T>]` implements [`AsRef<\[T\]>`](AsRef), the input may be [`Vec<Vec<T>>`](Vec).
@@ -282,7 +282,7 @@ where
     /// Use this when there are fewer frames remaining than what the resampler requires as input.
     /// Calling this function is equivalent to padding the input buffer with zeros
     /// to make it the right input length, and then calling [process_into_buffer](Resampler::process_into_buffer).
-    /// The method can also be called without any input frames, by providing `None` as input buffer.
+    /// This method can also be called without any input frames, by providing `None` as input buffer.
     /// This can be utilized to push any remaining delayed frames out from the internal buffers.
     /// Note that this method allocates space for a temporary input buffer.
     /// Real-time applications should instead call `process_into_buffer` with a zero-padded pre-allocated input buffer.
@@ -355,14 +355,14 @@ where
     //    make_buffer(channels, frames, filled)
     //}
 
-    /// Get the maximum number of input frames per channel the resampler could require
+    /// Get the maximum number of input frames per channel the resampler could require.
     fn input_frames_max(&self) -> usize;
 
     /// Get the number of frames per channel needed for the next call to
-    /// [process_into_buffer](Resampler::process_into_buffer) or [process](Resampler::process)
+    /// [process_into_buffer](Resampler::process_into_buffer) or [process](Resampler::process).
     fn input_frames_next(&self) -> usize;
 
-    /// Get the maximum number of channels this Resampler is configured for
+    /// Get the maximum number of channels this Resampler is configured for.
     fn nbr_channels(&self) -> usize;
 
     /// Convenience method for allocating an output buffer suitable for use with
@@ -379,17 +379,17 @@ where
     //    make_buffer(channels, frames, filled)
     //}
 
-    /// Get the max number of output frames per channel
+    /// Get the max number of output frames per channel.
     fn output_frames_max(&self) -> usize;
 
     /// Get the number of frames per channel that will be output from the next call to
-    /// [process_into_buffer](Resampler::process_into_buffer) or [process](Resampler::process)
+    /// [process_into_buffer](Resampler::process_into_buffer) or [process](Resampler::process).
     fn output_frames_next(&self) -> usize;
 
     /// Get the delay for the resampler, reported as a number of output frames.
     fn output_delay(&self) -> usize;
 
-    /// Update the resample ratio
+    /// Update the resample ratio.
     ///
     /// For asynchronous resamplers, the ratio must be within
     /// `original / maximum` to `original * maximum`, where the original and maximum are the
@@ -403,14 +403,14 @@ where
     /// If `ramp` is false, the new ratio will be applied from the start of the next chunk.
     fn set_resample_ratio(&mut self, new_ratio: f64, ramp: bool) -> ResampleResult<()>;
 
-    /// Update the resample ratio as a factor relative to the original one
+    /// Update the resample ratio as a factor relative to the original one.
     ///
     /// For asynchronous resamplers, the relative ratio must be within
-    /// `1 / maximum` to `maximum`, where maximum is the maximum
+    /// `1 / maximum` to `maximum`, where `maximum` is the maximum
     /// resampling ratio that was provided to the constructor. Trying to set the ratio
     /// outside these bounds will return [ResampleError::RatioOutOfBounds].
     ///
-    /// Higher ratios above 1.0 slow down the output and lower the pitch. Lower ratios
+    /// Ratios above 1.0 slow down the output and lower the pitch, while ratios
     /// below 1.0 speed up the output and raise the pitch.
     ///
     /// For synchronous resamplers, this will always return [ResampleError::SyncNotAdjustable].
@@ -443,14 +443,14 @@ macro_rules! implement_resampler {
         #[doc = concat!("are locked to `", stringify!($in_type), "` and `", stringify!($out_type), "`.")]
         pub trait $trait_name<T>: Send {
 
-            /// Refer to [Resampler::process]
+            /// Refer to [Resampler::process].
             fn process(
                 &mut self,
                 wave_in: $in_type,
                 active_channels_mask: Option<&[bool]>,
             ) -> rubato::ResampleResult<Vec<Vec<T>>>;
 
-            /// Refer to [Resampler::process_into_buffer]
+            /// Refer to [Resampler::process_into_buffer].
             fn process_into_buffer(
                 &mut self,
                 wave_in: $in_type,
@@ -458,7 +458,7 @@ macro_rules! implement_resampler {
                 active_channels_mask: Option<&[bool]>,
             ) -> rubato::ResampleResult<(usize, usize)>;
 
-            /// Refer to [Resampler::process_partial_into_buffer]
+            /// Refer to [Resampler::process_partial_into_buffer].
             fn process_partial_into_buffer(
                 &mut self,
                 wave_in: Option<$in_type>,
@@ -466,41 +466,41 @@ macro_rules! implement_resampler {
                 active_channels_mask: Option<&[bool]>,
             ) -> rubato::ResampleResult<(usize, usize)>;
 
-            /// Refer to [Resampler::process_partial]
+            /// Refer to [Resampler::process_partial].
             fn process_partial(
                 &mut self,
                 wave_in: Option<$in_type>,
                 active_channels_mask: Option<&[bool]>,
             ) -> rubato::ResampleResult<Vec<Vec<T>>>;
 
-            /// Refer to [Resampler::input_buffer_allocate]
+            /// Refer to [Resampler::input_buffer_allocate].
             fn input_buffer_allocate(&self, filled: bool) -> Vec<Vec<T>>;
 
-            /// Refer to [Resampler::input_frames_max]
+            /// Refer to [Resampler::input_frames_max].
             fn input_frames_max(&self) -> usize;
 
-            /// Refer to [Resampler::input_frames_next]
+            /// Refer to [Resampler::input_frames_next].
             fn input_frames_next(&self) -> usize;
 
-            /// Refer to [Resampler::nbr_channels]
+            /// Refer to [Resampler::nbr_channels].
             fn nbr_channels(&self) -> usize;
 
-            /// Refer to [Resampler::output_buffer_allocate]
+            /// Refer to [Resampler::output_buffer_allocate].
             fn output_buffer_allocate(&self, filled: bool) -> Vec<Vec<T>>;
 
-            /// Refer to [Resampler::output_frames_max]
+            /// Refer to [Resampler::output_frames_max].
             fn output_frames_max(&self) -> usize;
 
-            /// Refer to [Resampler::output_frames_next]
+            /// Refer to [Resampler::output_frames_next].
             fn output_frames_next(&self) -> usize;
 
-            /// Refer to [Resampler::output_delay]
+            /// Refer to [Resampler::output_delay].
             fn output_delay(&self) -> usize;
 
-            /// Refer to [Resampler::set_resample_ratio]
+            /// Refer to [Resampler::set_resample_ratio].
             fn set_resample_ratio(&mut self, new_ratio: f64, ramp: bool) -> rubato::ResampleResult<()>;
 
-            /// Refer to [Resampler::set_resample_ratio_relative]
+            /// Refer to [Resampler::set_resample_ratio_relative].
             fn set_resample_ratio_relative(&mut self, rel_ratio: f64, ramp: bool) -> rubato::ResampleResult<()>;
         }
 
@@ -654,9 +654,9 @@ pub fn make_buffer<T: Sample>(channels: usize, frames: usize, filled: bool) -> V
     buffer
 }
 
-/// Convenience method for resizing a buffer to new number of frames.
-/// If the new number is no larger than the buffer capacity,
-/// then no reallocation will occur.
+/// Convenience method for resizing a buffer to a new number of frames.
+/// If the new number of frames is no larger than the buffer capacity,
+/// no reallocation will occur.
 /// If the new length is smaller than the current, the excess elements are dropped.
 /// If it is larger, zeros are inserted for the missing elements.
 pub fn resize_buffer<T: Sample>(buffer: &mut [Vec<T>], frames: usize) {

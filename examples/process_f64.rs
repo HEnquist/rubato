@@ -1,9 +1,12 @@
 extern crate rubato;
-use rubato::{
-    calculate_cutoff, implement_resampler, FastFixedIn, FastFixedOut, FftFixedIn, FftFixedInOut,
-    FftFixedOut, PolynomialDegree, SincFixedIn, SincFixedOut, SincInterpolationParameters,
-    SincInterpolationType, WindowFunction,
-};
+use audioadapter::{Indirect, IndirectMut};
+use audioadapter::direct::{InterleavedSlice, SequentialSliceOfVecs};
+//use rubato::{
+//    calculate_cutoff, implement_resampler, FastFixedIn, FastFixedOut, FftFixedIn, FftFixedInOut,
+//    FftFixedOut, PolynomialDegree, SincFixedIn, SincFixedOut, SincInterpolationParameters,
+//    SincInterpolationType, WindowFunction,
+//};
+use rubato::{FastFixedIn, Resampler, PolynomialDegree};
 use std::convert::TryInto;
 use std::env;
 use std::fs::File;
@@ -32,27 +35,22 @@ const BYTE_PER_SAMPLE: usize = 8;
 // ```
 
 // Implement an object safe resampler with the input and output types needed in this example.
-implement_resampler!(SliceResampler, &[&[T]], &mut [Vec<T>]);
+//implement_resampler!(SliceResampler, &[&[T]], &mut [Vec<T>]);
 
 /// Helper to read an entire file to memory
-fn read_file<R: Read + Seek>(inbuffer: &mut R, channels: usize) -> Vec<Vec<f64>> {
+fn read_file<R: Read + Seek>(inbuffer: &mut R, channels: usize) -> Vec<f64> {
     let mut buffer = vec![0u8; BYTE_PER_SAMPLE];
-    let mut wfs = Vec::with_capacity(channels);
-    for _chan in 0..channels {
-        wfs.push(Vec::new());
-    }
-    'outer: loop {
-        for wf in wfs.iter_mut() {
-            let bytes_read = inbuffer.read(&mut buffer).unwrap();
-            if bytes_read == 0 {
-                break 'outer;
-            }
-            let value = f64::from_le_bytes(buffer.as_slice().try_into().unwrap());
-            //idx += 8;
-            wf.push(value);
+    let mut samples = Vec::new();
+
+    loop {
+        let bytes_read = inbuffer.read(&mut buffer).unwrap();
+        if bytes_read == 0 {
+            break;
         }
+        let value = f64::from_le_bytes(buffer.as_slice().try_into().unwrap());
+        samples.push(value);
     }
-    wfs
+    samples
 }
 
 /// Helper to write all frames to a file
@@ -112,7 +110,7 @@ fn main() {
     let file_in_disk = File::open(file_in).expect("Can't open file");
     let mut file_in_reader = BufReader::new(file_in_disk);
     let indata = read_file(&mut file_in_reader, channels);
-    let nbr_input_frames = indata[0].len();
+    let nbr_input_frames = indata.len() / channels;
 
     // Create buffer for storing output
     let mut outdata = vec![
@@ -125,7 +123,8 @@ fn main() {
     let f_ratio = fs_out as f64 / fs_in as f64;
 
     // Create resampler
-    let mut resampler: Box<dyn SliceResampler<f64>> = match resampler_type.as_str() {
+    let mut resampler: Box<dyn Resampler<f64>> = match resampler_type.as_str() {
+        /*
         "SincFixedIn" => {
             let sinc_len = 128;
             let oversampling_factor = 256;
@@ -158,9 +157,11 @@ fn main() {
             };
             Box::new(SincFixedOut::<f64>::new(f_ratio, 1.1, params, 1024, channels).unwrap())
         }
+        */
         "FastFixedIn" => {
             Box::new(FastFixedIn::<f64>::new(f_ratio, 1.1, PolynomialDegree::Septic, 1024, channels).unwrap())
         }
+        /*
         "FastFixedOut" => {
             Box::new(FastFixedOut::<f64>::new(f_ratio, 1.1, PolynomialDegree::Septic, 1024, channels).unwrap())
         }
@@ -173,6 +174,7 @@ fn main() {
         "FftFixedInOut" => {
             Box::new(FftFixedInOut::<f64>::new(fs_in, fs_out, 1024, channels).unwrap())
         }
+        */
         _ => panic!("Unknown resampler type {}\nMust be one of SincFixedIn, SincFixedOut, FastFixedIn, FastFixedOut, FftFixedIn, FftFixedOut, FftFixedInOut", resampler_type),
     };
 
@@ -180,34 +182,36 @@ fn main() {
     let mut input_frames_next = resampler.input_frames_next();
     let resampler_delay = resampler.output_delay();
     let mut outbuffer = vec![vec![0.0f64; resampler.output_frames_max()]; channels];
-    let mut indata_slices: Vec<&[f64]> = indata.iter().map(|v| &v[..]).collect();
+    let mut indata_slice = &indata[..];
 
     // Process all full chunks
     let start = Instant::now();
 
-    while indata_slices[0].len() >= input_frames_next {
+    while indata_slice.len()/channels >= input_frames_next {
+        let input = InterleavedSlice::new(indata_slice, channels, input_frames_next).unwrap();
+        let mut output = SequentialSliceOfVecs::new_mut(&mut outbuffer, channels, resampler.output_frames_max()).unwrap();
         let (nbr_in, nbr_out) = resampler
-            .process_into_buffer(&indata_slices, &mut outbuffer, None)
+            .process_into_buffer(&input, &mut output, None)
             .unwrap();
-        for chan in indata_slices.iter_mut() {
-            *chan = &chan[nbr_in..];
-        }
+        indata_slice = &indata_slice[channels * nbr_in..];
         append_frames(&mut outdata, &outbuffer, nbr_out);
         input_frames_next = resampler.input_frames_next();
     }
 
     // Process a partial chunk with the last frames.
-    if !indata_slices[0].is_empty() {
-        let (_nbr_in, nbr_out) = resampler
-            .process_partial_into_buffer(Some(&indata_slices), &mut outbuffer, None)
-            .unwrap();
-        append_frames(&mut outdata, &outbuffer, nbr_out);
-    }
+    //if !indata_slice.is_empty() {
+    //    let (_nbr_in, nbr_out) = resampler
+    //        .process_partial_into_buffer(Some(&indata_slices), &mut outbuffer, None)
+    //        .unwrap();
+    //    append_frames(&mut outdata, &outbuffer, nbr_out);
+    //}
 
     let duration = start.elapsed();
     println!("Resampling took: {:?}", duration);
 
-    let nbr_output_frames = (nbr_input_frames as f32 * fs_out as f32 / fs_in as f32) as usize;
+    //let nbr_output_frames = (nbr_input_frames as f32 * fs_out as f32 / fs_in as f32) as usize;
+    let nbr_output_frames = outdata[0].len();
+    let resampler_delay = 0;
     println!(
         "Processed {} input frames into {} output frames",
         nbr_input_frames, nbr_output_frames

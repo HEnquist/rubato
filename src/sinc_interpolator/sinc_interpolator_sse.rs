@@ -1,6 +1,6 @@
-use crate::sinc_interpolator::SincInterpolator;
 use crate::error::{CpuFeature, MissingCpuFeature};
 use crate::sinc::make_sincs;
+use crate::sinc_interpolator::SincInterpolator;
 use crate::windows::WindowFunction;
 use crate::Sample;
 use core::arch::x86_64::{__m128, __m128d};
@@ -150,7 +150,7 @@ impl SseSample for f64 {
     }
 }
 
-/// A SSE accelerated interpolator
+/// A SSE accelerated interpolator.
 pub struct SseInterpolator<T>
 where
     T: SseSample,
@@ -164,7 +164,7 @@ impl<T> SincInterpolator<T> for SseInterpolator<T>
 where
     T: SseSample,
 {
-    /// Calculate the scalar produt of an input wave and the selected sinc filter
+    /// Calculate the scalar produt of an input wave and the selected sinc filter.
     fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T {
         assert!(
             (index + self.length) < wave.len(),
@@ -194,7 +194,7 @@ impl<T> SseInterpolator<T>
 where
     T: Sample,
 {
-    /// Create a new SseInterpolator
+    /// Create a new SseInterpolator.
     ///
     /// Parameters are:
     /// - `sinc_len`: Length of sinc functions.
@@ -225,9 +225,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::sinc_interpolator::SincInterpolator;
-    use crate::sinc_interpolator::sinc_interpolator_sse::SseInterpolator;
     use crate::sinc::make_sincs;
+    use crate::sinc_interpolator::sinc_interpolator_sse::SseInterpolator;
+    use crate::sinc_interpolator::SincInterpolator;
     use crate::WindowFunction;
     use num_traits::Float;
     use rand::Rng;
