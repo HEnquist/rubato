@@ -38,7 +38,7 @@ const BYTE_PER_SAMPLE: usize = 8;
 //implement_resampler!(SliceResampler, &[&[T]], &mut [Vec<T>]);
 
 /// Helper to read an entire file to memory
-fn read_file<R: Read + Seek>(inbuffer: &mut R, channels: usize) -> Vec<f64> {
+fn read_file<R: Read + Seek>(inbuffer: &mut R) -> Vec<f64> {
     let mut buffer = vec![0u8; BYTE_PER_SAMPLE];
     let mut samples = Vec::new();
 
@@ -109,7 +109,7 @@ fn main() {
     println!("Copy input file to buffer");
     let file_in_disk = File::open(file_in).expect("Can't open file");
     let mut file_in_reader = BufReader::new(file_in_disk);
-    let indata = read_file(&mut file_in_reader, channels);
+    let indata = read_file(&mut file_in_reader);
     let nbr_input_frames = indata.len() / channels;
 
     // Create buffer for storing output
