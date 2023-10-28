@@ -191,20 +191,24 @@ fn main() {
         let input = InterleavedSlice::new(indata_slice, channels, input_frames_next).unwrap();
         let mut output = SequentialSliceOfVecs::new_mut(&mut outbuffer, channels, resampler.output_frames_max()).unwrap();
         let (nbr_in, nbr_out) = resampler
-            .process_into_buffer(&input, &mut output, None)
+            .process(&input, &mut output, None, None)
             .unwrap();
         indata_slice = &indata_slice[channels * nbr_in..];
+        println!("frames left {}", indata_slice.len() / channels);
         append_frames(&mut outdata, &outbuffer, nbr_out);
         input_frames_next = resampler.input_frames_next();
     }
 
     // Process a partial chunk with the last frames.
-    //if !indata_slice.is_empty() {
-    //    let (_nbr_in, nbr_out) = resampler
-    //        .process_partial_into_buffer(Some(&indata_slices), &mut outbuffer, None)
-    //        .unwrap();
-    //    append_frames(&mut outdata, &outbuffer, nbr_out);
-    //}
+    if !indata_slice.is_empty() {
+        let frames_left = indata_slice.len()/channels;
+        let input = InterleavedSlice::new(indata_slice, channels, frames_left).unwrap();
+        let mut output = SequentialSliceOfVecs::new_mut(&mut outbuffer, channels, resampler.output_frames_max()).unwrap();
+        let (_nbr_in, nbr_out) = resampler
+            .process(&input, &mut output, None, Some(frames_left))
+            .unwrap();
+        append_frames(&mut outdata, &outbuffer, nbr_out);
+    }
 
     let duration = start.elapsed();
     println!("Resampling took: {:?}", duration);

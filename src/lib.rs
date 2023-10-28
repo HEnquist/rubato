@@ -271,11 +271,12 @@ where
     /// Both input and output are allowed to be longer than required.
     /// The number of input samples consumed and the number output samples written
     /// per channel is returned in a tuple, `(input_frames, output_frames)`.
-    fn process_into_buffer<'a>(
+    fn process<'a>(
         &mut self,
-        wave_in: &dyn Indirect<'a, T>,
-        wave_out: &mut dyn IndirectMut<'a, T>,
+        buffer_in: &dyn Indirect<'a, T>,
+        buffer_out: &mut dyn IndirectMut<'a, T>,
         active_channels_mask: Option<&[bool]>,
+        partial_input_frames: Option<usize>,
     ) -> ResampleResult<(usize, usize)>;
 
     /// This is a convenience method for processing the last frames at the end of a stream.
@@ -403,6 +404,8 @@ where
     /// If `ramp` is false, the new ratio will be applied from the start of the next chunk.
     fn set_resample_ratio(&mut self, new_ratio: f64, ramp: bool) -> ResampleResult<()>;
 
+    fn resample_ratio(&self) -> f64;
+
     /// Update the resample ratio as a factor relative to the original one.
     ///
     /// For asynchronous resamplers, the relative ratio must be within
@@ -416,8 +419,14 @@ where
     /// For synchronous resamplers, this will always return [ResampleError::SyncNotAdjustable].
     fn set_resample_ratio_relative(&mut self, rel_ratio: f64, ramp: bool) -> ResampleResult<()>;
 
+    fn resample_ratio_relative(&self) -> f64;
+
     /// Reset the resampler state and clear all internal buffers.
     fn reset(&mut self);
+
+    fn set_gain(&mut self, gain: T);
+
+    fn gain(&self) -> T;
 }
 
 /* 

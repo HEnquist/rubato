@@ -53,6 +53,7 @@ pub struct FastFixedIn<T> {
     buffer: Vec<Vec<T>>,
     interpolation: PolynomialDegree,
     channel_mask: Vec<bool>,
+    linear_gain: T,
 }
 /* 
 /// An asynchronous resampler that returns a fixed number of audio frames.
@@ -239,6 +240,7 @@ where
             buffer,
             interpolation: interpolation_type,
             channel_mask,
+            linear_gain: T::one(),
         })
     }
 }
@@ -247,11 +249,12 @@ impl<T> Resampler<T> for FastFixedIn<T>
 where
     T: Sample,
 {
-    fn process_into_buffer<'a>(
+    fn process<'a>(
         &mut self,
-        wave_in: &dyn Indirect<'a, T>,
-        wave_out: &mut dyn IndirectMut<'a, T>,
+        buffer_in: &dyn Indirect<'a, T>,
+        buffer_out: &mut dyn IndirectMut<'a, T>,
         active_channels_mask: Option<&[bool]>,
+        partial_input_frames: Option<usize>,
     ) -> ResampleResult<(usize, usize)> {
         if let Some(mask) = active_channels_mask {
             self.channel_mask.copy_from_slice(mask);
@@ -264,12 +267,17 @@ where
             * (0.5 * self.resample_ratio + 0.5 * self.target_ratio)
             + 10.0) as usize;
 
+        let frames_to_copy = match partial_input_frames {
+            Some(frames) => self.chunk_size.min(frames),
+            None => self.chunk_size
+        };
+
         validate_buffers(
-            wave_in,
-            wave_out,
+            buffer_in,
+            buffer_out,
             &self.channel_mask,
             self.nbr_channels,
-            self.chunk_size,
+            frames_to_copy,
             needed_len,
         )?;
 
@@ -280,10 +288,15 @@ where
 
         for (chan, active) in self.channel_mask.iter().enumerate() {
             if *active {
-                let slice = &mut self.buffer[chan][2 * POLYNOMIAL_LEN_U..2 * POLYNOMIAL_LEN_U + self.chunk_size];
+                let slice = &mut self.buffer[chan][2 * POLYNOMIAL_LEN_U..2 * POLYNOMIAL_LEN_U + frames_to_copy];
                 //self.buffer[chan][2 * POLYNOMIAL_LEN_U..2 * POLYNOMIAL_LEN_U + self.chunk_size]
                 //    .copy_from_slice(&wave_in[chan].as_ref()[..self.chunk_size]);
-                wave_in.write_from_channel_to_slice(chan, 0, slice);
+                buffer_in.write_from_channel_to_slice(chan, 0, slice);
+                if frames_to_copy < self.chunk_size {
+                    for value in self.buffer[chan][2 * POLYNOMIAL_LEN_U + frames_to_copy .. 2 * POLYNOMIAL_LEN_U + self.chunk_size].iter_mut() {
+                        *value = T::zero();
+                    }
+                }
             }
         }
 
@@ -327,8 +340,8 @@ where
                                 //    .get_unchecked_mut(chan)
                                 //    .as_mut()
                                 //    .get_unchecked_mut(n) = interp_septic(frac_offset, buf);
-                                let value = interp_septic(frac_offset, buf);
-                                wave_out.write_sample_unchecked(chan, n, &value);
+                                let value = interp_septic(frac_offset, buf) * self.linear_gain;
+                                buffer_out.write_sample_unchecked(chan, n, &value);
                             }
                         }
                     }
@@ -354,8 +367,8 @@ where
                                 //    .get_unchecked_mut(chan)
                                 //    .as_mut()
                                 //    .get_unchecked_mut(n) = interp_quintic(frac_offset, buf);
-                                let value = interp_quintic(frac_offset, buf);
-                                wave_out.write_sample_unchecked(chan, n, &value);
+                                let value = interp_quintic(frac_offset, buf) * self.linear_gain;
+                                buffer_out.write_sample_unchecked(chan, n, &value);
                             }
                         }
                     }
@@ -381,8 +394,8 @@ where
                                 //    .get_unchecked_mut(chan)
                                 //    .as_mut()
                                 //    .get_unchecked_mut(n) = interp_cubic(frac_offset, buf);
-                                let value = interp_cubic(frac_offset, buf);
-                                wave_out.write_sample_unchecked(chan, n, &value);
+                                let value = interp_cubic(frac_offset, buf) * self.linear_gain;
+                                buffer_out.write_sample_unchecked(chan, n, &value);
                             }
                         }
                     }
@@ -408,8 +421,8 @@ where
                                 //    .get_unchecked_mut(chan)
                                 //    .as_mut()
                                 //    .get_unchecked_mut(n) = interp_lin(frac_offset, buf);
-                                let value = interp_lin(frac_offset, buf);
-                                wave_out.write_sample_unchecked(chan, n, &value);
+                                let value = interp_lin(frac_offset, buf) * self.linear_gain;
+                                buffer_out.write_sample_unchecked(chan, n, &value);
                             }
                         }
                     }
@@ -428,11 +441,12 @@ where
                                     .buffer
                                     .get_unchecked(chan)
                                     .get_unchecked((start_idx + 2 * POLYNOMIAL_LEN_I) as usize);
+                                let value = *point * self.linear_gain;
                                 //*wave_out
                                 //    .get_unchecked_mut(chan)
                                 //    .as_mut()
                                 //    .get_unchecked_mut(n) = *point;
-                                wave_out.write_sample_unchecked(chan, n, point);
+                                buffer_out.write_sample_unchecked(chan, n, &value);
                             }
                         }
                     }
@@ -447,10 +461,10 @@ where
         trace!(
             "Resampling channels {:?}, {} frames in, {} frames out",
             active_channels_mask,
-            self.chunk_size,
+            frames_to_copy,
             n,
         );
-        Ok((self.chunk_size, n))
+        Ok((frames_to_copy, n))
     }
 
     fn output_frames_max(&self) -> usize {
@@ -499,9 +513,25 @@ where
         }
     }
 
+    fn resample_ratio(&self) -> f64 {
+        self.resample_ratio
+    }
+
+    fn resample_ratio_relative(&self) -> f64 {
+        self.resample_ratio / self.resample_ratio_original
+    }
+
     fn set_resample_ratio_relative(&mut self, rel_ratio: f64, ramp: bool) -> ResampleResult<()> {
         let new_ratio = self.resample_ratio_original * rel_ratio;
         self.set_resample_ratio(new_ratio, ramp)
+    }
+
+    fn gain(&self) -> T {
+        self.linear_gain
+    }
+
+    fn set_gain(&mut self, gain: T) {
+        self.linear_gain = gain;
     }
 
     fn reset(&mut self) {

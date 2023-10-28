@@ -42,15 +42,23 @@ def plot_spect(indata, window=True):
         plt.plot(np.diff(wf,5))
     plt.show()
 
-file_in = sys.argv[1]
-channels = int(sys.argv[2])
-bits = int(sys.argv[4])
-srate = int(sys.argv[3])
+try:
+    file_in = sys.argv[1]
+    channels = int(sys.argv[2])
+    srate = int(sys.argv[3])
+    bits = int(sys.argv[4])
+except IndexError:
+    print("Missing argument, usage:")
+    print("> python analyze_result.py {filename} {nbr_channels} {samplerate} {bits}")
+    sys.exit()
 
 if bits == 64:
     values = np.fromfile(file_in, dtype=float)
 elif bits == 32:
     values = np.fromfile(file_in, dtype=np.float32)
+else:
+    print(f"Invalid bits: {bits}, must be 32 or 64")
+    sys.exit()
 
 
 # Let's look at the first channel only..
