@@ -1,5 +1,19 @@
 use crate::sinc_interpolator::{AvxSample, NeonSample, SseSample};
 
+#[cfg(feature = "fft_resampler")]
+use realfft::FftNum;
+
+#[cfg(not(feature = "fft_resampler"))]
+use num_traits::{FromPrimitive, Signed};
+#[cfg(not(feature = "fft_resampler"))]
+use std::fmt::Debug;
+
+#[cfg(not(feature = "fft_resampler"))]
+pub trait FftNum: Copy + FromPrimitive + Signed + Sync + Send + Debug + 'static {}
+
+#[cfg(not(feature = "fft_resampler"))]
+impl<T> FftNum for T where T: Copy + FromPrimitive + Signed + Sync + Send + Debug + 'static {}
+
 /// The trait governing a single sample.
 ///
 /// There are two types which implements this trait so far:
@@ -11,7 +25,7 @@ where
         + CoerceFrom<usize>
         + CoerceFrom<f64>
         + CoerceFrom<f32>
-        + realfft::FftNum
+        + FftNum
         + std::ops::Mul
         + std::ops::Div
         + std::ops::Add
