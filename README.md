@@ -118,6 +118,8 @@ The `rubato` crate requires rustc version 1.61 or newer.
 
 ## Changelog
 
+- v0.14.2
+  - Fix calculation of input and output sizes when creating FftFixedInOut resampler.
 - v0.14.1
   - More bugfixes for buffer allocation and max output length calculation.
   - Fix building with `log` feature.
