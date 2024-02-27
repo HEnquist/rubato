@@ -123,6 +123,7 @@
 //! - v0.15.0
 //!   - Make FFT resamplers optional via `fft_resampler` feature.
 //!   - Fix calculation of input and output sizes when creating FftFixedInOut resampler.
+//!   - Fix panic when using very small chunksizes (less than 5).
 //! - v0.14.1
 //!   - More bugfixes for buffer allocation and max output length calculation.
 //!   - Fix building with `log` feature.
@@ -750,7 +751,7 @@ pub mod tests {
 
     #[macro_export]
     macro_rules! check_output {
-        ($name:ident, $resampler:ident) => {
+        ($resampler:ident) => {
             let mut val = 0.0;
             let mut prev_last = -0.1;
             let max_input_len = $resampler.input_frames_max();
@@ -758,8 +759,21 @@ pub mod tests {
             for n in 0..50 {
                 let frames = $resampler.input_frames_next();
                 // Check that lengths are within the reported max values
-                assert!(frames <= max_input_len);
-                assert!($resampler.output_frames_next() <= max_output_len);
+                assert!(
+                    frames <= max_input_len,
+                    "Iteration {}, input frames {} larger than max {}",
+                    n,
+                    frames,
+                    max_input_len
+                );
+                let out_frames = $resampler.output_frames_next();
+                assert!(
+                    out_frames <= max_output_len,
+                    "Iteration {}, output frames {} larger than max {}",
+                    n,
+                    out_frames,
+                    max_output_len
+                );
                 let mut waves = vec![vec![0.0f64; frames]; 2];
                 for m in 0..frames {
                     for ch in 0..2 {
@@ -802,6 +816,26 @@ pub mod tests {
                     }
                 }
             }
+        };
+    }
+
+    #[macro_export]
+    macro_rules! check_ratio {
+        ($resampler:ident, $ratio:ident, $repetitions:literal) => {
+            let input = $resampler.input_buffer_allocate(true);
+            let mut output = $resampler.output_buffer_allocate(true);
+            let mut total_in = 0;
+            let mut total_out = 0;
+            for _ in 0..$repetitions {
+                let out = $resampler
+                    .process_into_buffer(&input, &mut output, None)
+                    .unwrap();
+                total_in += out.0;
+                total_out += out.1
+            }
+            let measured_ratio = total_out as f64 / total_in as f64;
+            assert!(measured_ratio > 0.999 * $ratio);
+            assert!(measured_ratio < 1.001 * $ratio);
         };
     }
 
