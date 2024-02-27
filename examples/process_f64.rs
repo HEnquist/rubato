@@ -64,7 +64,7 @@ fn write_frames<W: Write + Seek>(
     frames_to_write: usize,
 ) {
     let channels = waves.len();
-    let end = frames_to_skip + frames_to_write;
+    let end = (frames_to_skip + frames_to_write).min(waves[0].len() - 1);
     for frame in frames_to_skip..end {
         for wave in waves.iter().take(channels) {
             let value64 = wave[frame];
