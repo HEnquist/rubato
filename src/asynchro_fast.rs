@@ -528,7 +528,7 @@ where
         validate_ratios(resample_ratio, max_resample_ratio_relative)?;
 
         let needed_input_size =
-            (chunk_size as f64 / resample_ratio).ceil() as usize + 2 + POLYNOMIAL_LEN_U / 2;
+            (chunk_size as f64 / resample_ratio).ceil() as usize + POLYNOMIAL_LEN_U / 2;
         let buffer_channel_length = ((max_resample_ratio_relative + 1.0) * needed_input_size as f64)
             as usize
             + 2 * POLYNOMIAL_LEN_U;
@@ -601,7 +601,7 @@ where
 
         match self.interpolation {
             PolynomialDegree::Septic => {
-                for n in 0..self.chunk_size {
+                for frame in 0..self.chunk_size {
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     let idx_floor = idx.floor();
@@ -618,14 +618,14 @@ where
                                 *wave_out
                                     .get_unchecked_mut(chan)
                                     .as_mut()
-                                    .get_unchecked_mut(n) = interp_septic(frac_offset, buf);
+                                    .get_unchecked_mut(frame) = interp_septic(frac_offset, buf);
                             }
                         }
                     }
                 }
             }
             PolynomialDegree::Quintic => {
-                for n in 0..self.chunk_size {
+                for frame in 0..self.chunk_size {
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     let idx_floor = idx.floor();
@@ -642,14 +642,14 @@ where
                                 *wave_out
                                     .get_unchecked_mut(chan)
                                     .as_mut()
-                                    .get_unchecked_mut(n) = interp_quintic(frac_offset, buf);
+                                    .get_unchecked_mut(frame) = interp_quintic(frac_offset, buf);
                             }
                         }
                     }
                 }
             }
             PolynomialDegree::Cubic => {
-                for n in 0..self.chunk_size {
+                for frame in 0..self.chunk_size {
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     let idx_floor = idx.floor();
@@ -666,14 +666,14 @@ where
                                 *wave_out
                                     .get_unchecked_mut(chan)
                                     .as_mut()
-                                    .get_unchecked_mut(n) = interp_cubic(frac_offset, buf);
+                                    .get_unchecked_mut(frame) = interp_cubic(frac_offset, buf);
                             }
                         }
                     }
                 }
             }
             PolynomialDegree::Linear => {
-                for n in 0..self.chunk_size {
+                for frame in 0..self.chunk_size {
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     let idx_floor = idx.floor();
@@ -690,14 +690,14 @@ where
                                 *wave_out
                                     .get_unchecked_mut(chan)
                                     .as_mut()
-                                    .get_unchecked_mut(n) = interp_lin(frac_offset, buf);
+                                    .get_unchecked_mut(frame) = interp_lin(frac_offset, buf);
                             }
                         }
                     }
                 }
             }
             PolynomialDegree::Nearest => {
-                for n in 0..self.chunk_size {
+                for frame in 0..self.chunk_size {
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     let start_idx = idx.floor() as isize;
@@ -711,7 +711,7 @@ where
                                 *wave_out
                                     .get_unchecked_mut(chan)
                                     .as_mut()
-                                    .get_unchecked_mut(n) = *point;
+                                    .get_unchecked_mut(frame) = *point;
                             }
                         }
                     }
@@ -726,8 +726,7 @@ where
         self.needed_input_size = (self.last_index as f32
             + self.chunk_size as f32 / self.resample_ratio as f32
             + POLYNOMIAL_LEN_U as f32)
-            .ceil() as usize
-            + 2;
+            .ceil() as usize;
         trace!(
             "Resampling channels {:?}, {} frames in, {} frames out. Next needed length: {} frames, last index {}",
             active_channels_mask,
@@ -740,7 +739,7 @@ where
     }
 
     fn input_frames_max(&self) -> usize {
-        (self.chunk_size as f64 * self.resample_ratio_original * self.max_relative_ratio).ceil()
+        (self.chunk_size as f64 / self.resample_ratio_original * self.max_relative_ratio).ceil()
             as usize
             + 2
             + POLYNOMIAL_LEN_U / 2
@@ -779,8 +778,7 @@ where
                 + self.chunk_size as f32
                     / (0.5 * self.resample_ratio as f32 + 0.5 * self.target_ratio as f32))
                 .ceil() as usize
-                + POLYNOMIAL_LEN_U
-                + 2;
+                + POLYNOMIAL_LEN_U;
             Ok(())
         } else {
             Err(ResampleError::RatioOutOfBounds {
@@ -802,7 +800,6 @@ where
             .for_each(|ch| ch.iter_mut().for_each(|s| *s = T::zero()));
         self.needed_input_size = (self.chunk_size as f64 / self.resample_ratio_original).ceil()
             as usize
-            + 2
             + POLYNOMIAL_LEN_U / 2;
         self.current_buffer_fill = self.needed_input_size;
         self.last_index = -(POLYNOMIAL_LEN_I / 2) as f64;
@@ -814,9 +811,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::check_output;
     use crate::PolynomialDegree;
     use crate::Resampler;
+    use crate::{check_output, check_ratio};
     use crate::{FastFixedIn, FastFixedOut};
     use rand::Rng;
 
@@ -1140,16 +1137,94 @@ mod tests {
     }
 
     #[test]
-    fn check_fo_output() {
+    fn check_fo_output_up() {
         let mut resampler =
             FastFixedOut::<f64>::new(8.0, 1.0, PolynomialDegree::Cubic, 1024, 2).unwrap();
-        check_output!(check_fo_output, resampler);
+        check_output!(resampler);
     }
 
     #[test]
-    fn check_fi_output() {
+    fn check_fo_output_down() {
+        let mut resampler =
+            FastFixedOut::<f64>::new(0.8, 1.0, PolynomialDegree::Cubic, 1024, 2).unwrap();
+        check_output!(resampler);
+    }
+
+    #[test]
+    fn check_fi_output_up() {
         let mut resampler =
             FastFixedIn::<f64>::new(8.0, 1.0, PolynomialDegree::Cubic, 1024, 2).unwrap();
-        check_output!(check_fo_output, resampler);
+        check_output!(resampler);
+    }
+
+    #[test]
+    fn check_fi_output_down() {
+        let mut resampler =
+            FastFixedIn::<f64>::new(0.8, 1.0, PolynomialDegree::Cubic, 1024, 2).unwrap();
+        check_output!(resampler);
+    }
+
+    #[test]
+    fn resample_small_fo_up() {
+        let ratio = 96000.0 / 44100.0;
+        let mut resampler =
+            FastFixedOut::<f32>::new(ratio, 100.0, PolynomialDegree::Cubic, 1, 2).unwrap();
+        check_ratio!(resampler, ratio, 1000000);
+    }
+
+    #[test]
+    fn resample_big_fo_up() {
+        let ratio = 96000.0 / 44100.0;
+        let mut resampler =
+            FastFixedOut::<f32>::new(ratio, 100.0, PolynomialDegree::Cubic, 1024, 2).unwrap();
+        check_ratio!(resampler, ratio, 1000);
+    }
+
+    #[test]
+    fn resample_small_fo_down() {
+        let ratio = 44100.0 / 96000.0;
+        let mut resampler =
+            FastFixedOut::<f32>::new(ratio, 100.0, PolynomialDegree::Cubic, 1, 2).unwrap();
+        check_ratio!(resampler, ratio, 1000000);
+    }
+
+    #[test]
+    fn resample_big_fo_down() {
+        let ratio = 44100.0 / 96000.0;
+        let mut resampler =
+            FastFixedOut::<f32>::new(ratio, 100.0, PolynomialDegree::Cubic, 1024, 2).unwrap();
+        check_ratio!(resampler, ratio, 1000);
+    }
+
+    #[test]
+    fn resample_small_fi_up() {
+        let ratio = 96000.0 / 44100.0;
+        let mut resampler =
+            FastFixedIn::<f32>::new(ratio, 100.0, PolynomialDegree::Cubic, 1, 2).unwrap();
+        check_ratio!(resampler, ratio, 1000000);
+    }
+
+    #[test]
+    fn resample_big_fi_up() {
+        let ratio = 96000.0 / 44100.0;
+        let mut resampler =
+            FastFixedIn::<f32>::new(ratio, 100.0, PolynomialDegree::Cubic, 1024, 2).unwrap();
+        check_ratio!(resampler, ratio, 1000);
+    }
+
+    #[test]
+    fn resample_small_fi_down() {
+        let ratio = 44100.0 / 96000.0;
+        let mut resampler =
+            FastFixedIn::<f32>::new(ratio, 100.0, PolynomialDegree::Cubic, 1, 2).unwrap();
+        check_ratio!(resampler, ratio, 1000000);
+    }
+
+    #[test]
+    fn resample_big_fi_down() {
+        let ratio = 44100.0 / 96000.0;
+        let mut resampler =
+            FastFixedIn::<f32>::new(ratio, 100.0, PolynomialDegree::Cubic, 1024, 2).unwrap();
+        check_ratio!(resampler, ratio, 1000);
     }
 }

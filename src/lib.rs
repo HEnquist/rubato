@@ -59,6 +59,11 @@
 //!
 //! # Cargo features
 //!
+//! ## `fft_resampler`: Enable the FFT based synchronous resamplers
+//!
+//! This feature is enabled by default. Disable it if the FFT resamplers are not needed,
+//! to save compile time and reduce the resulting binary size.
+//!
 //! ## `log`: Enable logging
 //!
 //! This feature enables logging via the `log` crate. This is intended for debugging purposes.
@@ -115,6 +120,10 @@
 //!
 //! # Changelog
 //!
+//! - v0.15.0
+//!   - Make FFT resamplers optional via `fft_resampler` feature.
+//!   - Fix calculation of input and output sizes when creating FftFixedInOut resampler.
+//!   - Fix panic when using very small chunksizes (less than 5).
 //! - v0.14.1
 //!   - More bugfixes for buffer allocation and max output length calculation.
 //!   - Fix building with `log` feature.
@@ -187,6 +196,7 @@ mod error;
 mod interpolation;
 mod sample;
 mod sinc;
+#[cfg(feature = "fft_resampler")]
 mod synchro;
 mod windows;
 
@@ -200,6 +210,7 @@ pub use crate::error::{
     CpuFeature, MissingCpuFeature, ResampleError, ResampleResult, ResamplerConstructionError,
 };
 pub use crate::sample::Sample;
+#[cfg(feature = "fft_resampler")]
 pub use crate::synchro::{FftFixedIn, FftFixedInOut, FftFixedOut};
 pub use crate::windows::{calculate_cutoff, WindowFunction};
 
@@ -427,8 +438,8 @@ use crate as rubato;
 /// `&[AsRef<[T]>]` and `&mut [AsMut<[T]>]` to `&[Vec<T>]` and `&mut [Vec<T>]`.
 /// This allows a [VecResampler] to be made into a trait object like this:
 /// ```
-/// # use rubato::{FftFixedIn, VecResampler};
-/// let boxed: Box<dyn VecResampler<f64>> = Box::new(FftFixedIn::<f64>::new(44100, 88200, 1024, 2, 2).unwrap());
+/// # use rubato::{FastFixedIn, VecResampler, PolynomialDegree};
+/// let boxed: Box<dyn VecResampler<f64>> = Box::new(FastFixedIn::<f64>::new(44100 as f64 / 88200 as f64, 1.1, PolynomialDegree::Cubic, 2, 2).unwrap());
 /// ```
 /// Use this implementation as an example if you need to fix the input type to something else.
 #[macro_export]
@@ -689,21 +700,31 @@ pub fn buffer_capacity<T: Sample>(buffer: &[Vec<T>]) -> usize {
 #[cfg(test)]
 pub mod tests {
     use crate::{buffer_capacity, buffer_length, make_buffer, resize_buffer, VecResampler};
+    use crate::{FastFixedIn, PolynomialDegree, SincFixedIn, SincFixedOut};
+    #[cfg(feature = "fft_resampler")]
     use crate::{FftFixedIn, FftFixedInOut, FftFixedOut};
-    use crate::{SincFixedIn, SincFixedOut};
 
     // This tests that a VecResampler can be boxed.
     #[test]
     fn boxed_resampler() {
-        let boxed: Box<dyn VecResampler<f64>> =
-            Box::new(FftFixedIn::<f64>::new(44100, 88200, 1024, 2, 2).unwrap());
-        let result = process_with_boxed(boxed);
+        let mut boxed: Box<dyn VecResampler<f64>> = Box::new(
+            FastFixedIn::<f64>::new(
+                88200 as f64 / 44100 as f64,
+                1.1,
+                PolynomialDegree::Cubic,
+                1024,
+                2,
+            )
+            .unwrap(),
+        );
+        let _ = process_with_boxed(&mut boxed);
+        let result = process_with_boxed(&mut boxed);
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].len(), 2048);
         assert_eq!(result[1].len(), 2048);
     }
 
-    fn process_with_boxed(mut resampler: Box<dyn VecResampler<f64>>) -> Vec<Vec<f64>> {
+    fn process_with_boxed(resampler: &mut Box<dyn VecResampler<f64>>) -> Vec<Vec<f64>> {
         let frames = resampler.input_frames_next();
         let waves = vec![vec![0.0f64; frames]; 2];
         resampler.process(&waves, None).unwrap()
@@ -713,9 +734,12 @@ pub mod tests {
         fn is_send<T: Send>() {}
         is_send::<SincFixedOut<T>>();
         is_send::<SincFixedIn<T>>();
-        is_send::<FftFixedOut<T>>();
-        is_send::<FftFixedIn<T>>();
-        is_send::<FftFixedInOut<T>>();
+        #[cfg(feature = "fft_resampler")]
+        {
+            is_send::<FftFixedOut<T>>();
+            is_send::<FftFixedIn<T>>();
+            is_send::<FftFixedInOut<T>>();
+        }
     }
 
     // This tests that all resamplers are Send.
@@ -727,7 +751,7 @@ pub mod tests {
 
     #[macro_export]
     macro_rules! check_output {
-        ($name:ident, $resampler:ident) => {
+        ($resampler:ident) => {
             let mut val = 0.0;
             let mut prev_last = -0.1;
             let max_input_len = $resampler.input_frames_max();
@@ -735,8 +759,21 @@ pub mod tests {
             for n in 0..50 {
                 let frames = $resampler.input_frames_next();
                 // Check that lengths are within the reported max values
-                assert!(frames <= max_input_len);
-                assert!($resampler.output_frames_next() <= max_output_len);
+                assert!(
+                    frames <= max_input_len,
+                    "Iteration {}, input frames {} larger than max {}",
+                    n,
+                    frames,
+                    max_input_len
+                );
+                let out_frames = $resampler.output_frames_next();
+                assert!(
+                    out_frames <= max_output_len,
+                    "Iteration {}, output frames {} larger than max {}",
+                    n,
+                    out_frames,
+                    max_output_len
+                );
                 let mut waves = vec![vec![0.0f64; frames]; 2];
                 for m in 0..frames {
                     for ch in 0..2 {
@@ -779,6 +816,26 @@ pub mod tests {
                     }
                 }
             }
+        };
+    }
+
+    #[macro_export]
+    macro_rules! check_ratio {
+        ($resampler:ident, $ratio:ident, $repetitions:literal) => {
+            let input = $resampler.input_buffer_allocate(true);
+            let mut output = $resampler.output_buffer_allocate(true);
+            let mut total_in = 0;
+            let mut total_out = 0;
+            for _ in 0..$repetitions {
+                let out = $resampler
+                    .process_into_buffer(&input, &mut output, None)
+                    .unwrap();
+                total_in += out.0;
+                total_out += out.1
+            }
+            let measured_ratio = total_out as f64 / total_in as f64;
+            assert!(measured_ratio > 0.999 * $ratio);
+            assert!(measured_ratio < 1.001 * $ratio);
         };
     }
 

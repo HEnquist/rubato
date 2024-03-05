@@ -1,9 +1,10 @@
 extern crate rubato;
 use rubato::{
-    calculate_cutoff, implement_resampler, FastFixedIn, FastFixedOut, FftFixedIn, FftFixedInOut,
-    FftFixedOut, PolynomialDegree, SincFixedIn, SincFixedOut, SincInterpolationParameters,
-    SincInterpolationType, WindowFunction,
+    calculate_cutoff, implement_resampler, FastFixedIn, FastFixedOut, PolynomialDegree,
+    SincFixedIn, SincFixedOut, SincInterpolationParameters, SincInterpolationType, WindowFunction,
 };
+#[cfg(feature = "fft_resampler")]
+use rubato::{FftFixedIn, FftFixedInOut, FftFixedOut};
 use std::convert::TryInto;
 use std::env;
 use std::fs::File;
@@ -63,7 +64,7 @@ fn write_frames<W: Write + Seek>(
     frames_to_write: usize,
 ) {
     let channels = waves.len();
-    let end = frames_to_skip + frames_to_write;
+    let end = (frames_to_skip + frames_to_write).min(waves[0].len() - 1);
     for frame in frames_to_skip..end {
         for wave in waves.iter().take(channels) {
             let value64 = wave[frame];
@@ -164,12 +165,15 @@ fn main() {
         "FastFixedOut" => {
             Box::new(FastFixedOut::<f64>::new(f_ratio, 1.1, PolynomialDegree::Septic, 1024, channels).unwrap())
         }
+        #[cfg(feature = "fft_resampler")]
         "FftFixedIn" => {
             Box::new(FftFixedIn::<f64>::new(fs_in, fs_out, 1024, 2, channels).unwrap())
         }
+        #[cfg(feature = "fft_resampler")]
         "FftFixedOut" => {
             Box::new(FftFixedOut::<f64>::new(fs_in, fs_out, 1024, 2, channels).unwrap())
         }
+        #[cfg(feature = "fft_resampler")]
         "FftFixedInOut" => {
             Box::new(FftFixedInOut::<f64>::new(fs_in, fs_out, 1024, channels).unwrap())
         }

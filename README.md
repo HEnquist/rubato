@@ -61,6 +61,11 @@ The synchronous resamplers benefit from the SIMD support of the RustFFT library.
 
 ## Cargo features
 
+### `fft_resampler`: Enable the FFT based synchronous resamplers
+
+This feature is enabled by default. Disable it if the FFT resamplers are not needed,
+to save compile time and reduce the resulting binary size.
+
 ### `log`: Enable logging
 
 This feature enables logging via the `log` crate. This is intended for debugging purposes.
@@ -118,6 +123,10 @@ The `rubato` crate requires rustc version 1.61 or newer.
 
 ## Changelog
 
+- v0.15.0
+  - Make FFT resamplers optional via `fft_resampler` feature.
+  - Fix calculation of input and output sizes when creating FftFixedInOut resampler.
+  - Fix panic when using very small chunksizes (less than 5).
 - v0.14.1
   - More bugfixes for buffer allocation and max output length calculation.
   - Fix building with `log` feature.

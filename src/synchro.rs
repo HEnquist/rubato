@@ -212,9 +212,8 @@ where
         );
 
         let gcd = integer::gcd(sample_rate_input, sample_rate_output);
-        let min_chunk_out = sample_rate_output / gcd;
-        let wanted = chunk_size_in;
-        let fft_chunks = (wanted as f32 / min_chunk_out as f32).ceil() as usize;
+        let min_chunk_in = sample_rate_input / gcd;
+        let fft_chunks = (chunk_size_in as f32 / min_chunk_in as f32).ceil() as usize;
         let fft_size_out = fft_chunks * sample_rate_output / gcd;
         let fft_size_in = fft_chunks * sample_rate_input / gcd;
 
@@ -931,19 +930,19 @@ mod tests {
     #[test]
     fn check_fo_output() {
         let mut resampler = FftFixedOut::<f64>::new(44100, 48000, 4096, 4, 2).unwrap();
-        check_output!(check_fo_output, resampler);
+        check_output!(resampler);
     }
 
     #[test]
     fn check_fi_output() {
         let mut resampler = FftFixedIn::<f64>::new(44100, 48000, 4096, 4, 2).unwrap();
-        check_output!(check_fo_output, resampler);
+        check_output!(resampler);
     }
 
     #[test]
     fn check_fio_output() {
         let mut resampler = FftFixedInOut::<f64>::new(44100, 48000, 4096, 2).unwrap();
-        check_output!(check_fo_output, resampler);
+        check_output!(resampler);
     }
 
     #[test]
