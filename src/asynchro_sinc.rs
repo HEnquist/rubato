@@ -85,7 +85,7 @@ pub enum SincInterpolationType {
 /// Higher maximum ratios require more memory to be allocated by [Resampler::output_buffer_allocate].
 pub struct SincFixedIn<T> {
     nbr_channels: usize,
-    chunk_size: usize,
+    max_chunk_size: usize,
     last_index: f64,
     resample_ratio: f64,
     resample_ratio_original: f64,
@@ -113,7 +113,7 @@ pub struct SincFixedIn<T> {
 /// [input_buffer_allocate](Resampler::input_buffer_allocate) and an internal buffer.
 pub struct SincFixedOut<T> {
     nbr_channels: usize,
-    chunk_size: usize,
+    max_chunk_size: usize,
     needed_input_size: usize,
     last_index: f64,
     current_buffer_fill: usize,
@@ -236,18 +236,18 @@ where
     /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
     /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Resampler::set_resample_ratio] relative to `resample_ratio`, must be >= 1.0. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio * 10.0` and `resample_ratio / 10.0`.
     /// - `parameters`: Parameters for interpolation, see `SincInterpolationParameters`.
-    /// - `chunk_size`: Size of input data in frames.
+    /// - `max_chunk_size`: Size of input data in frames.
     /// - `nbr_channels`: Number of channels in input/output.
     pub fn new(
         resample_ratio: f64,
         max_resample_ratio_relative: f64,
         parameters: SincInterpolationParameters,
-        chunk_size: usize,
+        max_chunk_size: usize,
         nbr_channels: usize,
     ) -> Result<Self, ResamplerConstructionError> {
         debug!(
-            "Create new SincFixedIn, ratio: {}, chunk_size: {}, channels: {}, parameters: {:?}",
-            resample_ratio, chunk_size, nbr_channels, parameters
+            "Create new SincFixedIn, ratio: {}, max_chunk_size: {}, channels: {}, parameters: {:?}",
+            resample_ratio, max_chunk_size, nbr_channels, parameters
         );
 
         let interpolator = make_interpolator(
@@ -263,7 +263,7 @@ where
             max_resample_ratio_relative,
             parameters.interpolation,
             interpolator,
-            chunk_size,
+            max_chunk_size,
             nbr_channels,
         )
     }
@@ -275,24 +275,24 @@ where
     /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Resampler::set_resample_ratio] relative to `resample_ratio`, must be >= 1.0. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio` * 10.0 and `resample_ratio` / 10.0.
     /// - `interpolation_type`: Parameters for interpolation, see `SincInterpolationParameters`.
     /// - `interpolator`: The interpolator to use.
-    /// - `chunk_size`: Size of output data in frames.
+    /// - `max_chunk_size`: Size of output data in frames.
     /// - `nbr_channels`: Number of channels in input/output.
     pub fn new_with_interpolator(
         resample_ratio: f64,
         max_resample_ratio_relative: f64,
         interpolation_type: SincInterpolationType,
         interpolator: Box<dyn SincInterpolator<T>>,
-        chunk_size: usize,
+        max_chunk_size: usize,
         nbr_channels: usize,
     ) -> Result<Self, ResamplerConstructionError> {
         validate_ratios(resample_ratio, max_resample_ratio_relative)?;
-        let buffer = vec![vec![T::zero(); chunk_size + 2 * interpolator.len()]; nbr_channels];
+        let buffer = vec![vec![T::zero(); max_chunk_size + 2 * interpolator.len()]; nbr_channels];
 
         let channel_mask = vec![true; nbr_channels];
 
         Ok(SincFixedIn {
             nbr_channels,
-            chunk_size,
+            max_chunk_size,
             last_index: -((interpolator.len() / 2) as f64),
             resample_ratio,
             resample_ratio_original: resample_ratio,
@@ -323,7 +323,7 @@ where
         };
 
         // Set length to chunksize*ratio plus a safety margin of 10 elements.
-        let needed_len = (self.chunk_size as f64
+        let needed_len = (self.max_chunk_size as f64
             * (0.5 * self.resample_ratio + 0.5 * self.target_ratio)
             + 10.0) as usize;
 
@@ -332,7 +332,7 @@ where
             wave_out,
             &self.channel_mask,
             self.nbr_channels,
-            self.chunk_size,
+            self.max_chunk_size,
             needed_len,
         )?;
 
@@ -341,21 +341,21 @@ where
         let mut t_ratio = 1.0 / self.resample_ratio;
         let t_ratio_end = 1.0 / self.target_ratio;
         let approximate_nbr_frames =
-            self.chunk_size as f64 * (0.5 * self.resample_ratio + 0.5 * self.target_ratio);
+            self.max_chunk_size as f64 * (0.5 * self.resample_ratio + 0.5 * self.target_ratio);
         let t_ratio_increment = (t_ratio_end - t_ratio) / approximate_nbr_frames;
         let end_idx =
-            self.chunk_size as isize - (sinc_len as isize + 1) - t_ratio_end.ceil() as isize;
+            self.max_chunk_size as isize - (sinc_len as isize + 1) - t_ratio_end.ceil() as isize;
 
         // Update buffer with new data.
         for buf in self.buffer.iter_mut() {
-            buf.copy_within(self.chunk_size..self.chunk_size + 2 * sinc_len, 0);
+            buf.copy_within(self.max_chunk_size..self.max_chunk_size + 2 * sinc_len, 0);
         }
 
         for (chan, active) in self.channel_mask.iter().enumerate() {
             if *active {
                 debug_assert!(needed_len <= wave_out[chan].as_mut().len());
-                self.buffer[chan][2 * sinc_len..2 * sinc_len + self.chunk_size]
-                    .copy_from_slice(&wave_in[chan].as_ref()[..self.chunk_size]);
+                self.buffer[chan][2 * sinc_len..2 * sinc_len + self.max_chunk_size]
+                    .copy_from_slice(&wave_in[chan].as_ref()[..self.max_chunk_size]);
             }
         }
 
@@ -466,25 +466,25 @@ where
         }
 
         // Store last index for next iteration.
-        self.last_index = idx - self.chunk_size as f64;
+        self.last_index = idx - self.max_chunk_size as f64;
         self.resample_ratio = self.target_ratio;
         trace!(
             "Resampling channels {:?}, {} frames in, {} frames out",
             active_channels_mask,
-            self.chunk_size,
+            self.max_chunk_size,
             n,
         );
-        Ok((self.chunk_size, n))
+        Ok((self.max_chunk_size, n))
     }
 
     fn output_frames_max(&self) -> usize {
         // Set length to chunksize*ratio plus a safety margin of 10 elements.
-        (self.chunk_size as f64 * self.resample_ratio_original * self.max_relative_ratio + 10.0)
+        (self.max_chunk_size as f64 * self.resample_ratio_original * self.max_relative_ratio + 10.0)
             as usize
     }
 
     fn output_frames_next(&self) -> usize {
-        (self.chunk_size as f64 * (0.5 * self.resample_ratio + 0.5 * self.target_ratio) + 10.0)
+        (self.max_chunk_size as f64 * (0.5 * self.resample_ratio + 0.5 * self.target_ratio) + 10.0)
             as usize
     }
 
@@ -497,11 +497,11 @@ where
     }
 
     fn input_frames_max(&self) -> usize {
-        self.chunk_size
+        self.max_chunk_size
     }
 
     fn input_frames_next(&self) -> usize {
-        self.chunk_size
+        self.max_chunk_size
     }
 
     fn set_resample_ratio(&mut self, new_ratio: f64, ramp: bool) -> ResampleResult<()> {
@@ -549,18 +549,18 @@ where
     /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
     /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Resampler::set_resample_ratio] relative to `resample_ratio`, must be >= 1.0. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio * 10.0` and `resample_ratio / 10.0`.
     /// - `parameters`: Parameters for interpolation, see `SincInterpolationParameters`.
-    /// - `chunk_size`: Size of output data in frames.
+    /// - `max_chunk_size`: Size of output data in frames.
     /// - `nbr_channels`: Number of channels in input/output.
     pub fn new(
         resample_ratio: f64,
         max_resample_ratio_relative: f64,
         parameters: SincInterpolationParameters,
-        chunk_size: usize,
+        max_chunk_size: usize,
         nbr_channels: usize,
     ) -> Result<Self, ResamplerConstructionError> {
         debug!(
-            "Create new SincFixedIn, ratio: {}, chunk_size: {}, channels: {}, parameters: {:?}",
-            resample_ratio, chunk_size, nbr_channels, parameters
+            "Create new SincFixedIn, ratio: {}, max_chunk_size: {}, channels: {}, parameters: {:?}",
+            resample_ratio, max_chunk_size, nbr_channels, parameters
         );
         let interpolator = make_interpolator(
             parameters.sinc_len,
@@ -575,7 +575,7 @@ where
             max_resample_ratio_relative,
             parameters.interpolation,
             interpolator,
-            chunk_size,
+            max_chunk_size,
             nbr_channels,
         )
     }
@@ -587,20 +587,20 @@ where
     /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Resampler::set_resample_ratio] relative to `resample_ratio`, must be >= 1.0. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio` * 10.0 and `resample_ratio` / 10.0.
     /// - `interpolation_type`: Parameters for interpolation, see `SincInterpolationParameters`.
     /// - `interpolator`: The interpolator to use.
-    /// - `chunk_size`: Size of output data in frames.
+    /// - `max_chunk_size`: Size of output data in frames.
     /// - `nbr_channels`: Number of channels in input/output.
     pub fn new_with_interpolator(
         resample_ratio: f64,
         max_resample_ratio_relative: f64,
         interpolation_type: SincInterpolationType,
         interpolator: Box<dyn SincInterpolator<T>>,
-        chunk_size: usize,
+        max_chunk_size: usize,
         nbr_channels: usize,
     ) -> Result<Self, ResamplerConstructionError> {
         validate_ratios(resample_ratio, max_resample_ratio_relative)?;
 
         let needed_input_size =
-            (chunk_size as f64 / resample_ratio).ceil() as usize + interpolator.len() / 2;
+            (max_chunk_size as f64 / resample_ratio).ceil() as usize + interpolator.len() / 2;
         let buffer_channel_length = ((max_resample_ratio_relative + 1.0) * needed_input_size as f64)
             as usize
             + 2 * interpolator.len();
@@ -609,7 +609,7 @@ where
 
         Ok(SincFixedOut {
             nbr_channels,
-            chunk_size,
+            max_chunk_size,
             needed_input_size,
             last_index: -((interpolator.len() / 2) as f64),
             current_buffer_fill: needed_input_size,
@@ -647,7 +647,7 @@ where
             &self.channel_mask,
             self.nbr_channels,
             self.needed_input_size,
-            self.chunk_size,
+            self.max_chunk_size,
         )?;
         let sinc_len = self.interpolator.len();
         let oversampling_factor = self.interpolator.nbr_sincs();
@@ -662,7 +662,7 @@ where
 
         for (chan, active) in self.channel_mask.iter().enumerate() {
             if *active {
-                debug_assert!(self.chunk_size <= wave_out[chan].as_mut().len());
+                debug_assert!(self.max_chunk_size <= wave_out[chan].as_mut().len());
                 self.buffer[chan][2 * sinc_len..2 * sinc_len + self.needed_input_size]
                     .copy_from_slice(&wave_in[chan].as_ref()[..self.needed_input_size]);
             }
@@ -671,13 +671,13 @@ where
         let mut idx = self.last_index;
         let mut t_ratio = 1.0 / self.resample_ratio;
         let t_ratio_end = 1.0 / self.target_ratio;
-        let t_ratio_increment = (t_ratio_end - t_ratio) / self.chunk_size as f64;
+        let t_ratio_increment = (t_ratio_end - t_ratio) / self.max_chunk_size as f64;
 
         match self.interpolation {
             SincInterpolationType::Cubic => {
                 let mut points = [T::zero(); 4];
                 let mut nearest = [(0isize, 0isize); 4];
-                for frame in 0..self.chunk_size {
+                for frame in 0..self.max_chunk_size {
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     get_nearest_times_4(idx, oversampling_factor as isize, &mut nearest);
@@ -702,7 +702,7 @@ where
             SincInterpolationType::Quadratic => {
                 let mut points = [T::zero(); 3];
                 let mut nearest = [(0isize, 0isize); 3];
-                for frame in 0..self.chunk_size {
+                for frame in 0..self.max_chunk_size {
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     get_nearest_times_3(idx, oversampling_factor as isize, &mut nearest);
@@ -727,7 +727,7 @@ where
             SincInterpolationType::Linear => {
                 let mut points = [T::zero(); 2];
                 let mut nearest = [(0isize, 0isize); 2];
-                for frame in 0..self.chunk_size {
+                for frame in 0..self.max_chunk_size {
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     get_nearest_times_2(idx, oversampling_factor as isize, &mut nearest);
@@ -752,7 +752,7 @@ where
             SincInterpolationType::Nearest => {
                 let mut point;
                 let mut nearest;
-                for frame in 0..self.chunk_size {
+                for frame in 0..self.max_chunk_size {
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     nearest = get_nearest_time(idx, oversampling_factor as isize);
@@ -776,22 +776,22 @@ where
         self.last_index = idx - self.current_buffer_fill as f64;
         self.resample_ratio = self.target_ratio;
         self.needed_input_size = (self.last_index as f32
-            + self.chunk_size as f32 / self.resample_ratio as f32
+            + self.max_chunk_size as f32 / self.resample_ratio as f32
             + sinc_len as f32)
             .ceil() as usize;
         trace!(
             "Resampling channels {:?}, {} frames in, {} frames out. Next needed length: {} frames, last index {}",
             active_channels_mask,
             self.current_buffer_fill,
-            self.chunk_size,
+            self.max_chunk_size,
             self.needed_input_size,
             self.last_index
         );
-        Ok((input_frames_used, self.chunk_size))
+        Ok((input_frames_used, self.max_chunk_size))
     }
 
     fn input_frames_max(&self) -> usize {
-        (self.chunk_size as f64 / self.resample_ratio_original * self.max_relative_ratio).ceil()
+        (self.max_chunk_size as f64 / self.resample_ratio_original * self.max_relative_ratio).ceil()
             as usize
             + 2
             + self.interpolator.len() / 2
@@ -806,11 +806,11 @@ where
     }
 
     fn output_frames_max(&self) -> usize {
-        self.chunk_size
+        self.max_chunk_size
     }
 
     fn output_frames_next(&self) -> usize {
-        self.chunk_size
+        self.max_chunk_size
     }
 
     fn output_delay(&self) -> usize {
@@ -828,7 +828,7 @@ where
             self.target_ratio = new_ratio;
 
             self.needed_input_size = (self.last_index as f32
-                + self.chunk_size as f32
+                + self.max_chunk_size as f32
                     / (0.5 * self.resample_ratio as f32 + 0.5 * self.target_ratio as f32)
                 + self.interpolator.len() as f32)
                 .ceil() as usize;
@@ -851,7 +851,7 @@ where
         self.buffer
             .iter_mut()
             .for_each(|ch| ch.iter_mut().for_each(|s| *s = T::zero()));
-        self.needed_input_size = (self.chunk_size as f64 / self.resample_ratio_original).ceil()
+        self.needed_input_size = (self.max_chunk_size as f64 / self.resample_ratio_original).ceil()
             as usize
             + self.interpolator.len() / 2;
         self.current_buffer_fill = self.needed_input_size;
