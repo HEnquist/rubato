@@ -887,6 +887,8 @@ where
         }
 
         self.chunk_size = chunk_size;
+        self.needed_input_size = (self.chunk_size as f64 / self.resample_ratio).ceil() as usize
+            + self.interpolator.len() / 2;
         Ok(())
     }
 
@@ -996,6 +998,7 @@ mod tests {
     use crate::{check_output, check_ratio};
     use crate::{SincFixedIn, SincFixedOut};
     use rand::Rng;
+    use test_log::test;
 
     fn basic_params() -> SincInterpolationParameters {
         SincInterpolationParameters {
@@ -1355,6 +1358,55 @@ mod tests {
             1024,
             "Expected {} frames, got {}",
             1024,
+            out[0].len()
+        );
+        let frames2 = resampler.input_frames_next();
+        assert!(
+            frames2 > 125 && frames2 < 131,
+            "expected {}..{} samples, got {}",
+            125,
+            131,
+            frames2
+        );
+        let waves2 = vec![vec![0.0f64; frames2]; 2];
+        let out2 = resampler.process(&waves2, None).unwrap();
+        assert_eq!(
+            out2[0].len(),
+            1024,
+            "Expected {} frames, got {}",
+            1024,
+            out2[0].len()
+        );
+    }
+
+    #[test]
+    fn make_resampler_fo_upsample_with_smaller_chunk_size() {
+        let params = SincInterpolationParameters {
+            sinc_len: 256,
+            f_cutoff: 0.95,
+            interpolation: SincInterpolationType::Cubic,
+            oversampling_factor: 160,
+            window: WindowFunction::BlackmanHarris2,
+        };
+        let mut resampler = SincFixedOut::<f64>::new(8.0, 1.0, params, 1024, 2).unwrap();
+        resampler.set_chunk_size(128).expect("Should be fine");
+        let frames = resampler.input_frames_next();
+        println!("input_frames_next={}", frames);
+        assert!(
+            frames > 128 && frames < 300,
+            "expected {}..{} samples, got {}",
+            140,
+            200,
+            frames
+        );
+        let waves = vec![vec![0.0f64; frames]; 2];
+        let out = resampler.process(&waves, None).unwrap();
+        assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
+        assert_eq!(
+            out[0].len(),
+            128,
+            "Expected {} frames, got {}",
+            128,
             out[0].len()
         );
         let frames2 = resampler.input_frames_next();
