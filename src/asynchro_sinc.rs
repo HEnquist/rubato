@@ -86,6 +86,7 @@ pub enum SincInterpolationType {
 pub struct SincFixedIn<T> {
     nbr_channels: usize,
     max_chunk_size: usize,
+    chunk_size: usize,
     last_index: f64,
     resample_ratio: f64,
     resample_ratio_original: f64,
@@ -114,6 +115,7 @@ pub struct SincFixedIn<T> {
 pub struct SincFixedOut<T> {
     nbr_channels: usize,
     max_chunk_size: usize,
+    chunk_size: usize,
     needed_input_size: usize,
     last_index: f64,
     current_buffer_fill: usize,
@@ -293,6 +295,7 @@ where
         Ok(SincFixedIn {
             nbr_channels,
             max_chunk_size,
+            chunk_size: max_chunk_size,
             last_index: -((interpolator.len() / 2) as f64),
             resample_ratio,
             resample_ratio_original: resample_ratio,
@@ -323,7 +326,7 @@ where
         };
 
         // Set length to chunksize*ratio plus a safety margin of 10 elements.
-        let needed_len = (self.max_chunk_size as f64
+        let needed_len = (self.chunk_size as f64
             * (0.5 * self.resample_ratio + 0.5 * self.target_ratio)
             + 10.0) as usize;
 
@@ -332,7 +335,7 @@ where
             wave_out,
             &self.channel_mask,
             self.nbr_channels,
-            self.max_chunk_size,
+            self.chunk_size,
             needed_len,
         )?;
 
@@ -341,21 +344,21 @@ where
         let mut t_ratio = 1.0 / self.resample_ratio;
         let t_ratio_end = 1.0 / self.target_ratio;
         let approximate_nbr_frames =
-            self.max_chunk_size as f64 * (0.5 * self.resample_ratio + 0.5 * self.target_ratio);
+            self.chunk_size as f64 * (0.5 * self.resample_ratio + 0.5 * self.target_ratio);
         let t_ratio_increment = (t_ratio_end - t_ratio) / approximate_nbr_frames;
         let end_idx =
-            self.max_chunk_size as isize - (sinc_len as isize + 1) - t_ratio_end.ceil() as isize;
+            self.chunk_size as isize - (sinc_len as isize + 1) - t_ratio_end.ceil() as isize;
 
         // Update buffer with new data.
         for buf in self.buffer.iter_mut() {
-            buf.copy_within(self.max_chunk_size..self.max_chunk_size + 2 * sinc_len, 0);
+            buf.copy_within(self.chunk_size..self.chunk_size + 2 * sinc_len, 0);
         }
 
         for (chan, active) in self.channel_mask.iter().enumerate() {
             if *active {
                 debug_assert!(needed_len <= wave_out[chan].as_mut().len());
-                self.buffer[chan][2 * sinc_len..2 * sinc_len + self.max_chunk_size]
-                    .copy_from_slice(&wave_in[chan].as_ref()[..self.max_chunk_size]);
+                self.buffer[chan][2 * sinc_len..2 * sinc_len + self.chunk_size]
+                    .copy_from_slice(&wave_in[chan].as_ref()[..self.chunk_size]);
             }
         }
 
@@ -466,25 +469,25 @@ where
         }
 
         // Store last index for next iteration.
-        self.last_index = idx - self.max_chunk_size as f64;
+        self.last_index = idx - self.chunk_size as f64;
         self.resample_ratio = self.target_ratio;
         trace!(
             "Resampling channels {:?}, {} frames in, {} frames out",
             active_channels_mask,
-            self.max_chunk_size,
+            self.chunk_size,
             n,
         );
-        Ok((self.max_chunk_size, n))
+        Ok((self.chunk_size, n))
     }
 
     fn output_frames_max(&self) -> usize {
         // Set length to chunksize*ratio plus a safety margin of 10 elements.
-        (self.max_chunk_size as f64 * self.resample_ratio_original * self.max_relative_ratio + 10.0)
+        (self.chunk_size as f64 * self.resample_ratio_original * self.max_relative_ratio + 10.0)
             as usize
     }
 
     fn output_frames_next(&self) -> usize {
-        (self.max_chunk_size as f64 * (0.5 * self.resample_ratio + 0.5 * self.target_ratio) + 10.0)
+        (self.chunk_size as f64 * (0.5 * self.resample_ratio + 0.5 * self.target_ratio) + 10.0)
             as usize
     }
 
@@ -497,11 +500,11 @@ where
     }
 
     fn input_frames_max(&self) -> usize {
-        self.max_chunk_size
+        self.chunk_size
     }
 
     fn input_frames_next(&self) -> usize {
-        self.max_chunk_size
+        self.chunk_size
     }
 
     fn set_resample_ratio(&mut self, new_ratio: f64, ramp: bool) -> ResampleResult<()> {
@@ -536,6 +539,22 @@ where
         self.last_index = -((self.interpolator.len() / 2) as f64);
         self.resample_ratio = self.resample_ratio_original;
         self.target_ratio = self.resample_ratio_original;
+    }
+
+    fn set_chunk_size(&mut self, chunk_size: usize) -> ResampleResult<()> {
+        if chunk_size > self.max_chunk_size {
+            todo!("Implement error");
+        }
+        self.chunk_size = chunk_size;
+        Ok(())
+    }
+
+    fn chunk_size(&self) -> usize {
+        self.chunk_size
+    }
+
+    fn max_chunk_size(&self) -> usize {
+        self.max_chunk_size
     }
 }
 
@@ -610,6 +629,7 @@ where
         Ok(SincFixedOut {
             nbr_channels,
             max_chunk_size,
+            chunk_size: max_chunk_size,
             needed_input_size,
             last_index: -((interpolator.len() / 2) as f64),
             current_buffer_fill: needed_input_size,
@@ -647,7 +667,7 @@ where
             &self.channel_mask,
             self.nbr_channels,
             self.needed_input_size,
-            self.max_chunk_size,
+            self.chunk_size,
         )?;
         let sinc_len = self.interpolator.len();
         let oversampling_factor = self.interpolator.nbr_sincs();
@@ -662,7 +682,7 @@ where
 
         for (chan, active) in self.channel_mask.iter().enumerate() {
             if *active {
-                debug_assert!(self.max_chunk_size <= wave_out[chan].as_mut().len());
+                debug_assert!(self.chunk_size <= wave_out[chan].as_mut().len());
                 self.buffer[chan][2 * sinc_len..2 * sinc_len + self.needed_input_size]
                     .copy_from_slice(&wave_in[chan].as_ref()[..self.needed_input_size]);
             }
@@ -671,13 +691,13 @@ where
         let mut idx = self.last_index;
         let mut t_ratio = 1.0 / self.resample_ratio;
         let t_ratio_end = 1.0 / self.target_ratio;
-        let t_ratio_increment = (t_ratio_end - t_ratio) / self.max_chunk_size as f64;
+        let t_ratio_increment = (t_ratio_end - t_ratio) / self.chunk_size as f64;
 
         match self.interpolation {
             SincInterpolationType::Cubic => {
                 let mut points = [T::zero(); 4];
                 let mut nearest = [(0isize, 0isize); 4];
-                for frame in 0..self.max_chunk_size {
+                for frame in 0..self.chunk_size {
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     get_nearest_times_4(idx, oversampling_factor as isize, &mut nearest);
@@ -702,7 +722,7 @@ where
             SincInterpolationType::Quadratic => {
                 let mut points = [T::zero(); 3];
                 let mut nearest = [(0isize, 0isize); 3];
-                for frame in 0..self.max_chunk_size {
+                for frame in 0..self.chunk_size {
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     get_nearest_times_3(idx, oversampling_factor as isize, &mut nearest);
@@ -727,7 +747,7 @@ where
             SincInterpolationType::Linear => {
                 let mut points = [T::zero(); 2];
                 let mut nearest = [(0isize, 0isize); 2];
-                for frame in 0..self.max_chunk_size {
+                for frame in 0..self.chunk_size {
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     get_nearest_times_2(idx, oversampling_factor as isize, &mut nearest);
@@ -752,7 +772,7 @@ where
             SincInterpolationType::Nearest => {
                 let mut point;
                 let mut nearest;
-                for frame in 0..self.max_chunk_size {
+                for frame in 0..self.chunk_size {
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     nearest = get_nearest_time(idx, oversampling_factor as isize);
@@ -776,22 +796,22 @@ where
         self.last_index = idx - self.current_buffer_fill as f64;
         self.resample_ratio = self.target_ratio;
         self.needed_input_size = (self.last_index as f32
-            + self.max_chunk_size as f32 / self.resample_ratio as f32
+            + self.chunk_size as f32 / self.resample_ratio as f32
             + sinc_len as f32)
             .ceil() as usize;
         trace!(
             "Resampling channels {:?}, {} frames in, {} frames out. Next needed length: {} frames, last index {}",
             active_channels_mask,
             self.current_buffer_fill,
-            self.max_chunk_size,
+            self.chunk_size,
             self.needed_input_size,
             self.last_index
         );
-        Ok((input_frames_used, self.max_chunk_size))
+        Ok((input_frames_used, self.chunk_size))
     }
 
     fn input_frames_max(&self) -> usize {
-        (self.max_chunk_size as f64 / self.resample_ratio_original * self.max_relative_ratio).ceil()
+        (self.chunk_size as f64 / self.resample_ratio_original * self.max_relative_ratio).ceil()
             as usize
             + 2
             + self.interpolator.len() / 2
@@ -806,11 +826,11 @@ where
     }
 
     fn output_frames_max(&self) -> usize {
-        self.max_chunk_size
+        self.chunk_size
     }
 
     fn output_frames_next(&self) -> usize {
-        self.max_chunk_size
+        self.chunk_size
     }
 
     fn output_delay(&self) -> usize {
@@ -828,7 +848,7 @@ where
             self.target_ratio = new_ratio;
 
             self.needed_input_size = (self.last_index as f32
-                + self.max_chunk_size as f32
+                + self.chunk_size as f32
                     / (0.5 * self.resample_ratio as f32 + 0.5 * self.target_ratio as f32)
                 + self.interpolator.len() as f32)
                 .ceil() as usize;
@@ -851,7 +871,7 @@ where
         self.buffer
             .iter_mut()
             .for_each(|ch| ch.iter_mut().for_each(|s| *s = T::zero()));
-        self.needed_input_size = (self.max_chunk_size as f64 / self.resample_ratio_original).ceil()
+        self.needed_input_size = (self.chunk_size as f64 / self.resample_ratio_original).ceil()
             as usize
             + self.interpolator.len() / 2;
         self.current_buffer_fill = self.needed_input_size;
@@ -859,6 +879,110 @@ where
         self.channel_mask.iter_mut().for_each(|val| *val = true);
         self.resample_ratio = self.resample_ratio_original;
         self.target_ratio = self.resample_ratio_original;
+    }
+
+    fn set_chunk_size(&mut self, chunk_size: usize) -> ResampleResult<()> {
+        if chunk_size > self.max_chunk_size {
+            todo!("Implement error");
+        }
+
+        self.chunk_size = chunk_size;
+        Ok(())
+    }
+
+    fn chunk_size(&self) -> usize {
+        self.chunk_size
+    }
+
+    fn max_chunk_size(&self) -> usize {
+        self.max_chunk_size
+    }
+
+    fn process<V: AsRef<[T]>>(
+        &mut self,
+        wave_in: &[V],
+        active_channels_mask: Option<&[bool]>,
+    ) -> ResampleResult<Vec<Vec<T>>> {
+        let frames = self.output_frames_next();
+        let channels = self.nbr_channels();
+        let mut wave_out = Vec::with_capacity(channels);
+        for chan in 0..channels {
+            let chan_out = if active_channels_mask.map(|mask| mask[chan]).unwrap_or(true) {
+                vec![T::zero(); frames]
+            } else {
+                vec![]
+            };
+            wave_out.push(chan_out);
+        }
+        let (_, out_len) =
+            self.process_into_buffer(wave_in, &mut wave_out, active_channels_mask)?;
+        for chan_out in wave_out.iter_mut() {
+            chan_out.truncate(out_len);
+        }
+        Ok(wave_out)
+    }
+
+    fn process_partial_into_buffer<Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
+        &mut self,
+        wave_in: Option<&[Vin]>,
+        wave_out: &mut [Vout],
+        active_channels_mask: Option<&[bool]>,
+    ) -> ResampleResult<(usize, usize)> {
+        let frames = self.input_frames_next();
+        let mut wave_in_padded = Vec::with_capacity(self.nbr_channels());
+        for _ in 0..self.nbr_channels() {
+            wave_in_padded.push(vec![T::zero(); frames]);
+        }
+        if let Some(input) = wave_in {
+            for (ch_input, ch_padded) in input.iter().zip(wave_in_padded.iter_mut()) {
+                let mut frames_in = ch_input.as_ref().len();
+                if frames_in > frames {
+                    frames_in = frames;
+                }
+                if frames_in > 0 {
+                    ch_padded[..frames_in].copy_from_slice(&ch_input.as_ref()[..frames_in]);
+                } else {
+                    ch_padded.clear();
+                }
+            }
+        }
+        self.process_into_buffer(&wave_in_padded, wave_out, active_channels_mask)
+    }
+
+    fn process_partial<V: AsRef<[T]>>(
+        &mut self,
+        wave_in: Option<&[V]>,
+        active_channels_mask: Option<&[bool]>,
+    ) -> ResampleResult<Vec<Vec<T>>> {
+        let frames = self.output_frames_next();
+        let channels = self.nbr_channels();
+        let mut wave_out = Vec::with_capacity(channels);
+        for chan in 0..channels {
+            let chan_out = if active_channels_mask.map(|mask| mask[chan]).unwrap_or(true) {
+                vec![T::zero(); frames]
+            } else {
+                vec![]
+            };
+            wave_out.push(chan_out);
+        }
+        let (_, out_len) =
+            self.process_partial_into_buffer(wave_in, &mut wave_out, active_channels_mask)?;
+        for chan_out in wave_out.iter_mut() {
+            chan_out.truncate(out_len);
+        }
+        Ok(wave_out)
+    }
+
+    fn input_buffer_allocate(&self, filled: bool) -> Vec<Vec<T>> {
+        let frames = self.input_frames_max();
+        let channels = self.nbr_channels();
+        crate::make_buffer(channels, frames, filled)
+    }
+
+    fn output_buffer_allocate(&self, filled: bool) -> Vec<Vec<T>> {
+        let frames = self.output_frames_max();
+        let channels = self.nbr_channels();
+        crate::make_buffer(channels, frames, filled)
     }
 }
 

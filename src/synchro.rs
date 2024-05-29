@@ -314,6 +314,105 @@ where
             .for_each(|ch| ch.iter_mut().for_each(|s| *s = T::zero()));
         self.channel_mask.iter_mut().for_each(|val| *val = true);
     }
+
+    fn set_chunk_size(&mut self, chunk_size: usize) -> ResampleResult<()> {
+        todo!()
+    }
+
+    fn chunk_size(&self) -> usize {
+        todo!()
+    }
+
+    fn max_chunk_size(&self) -> usize {
+        todo!()
+    }
+
+    fn process<V: AsRef<[T]>>(
+        &mut self,
+        wave_in: &[V],
+        active_channels_mask: Option<&[bool]>,
+    ) -> ResampleResult<Vec<Vec<T>>> {
+        let frames = self.output_frames_next();
+        let channels = self.nbr_channels();
+        let mut wave_out = Vec::with_capacity(channels);
+        for chan in 0..channels {
+            let chan_out = if active_channels_mask.map(|mask| mask[chan]).unwrap_or(true) {
+                vec![T::zero(); frames]
+            } else {
+                vec![]
+            };
+            wave_out.push(chan_out);
+        }
+        let (_, out_len) =
+            self.process_into_buffer(wave_in, &mut wave_out, active_channels_mask)?;
+        for chan_out in wave_out.iter_mut() {
+            chan_out.truncate(out_len);
+        }
+        Ok(wave_out)
+    }
+
+    fn process_partial_into_buffer<Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
+        &mut self,
+        wave_in: Option<&[Vin]>,
+        wave_out: &mut [Vout],
+        active_channels_mask: Option<&[bool]>,
+    ) -> ResampleResult<(usize, usize)> {
+        let frames = self.input_frames_next();
+        let mut wave_in_padded = Vec::with_capacity(self.nbr_channels());
+        for _ in 0..self.nbr_channels() {
+            wave_in_padded.push(vec![T::zero(); frames]);
+        }
+        if let Some(input) = wave_in {
+            for (ch_input, ch_padded) in input.iter().zip(wave_in_padded.iter_mut()) {
+                let mut frames_in = ch_input.as_ref().len();
+                if frames_in > frames {
+                    frames_in = frames;
+                }
+                if frames_in > 0 {
+                    ch_padded[..frames_in].copy_from_slice(&ch_input.as_ref()[..frames_in]);
+                } else {
+                    ch_padded.clear();
+                }
+            }
+        }
+        self.process_into_buffer(&wave_in_padded, wave_out, active_channels_mask)
+    }
+
+    fn process_partial<V: AsRef<[T]>>(
+        &mut self,
+        wave_in: Option<&[V]>,
+        active_channels_mask: Option<&[bool]>,
+    ) -> ResampleResult<Vec<Vec<T>>> {
+        let frames = self.output_frames_next();
+        let channels = self.nbr_channels();
+        let mut wave_out = Vec::with_capacity(channels);
+        for chan in 0..channels {
+            let chan_out = if active_channels_mask.map(|mask| mask[chan]).unwrap_or(true) {
+                vec![T::zero(); frames]
+            } else {
+                vec![]
+            };
+            wave_out.push(chan_out);
+        }
+        let (_, out_len) =
+            self.process_partial_into_buffer(wave_in, &mut wave_out, active_channels_mask)?;
+        for chan_out in wave_out.iter_mut() {
+            chan_out.truncate(out_len);
+        }
+        Ok(wave_out)
+    }
+
+    fn input_buffer_allocate(&self, filled: bool) -> Vec<Vec<T>> {
+        let frames = self.input_frames_max();
+        let channels = self.nbr_channels();
+        crate::make_buffer(channels, frames, filled)
+    }
+
+    fn output_buffer_allocate(&self, filled: bool) -> Vec<Vec<T>> {
+        let frames = self.output_frames_max();
+        let channels = self.nbr_channels();
+        crate::make_buffer(channels, frames, filled)
+    }
 }
 
 impl<T> FftFixedOut<T>
@@ -494,6 +593,18 @@ where
         self.saved_frames = 0;
         let chunks_needed = (self.chunk_size_out as f32 / self.fft_size_out as f32).ceil() as usize;
         self.frames_needed = chunks_needed * self.fft_size_in;
+    }
+
+    fn set_chunk_size(&mut self, chunk_size: usize) -> ResampleResult<()> {
+        todo!()
+    }
+
+    fn chunk_size(&self) -> usize {
+        todo!()
+    }
+
+    fn max_chunk_size(&self) -> usize {
+        todo!()
     }
 }
 
@@ -678,6 +789,105 @@ where
             .for_each(|ch| ch.iter_mut().for_each(|s| *s = T::zero()));
         self.channel_mask.iter_mut().for_each(|val| *val = true);
         self.saved_frames = 0;
+    }
+
+    fn set_chunk_size(&mut self, chunk_size: usize) -> ResampleResult<()> {
+        todo!()
+    }
+
+    fn chunk_size(&self) -> usize {
+        todo!()
+    }
+
+    fn max_chunk_size(&self) -> usize {
+        todo!()
+    }
+
+    fn process<V: AsRef<[T]>>(
+        &mut self,
+        wave_in: &[V],
+        active_channels_mask: Option<&[bool]>,
+    ) -> ResampleResult<Vec<Vec<T>>> {
+        let frames = self.output_frames_next();
+        let channels = self.nbr_channels();
+        let mut wave_out = Vec::with_capacity(channels);
+        for chan in 0..channels {
+            let chan_out = if active_channels_mask.map(|mask| mask[chan]).unwrap_or(true) {
+                vec![T::zero(); frames]
+            } else {
+                vec![]
+            };
+            wave_out.push(chan_out);
+        }
+        let (_, out_len) =
+            self.process_into_buffer(wave_in, &mut wave_out, active_channels_mask)?;
+        for chan_out in wave_out.iter_mut() {
+            chan_out.truncate(out_len);
+        }
+        Ok(wave_out)
+    }
+
+    fn process_partial_into_buffer<Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
+        &mut self,
+        wave_in: Option<&[Vin]>,
+        wave_out: &mut [Vout],
+        active_channels_mask: Option<&[bool]>,
+    ) -> ResampleResult<(usize, usize)> {
+        let frames = self.input_frames_next();
+        let mut wave_in_padded = Vec::with_capacity(self.nbr_channels());
+        for _ in 0..self.nbr_channels() {
+            wave_in_padded.push(vec![T::zero(); frames]);
+        }
+        if let Some(input) = wave_in {
+            for (ch_input, ch_padded) in input.iter().zip(wave_in_padded.iter_mut()) {
+                let mut frames_in = ch_input.as_ref().len();
+                if frames_in > frames {
+                    frames_in = frames;
+                }
+                if frames_in > 0 {
+                    ch_padded[..frames_in].copy_from_slice(&ch_input.as_ref()[..frames_in]);
+                } else {
+                    ch_padded.clear();
+                }
+            }
+        }
+        self.process_into_buffer(&wave_in_padded, wave_out, active_channels_mask)
+    }
+
+    fn process_partial<V: AsRef<[T]>>(
+        &mut self,
+        wave_in: Option<&[V]>,
+        active_channels_mask: Option<&[bool]>,
+    ) -> ResampleResult<Vec<Vec<T>>> {
+        let frames = self.output_frames_next();
+        let channels = self.nbr_channels();
+        let mut wave_out = Vec::with_capacity(channels);
+        for chan in 0..channels {
+            let chan_out = if active_channels_mask.map(|mask| mask[chan]).unwrap_or(true) {
+                vec![T::zero(); frames]
+            } else {
+                vec![]
+            };
+            wave_out.push(chan_out);
+        }
+        let (_, out_len) =
+            self.process_partial_into_buffer(wave_in, &mut wave_out, active_channels_mask)?;
+        for chan_out in wave_out.iter_mut() {
+            chan_out.truncate(out_len);
+        }
+        Ok(wave_out)
+    }
+
+    fn input_buffer_allocate(&self, filled: bool) -> Vec<Vec<T>> {
+        let frames = self.input_frames_max();
+        let channels = self.nbr_channels();
+        crate::make_buffer(channels, frames, filled)
+    }
+
+    fn output_buffer_allocate(&self, filled: bool) -> Vec<Vec<T>> {
+        let frames = self.output_frames_max();
+        let channels = self.nbr_channels();
+        crate::make_buffer(channels, frames, filled)
     }
 }
 

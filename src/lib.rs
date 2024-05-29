@@ -424,6 +424,10 @@ where
     /// For synchronous resamplers, this will always return [ResampleError::SyncNotAdjustable].
     fn set_resample_ratio_relative(&mut self, rel_ratio: f64, ramp: bool) -> ResampleResult<()>;
 
+    fn set_chunk_size(&mut self, chunk_size: usize) -> ResampleResult<()>;
+    fn chunk_size(&self) -> usize;
+    fn max_chunk_size(&self) -> usize;
+
     /// Reset the resampler state and clear all internal buffers.
     fn reset(&mut self);
 }
