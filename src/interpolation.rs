@@ -68,6 +68,7 @@ mod tests {
     use crate::interpolation::get_nearest_times_2;
     use crate::interpolation::get_nearest_times_3;
     use crate::interpolation::get_nearest_times_4;
+    use test_log::test;
 
     #[test]
     fn get_nearest_2() {

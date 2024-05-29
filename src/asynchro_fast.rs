@@ -816,6 +816,7 @@ mod tests {
     use crate::{check_output, check_ratio};
     use crate::{FastFixedIn, FastFixedOut};
     use rand::Rng;
+    use test_log::test;
 
     #[test]
     fn make_resampler_fi() {

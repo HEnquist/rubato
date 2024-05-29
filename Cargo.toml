@@ -31,6 +31,7 @@ rand = "0.8.5"
 num-traits = "0.2.15"
 log = "0.4.18"
 approx = "0.5.1"
+test-log = "0.2.16"
 
 [[bench]]
 name = "resamplers"
