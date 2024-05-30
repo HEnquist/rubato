@@ -86,6 +86,7 @@ pub enum SincInterpolationType {
 pub struct SincFixedIn<T> {
     nbr_channels: usize,
     chunk_size: usize,
+    max_chunk_size: usize,
     last_index: f64,
     resample_ratio: f64,
     resample_ratio_original: f64,
@@ -114,6 +115,7 @@ pub struct SincFixedIn<T> {
 pub struct SincFixedOut<T> {
     nbr_channels: usize,
     chunk_size: usize,
+    max_chunk_size: usize,
     needed_input_size: usize,
     last_index: f64,
     current_buffer_fill: usize,
@@ -293,6 +295,7 @@ where
         Ok(SincFixedIn {
             nbr_channels,
             chunk_size,
+            max_chunk_size: chunk_size,
             last_index: -((interpolator.len() / 2) as f64),
             resample_ratio,
             resample_ratio_original: resample_ratio,
@@ -479,7 +482,7 @@ where
 
     fn output_frames_max(&self) -> usize {
         // Set length to chunksize*ratio plus a safety margin of 10 elements.
-        (self.chunk_size as f64 * self.resample_ratio_original * self.max_relative_ratio + 10.0)
+        (self.max_chunk_size as f64 * self.resample_ratio_original * self.max_relative_ratio + 10.0)
             as usize
     }
 
@@ -497,7 +500,7 @@ where
     }
 
     fn input_frames_max(&self) -> usize {
-        self.chunk_size
+        self.max_chunk_size
     }
 
     fn input_frames_next(&self) -> usize {
@@ -536,6 +539,14 @@ where
         self.last_index = -((self.interpolator.len() / 2) as f64);
         self.resample_ratio = self.resample_ratio_original;
         self.target_ratio = self.resample_ratio_original;
+    }
+
+    fn set_chunksize(&mut self, chunksize: usize) -> ResampleResult<()> {
+        if chunksize > self.max_chunk_size || chunksize == 0 {
+            return Err(ResampleError::SyncNotAdjustable);
+        }
+        self.chunk_size = chunksize;
+        Ok(())
     }
 }
 
@@ -610,6 +621,7 @@ where
         Ok(SincFixedOut {
             nbr_channels,
             chunk_size,
+            max_chunk_size: chunk_size,
             needed_input_size,
             last_index: -((interpolator.len() / 2) as f64),
             current_buffer_fill: needed_input_size,
@@ -791,7 +803,7 @@ where
     }
 
     fn input_frames_max(&self) -> usize {
-        (self.chunk_size as f64 / self.resample_ratio_original * self.max_relative_ratio).ceil()
+        (self.max_chunk_size as f64 / self.resample_ratio_original * self.max_relative_ratio).ceil()
             as usize
             + 2
             + self.interpolator.len() / 2
@@ -806,7 +818,7 @@ where
     }
 
     fn output_frames_max(&self) -> usize {
-        self.chunk_size
+        self.max_chunk_size
     }
 
     fn output_frames_next(&self) -> usize {
@@ -859,6 +871,18 @@ where
         self.channel_mask.iter_mut().for_each(|val| *val = true);
         self.resample_ratio = self.resample_ratio_original;
         self.target_ratio = self.resample_ratio_original;
+    }
+
+    fn set_chunksize(&mut self, chunksize: usize) -> ResampleResult<()> {
+        if chunksize > self.max_chunk_size || chunksize == 0 {
+            return Err(ResampleError::SyncNotAdjustable);
+        }
+        self.chunk_size = chunksize;
+        self.needed_input_size = (self.last_index as f32
+            + self.chunk_size as f32 / self.resample_ratio as f32
+            + self.interpolator.len() as f32)
+            .ceil() as usize;
+        Ok(())
     }
 }
 
@@ -1342,5 +1366,25 @@ mod tests {
         let params = basic_params();
         let mut resampler = SincFixedIn::<f32>::new(ratio, 1.0, params, 1024, 2).unwrap();
         check_ratio!(resampler, ratio, 100);
+    }
+
+    #[test]
+    fn check_fo_output_resize() {
+        let params = basic_params();
+        let mut resampler = SincFixedOut::<f64>::new(1.2, 1.0, params, 1024, 2).unwrap();
+        assert_eq!(resampler.output_frames_next(), 1024);
+        resampler.set_chunksize(256).unwrap();
+        assert_eq!(resampler.output_frames_next(), 256);
+        check_output!(resampler);
+    }
+
+    #[test]
+    fn check_fi_output_resize() {
+        let params = basic_params();
+        let mut resampler = SincFixedIn::<f64>::new(1.2, 1.0, params, 1024, 2).unwrap();
+        assert_eq!(resampler.input_frames_next(), 1024);
+        resampler.set_chunksize(256).unwrap();
+        assert_eq!(resampler.input_frames_next(), 256);
+        check_output!(resampler);
     }
 }

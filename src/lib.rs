@@ -426,6 +426,10 @@ where
 
     /// Reset the resampler state and clear all internal buffers.
     fn reset(&mut self);
+
+    fn set_chunksize(&mut self, _chunksize: usize) -> ResampleResult<()> {
+        Err(ResampleError::SyncNotAdjustable)
+    }
 }
 
 use crate as rubato;
