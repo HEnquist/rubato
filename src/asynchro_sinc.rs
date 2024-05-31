@@ -635,6 +635,14 @@ where
             channel_mask,
         })
     }
+
+    fn update_needed_len(&mut self) {
+        self.needed_input_size = (self.last_index as f32
+            + self.chunk_size as f32
+                / (0.5 * self.resample_ratio as f32 + 0.5 * self.target_ratio as f32)
+            + self.interpolator.len() as f32)
+            .ceil() as usize;
+    }
 }
 
 impl<T> Resampler<T> for SincFixedOut<T>
@@ -787,10 +795,7 @@ where
         let input_frames_used = self.needed_input_size;
         self.last_index = idx - self.current_buffer_fill as f64;
         self.resample_ratio = self.target_ratio;
-        self.needed_input_size = (self.last_index as f32
-            + self.chunk_size as f32 / self.resample_ratio as f32
-            + sinc_len as f32)
-            .ceil() as usize;
+        self.update_needed_len();
         trace!(
             "Resampling channels {:?}, {} frames in, {} frames out. Next needed length: {} frames, last index {}",
             active_channels_mask,
@@ -839,11 +844,7 @@ where
             }
             self.target_ratio = new_ratio;
 
-            self.needed_input_size = (self.last_index as f32
-                + self.chunk_size as f32
-                    / (0.5 * self.resample_ratio as f32 + 0.5 * self.target_ratio as f32)
-                + self.interpolator.len() as f32)
-                .ceil() as usize;
+            self.update_needed_len();
             Ok(())
         } else {
             Err(ResampleError::RatioOutOfBounds {
@@ -863,14 +864,13 @@ where
         self.buffer
             .iter_mut()
             .for_each(|ch| ch.iter_mut().for_each(|s| *s = T::zero()));
-        self.needed_input_size = (self.chunk_size as f64 / self.resample_ratio_original).ceil()
-            as usize
-            + self.interpolator.len() / 2;
-        self.current_buffer_fill = self.needed_input_size;
-        self.last_index = -((self.interpolator.len() / 2) as f64);
-        self.channel_mask.iter_mut().for_each(|val| *val = true);
+
         self.resample_ratio = self.resample_ratio_original;
         self.target_ratio = self.resample_ratio_original;
+        self.last_index = -((self.interpolator.len() / 2) as f64);
+        self.update_needed_len();
+        self.current_buffer_fill = self.needed_input_size;
+        self.channel_mask.iter_mut().for_each(|val| *val = true);
     }
 
     fn set_chunksize(&mut self, chunksize: usize) -> ResampleResult<()> {
@@ -878,10 +878,7 @@ where
             return Err(ResampleError::SyncNotAdjustable);
         }
         self.chunk_size = chunksize;
-        self.needed_input_size = (self.last_index as f32
-            + self.chunk_size as f32 / self.resample_ratio as f32
-            + self.interpolator.len() as f32)
-            .ceil() as usize;
+        self.update_needed_len();
         Ok(())
     }
 }
