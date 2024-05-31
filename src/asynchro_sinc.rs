@@ -544,9 +544,12 @@ where
         self.chunk_size = self.max_chunk_size;
     }
 
-    fn set_chunksize(&mut self, chunksize: usize) -> ResampleResult<()> {
+    fn set_chunk_size(&mut self, chunksize: usize) -> ResampleResult<()> {
         if chunksize > self.max_chunk_size || chunksize == 0 {
-            return Err(ResampleError::SyncNotAdjustable);
+            return Err(ResampleError::InvalidChunkSize {
+                max: self.max_chunk_size,
+                requested: chunksize,
+            });
         }
         self.chunk_size = chunksize;
         Ok(())
@@ -877,9 +880,12 @@ where
         self.channel_mask.iter_mut().for_each(|val| *val = true);
     }
 
-    fn set_chunksize(&mut self, chunksize: usize) -> ResampleResult<()> {
+    fn set_chunk_size(&mut self, chunksize: usize) -> ResampleResult<()> {
         if chunksize > self.max_chunk_size || chunksize == 0 {
-            return Err(ResampleError::SyncNotAdjustable);
+            return Err(ResampleError::InvalidChunkSize {
+                max: self.max_chunk_size,
+                requested: chunksize,
+            });
         }
         self.chunk_size = chunksize;
         self.update_needed_len();
@@ -1374,7 +1380,7 @@ mod tests {
         let params = basic_params();
         let mut resampler = SincFixedOut::<f64>::new(1.2, 1.0, params, 1024, 2).unwrap();
         assert_eq!(resampler.output_frames_next(), 1024);
-        resampler.set_chunksize(256).unwrap();
+        resampler.set_chunk_size(256).unwrap();
         assert_eq!(resampler.output_frames_next(), 256);
         check_output!(resampler);
     }
@@ -1384,7 +1390,7 @@ mod tests {
         let params = basic_params();
         let mut resampler = SincFixedIn::<f64>::new(1.2, 1.0, params, 1024, 2).unwrap();
         assert_eq!(resampler.input_frames_next(), 1024);
-        resampler.set_chunksize(256).unwrap();
+        resampler.set_chunk_size(256).unwrap();
         assert_eq!(resampler.input_frames_next(), 256);
         check_output!(resampler);
     }

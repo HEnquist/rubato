@@ -123,11 +123,20 @@ pub enum ResampleError {
     /// on a synchronous resampler.
     SyncNotAdjustable,
     /// Error raised when the number of channels in the input buffer doesn't match the value expected.
-    WrongNumberOfInputChannels { expected: usize, actual: usize },
+    WrongNumberOfInputChannels {
+        expected: usize,
+        actual: usize,
+    },
     /// Error raised when the number of channels in the output buffer doesn't match the value expected.
-    WrongNumberOfOutputChannels { expected: usize, actual: usize },
+    WrongNumberOfOutputChannels {
+        expected: usize,
+        actual: usize,
+    },
     /// Error raised when the number of channels in the mask doesn't match the value expected.
-    WrongNumberOfMaskChannels { expected: usize, actual: usize },
+    WrongNumberOfMaskChannels {
+        expected: usize,
+        actual: usize,
+    },
     /// Error raised when the number of frames in an input channel is less
     /// than the minimum expected.
     InsufficientInputBufferSize {
@@ -142,6 +151,11 @@ pub enum ResampleError {
         expected: usize,
         actual: usize,
     },
+    InvalidChunkSize {
+        max: usize,
+        requested: usize,
+    },
+    ChunkSizeNotAdjustable,
 }
 
 impl fmt::Display for ResampleError {
@@ -200,6 +214,16 @@ impl fmt::Display for ResampleError {
                     "Insufficient buffer size {} for output channel {}, expected {}",
                     actual, channel, expected
                 )
+            }
+            Self::InvalidChunkSize { max, requested } => {
+                write!(
+                    f,
+                    "Invalid chunk size {}, value must be non-zero and cannot exceed {}",
+                    requested, max
+                )
+            }
+            Self::ChunkSizeNotAdjustable { .. } => {
+                write!(f, "This resampler does not support changing the chunk size")
             }
         }
     }

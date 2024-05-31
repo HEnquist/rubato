@@ -427,8 +427,20 @@ where
     /// Reset the resampler state and clear all internal buffers.
     fn reset(&mut self);
 
-    fn set_chunksize(&mut self, _chunksize: usize) -> ResampleResult<()> {
-        Err(ResampleError::SyncNotAdjustable)
+    /// Change the chunk size for the resampler.
+    /// This is not supported by all resampler types.
+    /// The value must be equal to or smaller than the chunk size the value
+    /// that the resampler was created with.
+    /// [ResampleError::InvalidChunkSize] is returned if the value is zero or too large.
+    ///
+    /// The meaning of chunk size depends on the resampler,
+    /// it refers to the input size for FixedIn,
+    /// and output size for FixedOut types.
+    ///
+    /// Types that do not support changing the chunk size
+    /// return [ResampleError::ChunkSizeNotAdjustable].
+    fn set_chunk_size(&mut self, _chunksize: usize) -> ResampleResult<()> {
+        Err(ResampleError::ChunkSizeNotAdjustable)
     }
 }
 
