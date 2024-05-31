@@ -307,6 +307,11 @@ where
             channel_mask,
         })
     }
+
+    fn calc_needed_len(&self) -> usize {
+        (self.chunk_size as f64 * (0.5 * self.resample_ratio + 0.5 * self.target_ratio) + 10.0)
+            as usize
+    }
 }
 
 impl<T> Resampler<T> for SincFixedIn<T>
@@ -326,9 +331,7 @@ where
         };
 
         // Set length to chunksize*ratio plus a safety margin of 10 elements.
-        let needed_len = (self.chunk_size as f64
-            * (0.5 * self.resample_ratio + 0.5 * self.target_ratio)
-            + 10.0) as usize;
+        let needed_len = self.calc_needed_len();
 
         validate_buffers(
             wave_in,
@@ -487,8 +490,7 @@ where
     }
 
     fn output_frames_next(&self) -> usize {
-        (self.chunk_size as f64 * (0.5 * self.resample_ratio + 0.5 * self.target_ratio) + 10.0)
-            as usize
+        self.calc_needed_len()
     }
 
     fn output_delay(&self) -> usize {
@@ -539,6 +541,7 @@ where
         self.last_index = -((self.interpolator.len() / 2) as f64);
         self.resample_ratio = self.resample_ratio_original;
         self.target_ratio = self.resample_ratio_original;
+        self.chunk_size = self.max_chunk_size;
     }
 
     fn set_chunksize(&mut self, chunksize: usize) -> ResampleResult<()> {
@@ -868,6 +871,7 @@ where
         self.resample_ratio = self.resample_ratio_original;
         self.target_ratio = self.resample_ratio_original;
         self.last_index = -((self.interpolator.len() / 2) as f64);
+        self.chunk_size = self.max_chunk_size;
         self.update_needed_len();
         self.current_buffer_fill = self.needed_input_size;
         self.channel_mask.iter_mut().for_each(|val| *val = true);
