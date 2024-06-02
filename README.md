@@ -17,10 +17,10 @@ for realtime use (it is disabled by default).
 
 ## Input and output data format
 
-Input and output data is stored non-interleaved.
+Input and output data are stored in a non-interleaved format.
 
 Input and output data are stored as slices of references, `&[AsRef<[f32]>]` or `&[AsRef<[f64]>]`.
-The inner vectors (`AsRef<[f32]>` or `AsRef<[f64]>`) hold the sample values for one channel each.
+The inner references (`AsRef<[f32]>` or `AsRef<[f64]>`) hold the sample values for one channel each.
 
 Since normal vectors implement the `AsRef` trait,
 `Vec<Vec<f32>>` and `Vec<Vec<f64>>` can be used for both input and output.
@@ -51,9 +51,9 @@ The asynchronous resampler supports SIMD on x86_64 and on aarch64.
 The SIMD capabilities of the CPU are determined at runtime.
 If no supported SIMD instruction set is available, it falls back to a scalar implementation.
 
-On x86_64 it will try to use AVX. If AVX isn't available, it will instead try SSE3.
+On x86_64, it will try to use AVX. If AVX isn't available, it will instead try SSE3.
 
-On aarch64 (64-bit Arm) it will use Neon if available.
+On aarch64 (64-bit Arm), it will use Neon if available.
 
 ### Synchronous resampling
 
@@ -101,8 +101,7 @@ let waves_out = resampler.process(&waves_in, None).unwrap();
 ## Included examples
 
 The `examples` directory contains a few sample applications for testing the resamplers.
-There are also Python scripts for generating simple test signals,
-as well as analyzing the resampled results.
+There are also Python scripts for generating simple test signals as well as analyzing the resampled results.
 
 The examples read and write raw audio data in 64-bit float format.
 They can be used to process .wav files if the files are first converted to the right format.
@@ -123,6 +122,8 @@ The `rubato` crate requires rustc version 1.61 or newer.
 
 ## Changelog
 
+- v0.16.0
+  - Add support for changing the fixed input or output size of the asynchronous resamplers.
 - v0.15.0
   - Make FFT resamplers optional via `fft_resampler` feature.
   - Fix calculation of input and output sizes when creating FftFixedInOut resampler.

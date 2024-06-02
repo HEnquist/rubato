@@ -120,6 +120,8 @@
 //!
 //! # Changelog
 //!
+//! - v0.16.0
+//!   - Add support for changing the fixed input or output size of the asynchronous resamplers.
 //! - v0.15.0
 //!   - Make FFT resamplers optional via `fft_resampler` feature.
 //!   - Fix calculation of input and output sizes when creating FftFixedInOut resampler.

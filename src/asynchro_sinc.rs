@@ -73,6 +73,12 @@ pub enum SincInterpolationType {
 
 /// An asynchronous resampler that accepts a fixed number of audio frames for input
 /// and returns a variable number of frames.
+/// The number of input frames is determined by the chunk size argument to the constructor.
+/// This value can be changed by the `set_chunk_size()` method,
+/// to let the resampler process smaller chunks of audio data.
+/// Note that the chunk size cannot exceed the value given at creation time.
+/// The maximum value can be retrieved using the `input_size_max()` method,
+/// and `input_frames_next()` gives the current value.
 ///
 /// The resampling is done by creating a number of intermediate points (defined by oversampling_factor)
 /// by sinc interpolation. The new samples are then calculated by interpolating between these points.
@@ -101,6 +107,13 @@ pub struct SincFixedIn<T> {
 /// An asynchronous resampler that returns a fixed number of audio frames.
 /// The number of input frames required is given by the
 /// [input_frames_next](Resampler::input_frames_next) function.
+///
+/// The number of output frames is determined by the chunk size argument to the constructor.
+/// This value can be changed by the `set_chunk_size()` method,
+/// to let the resampler process smaller chunks of audio data.
+/// Note that the chunk size cannot exceed the value given at creation time.
+/// The maximum value can be retrieved using the `output_size_max()` method,
+/// and `output_frames_next()` gives the current value.
 ///
 /// The resampling is done by creating a number of intermediate points (defined by oversampling_factor)
 /// by sinc interpolation. The new samples are then calculated by interpolating between these points.
