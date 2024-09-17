@@ -1,4 +1,4 @@
-# rubato
+# Rubato
 
 An audio sample rate conversion library for Rust.
 
@@ -111,23 +111,32 @@ Audio APIs such as [CoreAudio](https://crates.io/crates/coreaudio-rs) on MacOS,
 or the cross platform [cpal](https://crates.io/crates/cpal) crate,
 often use callback functions for data exchange.
 
+A complete
+
 When capturing audio from these, the application passes a function to the audio API.
 The API then calls this function periodically, with a pointer to a data buffer containing new audio frames.
-Typically the data buffer size is the same on every call.
+The data buffer size is usually the same on every call, but that varies between APIs.
 It is important that the function does not block,
 since this would block some internal loop of the API and cause loss of some audio data.
 It is recommended to keep the callback function light.
 Ideally it should read the provided audio data from the buffer provided by the API,
-optionally perform some light processing such as sample format conversion,
-and then store the audio data to a larger shared buffer.
+and optionally perform some light processing such as sample format conversion.
+No heavy processing such as resampling should be performed here.
+It should then store the audio data to a shared buffer.
 The buffer may be a `Arc<Mutex<VecDeque<T>>>`,
 or something more advanced such as [ringbuf](https://crates.io/crates/ringbuf).
 
-A separate thread should then read from that buffer, resample, and store to file.
+A separate loop, running either in the main or a separate thread,
+should then read from that buffer, resample, and save to file.
+If the Audio API provides a fixed buffer size,
+then this number of frames is a good choice for the resampler chunk size.
+If the size varies, the shared buffer can be used to adapt the chunk sizes of the audio API and the resampler.
+A good starting point for the resampler chunk size is to use an "easy" value
+near the average chunk size of the audio API.
+Make sure that the shared buffer is large enough to not get full
+in case for the loop gets blocked waiting for example for disk access.
 
-In this case, the Audio API provides a fixed input size. This value is then a good choice for the chunk size.
-
-The process is then similar to [resampling a clip](#resampling-a-given-audio-clip),
+The loop should follow a process similar to [resampling a clip](#resampling-a-given-audio-clip),
 but the input is now the shared buffer.
 The loop needs to wait for the needed number of frames to become available in the buffer,
 before reading and passing them to the resampler.
@@ -136,6 +145,7 @@ It would also be appropriate to omit the temporary output buffer,
 and write the output directly to the destination.
 The [hound](https://crates.io/crates/hound) crate is a popular choice
 for reading and writing uncompressed audio formats.
+
 
 ## SIMD acceleration
 
