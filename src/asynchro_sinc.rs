@@ -322,10 +322,7 @@ where
             update_mask_from_buffers(&mut self.channel_mask);
         };
 
-        // Set length to chunksize*ratio plus a safety margin of 10 elements.
-        let needed_len = (self.chunk_size as f64
-            * (0.5 * self.resample_ratio + 0.5 * self.target_ratio)
-            + 10.0) as usize;
+        let needed_len = self.output_frames_next();
 
         validate_buffers(
             wave_in,
