@@ -484,8 +484,7 @@ where
     }
 
     fn output_frames_next(&self) -> usize {
-        (self.chunk_size as f64 * (0.5 * self.resample_ratio + 0.5 * self.target_ratio) + 10.0)
-            as usize
+        (self.chunk_size as f64 * (0.5 * self.resample_ratio + 0.5 * self.target_ratio)) as usize
     }
 
     fn output_delay(&self) -> usize {
