@@ -872,6 +872,7 @@ mod tests {
     use crate::{check_output, check_ratio};
     use crate::{SincFixedIn, SincFixedOut};
     use rand::Rng;
+    use test_log::test;
 
     fn basic_params() -> SincInterpolationParameters {
         SincInterpolationParameters {

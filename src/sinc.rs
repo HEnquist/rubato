@@ -53,6 +53,7 @@ where
 mod tests {
     use crate::sinc::make_sincs;
     use crate::WindowFunction;
+    use test_log::test;
 
     #[test]
     fn sincs() {

@@ -231,6 +231,7 @@ mod tests {
     use crate::WindowFunction;
     use num_traits::Float;
     use rand::Rng;
+    use test_log::test;
 
     fn get_sinc_interpolated<T: Float>(wave: &[T], index: usize, sinc: &[T]) -> T {
         let wave_cut = &wave[index..(index + sinc.len())];
