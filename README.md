@@ -177,6 +177,14 @@ Note that outputting logs allocates a [std::string::String] and most logging imp
 These calls may take some (unpredictable) time to return, during which the application is blocked.
 This means that logging should be avoided if using this library in a realtime application.
 
+The `log` feature can be enabled when running tests, which can be very useful when debugging.
+The logging level can be set via the `RUST_LOG` environment variable.
+
+Example:
+```sh
+RUST_LOG=trace cargo test --features log
+```
+
 ## Example
 
 Resample a single chunk of a dummy audio file from 44100 to 48000 Hz.
