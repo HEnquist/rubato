@@ -157,6 +157,7 @@ mod tests {
     use crate::windows::make_window;
     use crate::windows::WindowFunction;
     use approx::assert_abs_diff_eq;
+    use test_log::test;
 
     #[test]
     fn test_blackman_harris() {

@@ -721,6 +721,7 @@ pub mod tests {
     use crate::{FastFixedIn, PolynomialDegree, SincFixedIn, SincFixedOut};
     #[cfg(feature = "fft_resampler")]
     use crate::{FftFixedIn, FftFixedInOut, FftFixedOut};
+    use test_log::test;
 
     // This tests that a VecResampler can be boxed.
     #[test]

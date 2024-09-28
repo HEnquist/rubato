@@ -687,6 +687,7 @@ mod tests {
     use crate::synchro::{FftFixedIn, FftFixedInOut, FftFixedOut, FftResampler};
     use crate::Resampler;
     use rand::Rng;
+    use test_log::test;
 
     #[test]
     fn resample_unit() {
