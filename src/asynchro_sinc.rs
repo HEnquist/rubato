@@ -360,10 +360,11 @@ where
         let mut t_ratio = 1.0 / self.resample_ratio;
         let t_ratio_end = 1.0 / self.target_ratio;
         let approximate_nbr_frames =
-            self.chunk_size as f64 * (0.5 * self.resample_ratio + 0.5 * self.target_ratio);
+            (self.chunk_size as f64 - (sinc_len + 1) as f64 - self.last_index)
+                * (0.5 * self.resample_ratio + 0.5 * self.target_ratio);
         let t_ratio_increment = (t_ratio_end - t_ratio) / approximate_nbr_frames;
-        let end_idx =
-            self.chunk_size as isize - (sinc_len as isize + 1) - t_ratio_end.ceil() as isize;
+
+        trace!("approximate nbr: {}", approximate_nbr_frames);
 
         // Update buffer with new data.
         for buf in self.buffer.iter_mut() {
@@ -380,13 +381,14 @@ where
 
         let mut idx = self.last_index;
 
-        let mut n = 0;
+        //let mut n = 0;
+        let nbr_of_frames = approximate_nbr_frames.floor() as usize;
 
         match self.interpolation {
             SincInterpolationType::Cubic => {
                 let mut points = [T::zero(); 4];
                 let mut nearest = [(0isize, 0isize); 4];
-                while idx < end_idx as f64 {
+                for n in 0..nbr_of_frames {
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     get_nearest_times_4(idx, oversampling_factor as isize, &mut nearest);
@@ -406,13 +408,12 @@ where
                             wave_out[chan].as_mut()[n] = interp_cubic(frac_offset, &points);
                         }
                     }
-                    n += 1;
                 }
             }
             SincInterpolationType::Quadratic => {
                 let mut points = [T::zero(); 3];
                 let mut nearest = [(0isize, 0isize); 3];
-                while idx < end_idx as f64 {
+                for n in 0..nbr_of_frames {
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     get_nearest_times_3(idx, oversampling_factor as isize, &mut nearest);
@@ -432,13 +433,12 @@ where
                             wave_out[chan].as_mut()[n] = interp_quad(frac_offset, &points);
                         }
                     }
-                    n += 1;
                 }
             }
             SincInterpolationType::Linear => {
                 let mut points = [T::zero(); 2];
                 let mut nearest = [(0isize, 0isize); 2];
-                while idx < end_idx as f64 {
+                for n in 0..nbr_of_frames {
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     get_nearest_times_2(idx, oversampling_factor as isize, &mut nearest);
@@ -458,13 +458,12 @@ where
                             wave_out[chan].as_mut()[n] = interp_lin(frac_offset, &points);
                         }
                     }
-                    n += 1;
                 }
             }
             SincInterpolationType::Nearest => {
                 let mut point;
                 let mut nearest;
-                while idx < end_idx as f64 {
+                for n in 0..nbr_of_frames {
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     nearest = get_nearest_time(idx, oversampling_factor as isize);
@@ -479,7 +478,6 @@ where
                             wave_out[chan].as_mut()[n] = point;
                         }
                     }
-                    n += 1;
                 }
             }
         }
@@ -491,9 +489,9 @@ where
             "Resampling channels {:?}, {} frames in, {} frames out",
             active_channels_mask,
             self.chunk_size,
-            n,
+            nbr_of_frames,
         );
-        Ok((self.chunk_size, n))
+        Ok((self.chunk_size, nbr_of_frames))
     }
 
     fn output_frames_max(&self) -> usize {
