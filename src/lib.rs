@@ -304,8 +304,8 @@ use crate as rubato;
 /// `&[AsRef<[T]>]` and `&mut [AsMut<[T]>]` to `&[Vec<T>]` and `&mut [Vec<T>]`.
 /// This allows a [VecResampler] to be made into a trait object like this:
 /// ```
-/// # use rubato::{FastFixedIn, VecResampler, PolynomialDegree};
-/// let boxed: Box<dyn VecResampler<f64>> = Box::new(FastFixedIn::<f64>::new(44100 as f64 / 88200 as f64, 1.1, PolynomialDegree::Cubic, 2, 2).unwrap());
+/// # use rubato::{Fast, Fixed, VecResampler, PolynomialDegree};
+/// let boxed: Box<dyn VecResampler<f64>> = Box::new(Fast::<f64>::new(44100 as f64 / 88200 as f64, 1.1, PolynomialDegree::Cubic, 2, 2, Fixed::Input).unwrap());
 /// ```
 /// Use this implementation as an example if you need to fix the input type to something else.
 #[macro_export]
