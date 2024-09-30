@@ -11,7 +11,6 @@ macro_rules! t {
     };
 }
 
-
 #[derive(Debug)]
 pub enum Fixed {
     /// Input size is fixed, output size varies.
@@ -182,7 +181,6 @@ fn validate_ratios(
     Ok(())
 }
 
-
 impl<T> Fast<T>
 where
     T: Sample,
@@ -214,12 +212,27 @@ where
         let channel_mask = vec![true; nbr_channels];
 
         let last_index = -(POLYNOMIAL_LEN_I / 2) as f64;
-        let needed_input_size = Self::calculate_input_size(chunk_size, resample_ratio, resample_ratio, last_index, &fixed);
-        let needed_output_size = Self::calculate_output_size(chunk_size, resample_ratio, resample_ratio, last_index, &fixed);
+        let needed_input_size = Self::calculate_input_size(
+            chunk_size,
+            resample_ratio,
+            resample_ratio,
+            last_index,
+            &fixed,
+        );
+        let needed_output_size = Self::calculate_output_size(
+            chunk_size,
+            resample_ratio,
+            resample_ratio,
+            last_index,
+            &fixed,
+        );
 
-        let buffer_len = ((max_resample_ratio_relative + 1.0) * needed_input_size as f64)
-            as usize
-            + 2 * POLYNOMIAL_LEN_U;
+        let buffer_len = Fast::<T>::calculate_max_input_size(
+            chunk_size,
+            resample_ratio,
+            max_resample_ratio_relative,
+            &fixed,
+        ) + 2 * POLYNOMIAL_LEN_U;
         let buffer = vec![vec![T::zero(); buffer_len]; nbr_channels];
 
         Ok(Fast {
@@ -240,30 +253,87 @@ where
         })
     }
 
-    fn calculate_input_size(chunk_size: usize , resample_ratio: f64, target_ratio: f64, last_index: f64, fixed: &Fixed) -> usize {
+    fn calculate_input_size(
+        chunk_size: usize,
+        resample_ratio: f64,
+        target_ratio: f64,
+        last_index: f64,
+        fixed: &Fixed,
+    ) -> usize {
         match fixed {
             Fixed::Input => chunk_size,
-            Fixed::Output =>
-                (last_index
+            Fixed::Output => (last_index
                 + chunk_size as f64 / (0.5 * resample_ratio + 0.5 * target_ratio)
                 + POLYNOMIAL_LEN_U as f64)
                 .ceil() as usize,
         }
     }
 
-    fn calculate_output_size(chunk_size: usize , resample_ratio: f64, target_ratio: f64, last_index: f64, fixed: &Fixed) -> usize {
+    fn calculate_output_size(
+        chunk_size: usize,
+        resample_ratio: f64,
+        target_ratio: f64,
+        last_index: f64,
+        fixed: &Fixed,
+    ) -> usize {
         match fixed {
             Fixed::Output => chunk_size,
-            Fixed::Input =>
-                ((chunk_size as f64 - (POLYNOMIAL_LEN_U + 1) as f64 - last_index)
-                * (0.5 * resample_ratio + 0.5 * target_ratio)).floor() as usize,
+            Fixed::Input => ((chunk_size as f64 - (POLYNOMIAL_LEN_U + 1) as f64 - last_index)
+                * (0.5 * resample_ratio + 0.5 * target_ratio))
+                .floor() as usize,
+        }
+    }
+
+    fn calculate_max_input_size(
+        chunk_size: usize,
+        resample_ratio_original: f64,
+        max_relative_ratio: f64,
+        fixed: &Fixed,
+    ) -> usize {
+        match fixed {
+            Fixed::Input => chunk_size,
+            Fixed::Output => {
+                (chunk_size as f64 / resample_ratio_original * max_relative_ratio).ceil() as usize
+                    + 2
+                    + POLYNOMIAL_LEN_U / 2
+            }
+        }
+    }
+
+    fn calculate_max_output_size(
+        chunk_size: usize,
+        resample_ratio_original: f64,
+        max_relative_ratio: f64,
+        fixed: &Fixed,
+    ) -> usize {
+        match fixed {
+            Fixed::Output => chunk_size,
+            Fixed::Input => {
+                (chunk_size as f64 * resample_ratio_original * max_relative_ratio + 10.0) as usize
+            }
         }
     }
 
     fn update_lengths(&mut self) {
-        self.needed_input_size = Fast::<T>::calculate_input_size(self.chunk_size, self.resample_ratio, self.target_ratio, self.last_index, &self.fixed);
-        self.needed_output_size = Fast::<T>::calculate_output_size(self.chunk_size, self.resample_ratio, self.target_ratio, self.last_index, &self.fixed);
-        trace!("Updated lengths, input: {}, output: {}", self.needed_input_size, self.needed_output_size);
+        self.needed_input_size = Fast::<T>::calculate_input_size(
+            self.chunk_size,
+            self.resample_ratio,
+            self.target_ratio,
+            self.last_index,
+            &self.fixed,
+        );
+        self.needed_output_size = Fast::<T>::calculate_output_size(
+            self.chunk_size,
+            self.resample_ratio,
+            self.target_ratio,
+            self.last_index,
+            &self.fixed,
+        );
+        trace!(
+            "Updated lengths, input: {}, output: {}",
+            self.needed_input_size,
+            self.needed_output_size
+        );
     }
 }
 
@@ -296,7 +366,10 @@ where
 
         // Update buffer with new data.
         for buf in self.buffer.iter_mut() {
-            buf.copy_within(self.current_buffer_fill..self.current_buffer_fill + 2 * POLYNOMIAL_LEN_U, 0);
+            buf.copy_within(
+                self.current_buffer_fill..self.current_buffer_fill + 2 * POLYNOMIAL_LEN_U,
+                0,
+            );
         }
 
         for (chan, wave_in) in wave_in
@@ -459,12 +532,12 @@ where
     }
 
     fn output_frames_max(&self) -> usize {
-        match self.fixed {
-            Fixed::Output => self.chunk_size,
-            Fixed::Input =>
-            (self.chunk_size as f64 * self.resample_ratio_original * self.max_relative_ratio + 10.0)
-                as usize,
-        }
+        Fast::<T>::calculate_max_output_size(
+            self.chunk_size,
+            self.resample_ratio_original,
+            self.max_relative_ratio,
+            &self.fixed,
+        )
     }
 
     fn output_frames_next(&self) -> usize {
@@ -480,12 +553,12 @@ where
     }
 
     fn input_frames_max(&self) -> usize {
-        match self.fixed {
-            Fixed::Input => self.chunk_size,
-            Fixed::Output =>
-            (self.chunk_size as f64 / self.resample_ratio_original * self.max_relative_ratio).ceil()
-                as usize + 2 + POLYNOMIAL_LEN_U / 2,
-        }
+        Fast::<T>::calculate_max_input_size(
+            self.chunk_size,
+            self.resample_ratio_original,
+            self.max_relative_ratio,
+            &self.fixed,
+        )
     }
 
     fn input_frames_next(&self) -> usize {
@@ -528,7 +601,6 @@ where
         self.update_lengths();
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -899,8 +971,15 @@ mod tests {
     #[test]
     fn resample_big_fo_up() {
         let ratio = 96000.0 / 44100.0;
-        let mut resampler =
-            Fast::<f32>::new(ratio, 100.0, PolynomialDegree::Cubic, 1024, 2, Fixed::Output).unwrap();
+        let mut resampler = Fast::<f32>::new(
+            ratio,
+            100.0,
+            PolynomialDegree::Cubic,
+            1024,
+            2,
+            Fixed::Output,
+        )
+        .unwrap();
         check_ratio!(resampler, ratio, 1000);
     }
 
@@ -915,8 +994,15 @@ mod tests {
     #[test]
     fn resample_big_fo_down() {
         let ratio = 44100.0 / 96000.0;
-        let mut resampler =
-            Fast::<f32>::new(ratio, 100.0, PolynomialDegree::Cubic, 1024, 2, Fixed::Output).unwrap();
+        let mut resampler = Fast::<f32>::new(
+            ratio,
+            100.0,
+            PolynomialDegree::Cubic,
+            1024,
+            2,
+            Fixed::Output,
+        )
+        .unwrap();
         check_ratio!(resampler, ratio, 1000);
     }
 
@@ -947,7 +1033,8 @@ mod tests {
     #[test]
     fn resample_big_fi_down() {
         let ratio = 44100.0 / 96000.0;
-        let mut resampler = Fast::<f32>::new(ratio, 100.0, PolynomialDegree::Cubic, 1024, 2, Fixed::Input).unwrap();
+        let mut resampler =
+            Fast::<f32>::new(ratio, 100.0, PolynomialDegree::Cubic, 1024, 2, Fixed::Input).unwrap();
         check_ratio!(resampler, ratio, 1000);
     }
 }

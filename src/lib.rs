@@ -47,7 +47,7 @@ mod windows;
 
 pub mod sinc_interpolator;
 
-pub use crate::asynchro_fast::{PolynomialDegree, Fast, Fixed};
+pub use crate::asynchro_fast::{Fast, Fixed, PolynomialDegree};
 pub use crate::asynchro_sinc::{
     SincFixedIn, SincFixedOut, SincInterpolationParameters, SincInterpolationType,
 };

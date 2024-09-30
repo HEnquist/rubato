@@ -1,7 +1,7 @@
 extern crate rubato;
 use rubato::{
-    calculate_cutoff, implement_resampler, Fast, Fixed, PolynomialDegree,
-    SincFixedIn, SincFixedOut, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+    calculate_cutoff, implement_resampler, Fast, Fixed, PolynomialDegree, SincFixedIn,
+    SincFixedOut, SincInterpolationParameters, SincInterpolationType, WindowFunction,
 };
 #[cfg(feature = "fft_resampler")]
 use rubato::{FftFixedIn, FftFixedInOut, FftFixedOut};
