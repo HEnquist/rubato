@@ -1,6 +1,6 @@
 extern crate rubato;
 use rubato::{
-    calculate_cutoff, implement_resampler, FastFixedIn, FastFixedOut, PolynomialDegree,
+    calculate_cutoff, implement_resampler, Fast, Fixed, PolynomialDegree,
     SincFixedIn, SincFixedOut, SincInterpolationParameters, SincInterpolationType, WindowFunction,
 };
 #[cfg(feature = "fft_resampler")]
@@ -160,10 +160,10 @@ fn main() {
             Box::new(SincFixedOut::<f64>::new(f_ratio, 1.1, params, 1024, channels).unwrap())
         }
         "FastFixedIn" => {
-            Box::new(FastFixedIn::<f64>::new(f_ratio, 1.1, PolynomialDegree::Septic, 1024, channels).unwrap())
+            Box::new(Fast::<f64>::new(f_ratio, 1.1, PolynomialDegree::Septic, 1024, channels, Fixed::Input).unwrap())
         }
         "FastFixedOut" => {
-            Box::new(FastFixedOut::<f64>::new(f_ratio, 1.1, PolynomialDegree::Septic, 1024, channels).unwrap())
+            Box::new(Fast::<f64>::new(f_ratio, 1.1, PolynomialDegree::Septic, 1024, channels, Fixed::Output).unwrap())
         }
         #[cfg(feature = "fft_resampler")]
         "FftFixedIn" => {

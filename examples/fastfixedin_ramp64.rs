@@ -1,5 +1,5 @@
 extern crate rubato;
-use rubato::{FastFixedIn, PolynomialDegree, Resampler};
+use rubato::{Fast, Fixed, PolynomialDegree, Resampler};
 use std::convert::TryInto;
 use std::env;
 use std::fs::File;
@@ -114,12 +114,13 @@ fn main() {
 
     let chunksize = 1024;
     let target_ratio = final_ratio / 100.0;
-    let mut resampler = FastFixedIn::<f64>::new(
+    let mut resampler = Fast::<f64>::new(
         f_ratio,
         target_ratio,
         PolynomialDegree::Cubic,
         chunksize,
         channels,
+        Fixed::Input,
     )
     .unwrap();
 

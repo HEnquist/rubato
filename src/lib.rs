@@ -47,7 +47,7 @@ mod windows;
 
 pub mod sinc_interpolator;
 
-pub use crate::asynchro_fast::{FastFixedIn, FastFixedOut, PolynomialDegree};
+pub use crate::asynchro_fast::{PolynomialDegree, Fast, Fixed};
 pub use crate::asynchro_sinc::{
     SincFixedIn, SincFixedOut, SincInterpolationParameters, SincInterpolationType,
 };
@@ -566,7 +566,7 @@ pub fn buffer_capacity<T: Sample>(buffer: &[Vec<T>]) -> usize {
 #[cfg(test)]
 pub mod tests {
     use crate::{buffer_capacity, buffer_length, make_buffer, resize_buffer, VecResampler};
-    use crate::{FastFixedIn, PolynomialDegree, SincFixedIn, SincFixedOut};
+    use crate::{Fast, Fixed, PolynomialDegree, SincFixedIn, SincFixedOut};
     #[cfg(feature = "fft_resampler")]
     use crate::{FftFixedIn, FftFixedInOut, FftFixedOut};
     use test_log::test;
@@ -575,12 +575,13 @@ pub mod tests {
     #[test]
     fn boxed_resampler() {
         let mut boxed: Box<dyn VecResampler<f64>> = Box::new(
-            FastFixedIn::<f64>::new(
+            Fast::<f64>::new(
                 88200 as f64 / 44100 as f64,
                 1.1,
                 PolynomialDegree::Cubic,
                 1024,
                 2,
+                Fixed::Input,
             )
             .unwrap(),
         );
