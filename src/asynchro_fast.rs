@@ -11,6 +11,15 @@ macro_rules! t {
     };
 }
 
+
+#[derive(Debug)]
+pub enum Fixed {
+    /// Input size is fixed, output size varies.
+    Input,
+    /// Output size is fixed, input size varies.
+    Output,
+}
+
 /// Degree of the polynomial used for interpolation.
 /// A higher degree gives a higher quality result, while taking longer to compute.
 #[derive(Debug)]
@@ -81,6 +90,23 @@ pub struct FastFixedOut<T> {
     buffer: Vec<Vec<T>>,
     interpolation: PolynomialDegree,
     channel_mask: Vec<bool>,
+}
+
+pub struct Fast<T> {
+    nbr_channels: usize,
+    chunk_size: usize,
+    needed_input_size: usize,
+    needed_output_size: usize,
+    last_index: f64,
+    current_buffer_fill: usize,
+    resample_ratio: f64,
+    resample_ratio_original: f64,
+    target_ratio: f64,
+    max_relative_ratio: f64,
+    buffer: Vec<Vec<T>>,
+    interpolation: PolynomialDegree,
+    channel_mask: Vec<bool>,
+    fixed: Fixed,
 }
 
 /// Perform septic polynomial interpolation to get value at x.
@@ -195,6 +221,346 @@ fn validate_ratios(
     }
     Ok(())
 }
+
+
+impl<T> Fast<T>
+where
+    T: Sample,
+{
+    /// Create a new Fast.
+    ///
+    /// Parameters are:
+    /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
+    /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Resampler::set_resample_ratio] relative to `resample_ratio`, must be >= 1.0. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio * 10.0` and `resample_ratio / 10.0`.
+    /// - `interpolation_type`: Degree of polynomial used for interpolation, see [PolynomialDegree].
+    /// - `chunk_size`: Size of input data in frames.
+    /// - `nbr_channels`: Number of channels in input/output.
+    /// - `fixed`: Deciding whether input or output size is fixed.
+    pub fn new(
+        resample_ratio: f64,
+        max_resample_ratio_relative: f64,
+        interpolation_type: PolynomialDegree,
+        chunk_size: usize,
+        nbr_channels: usize,
+        fixed: Fixed,
+    ) -> Result<Self, ResamplerConstructionError> {
+        debug!(
+            "Create new FastFixedIn, ratio: {}, chunk_size: {}, channels: {}",
+            resample_ratio, chunk_size, nbr_channels,
+        );
+
+        validate_ratios(resample_ratio, max_resample_ratio_relative)?;
+
+
+
+        let buffer = vec![vec![T::zero(); chunk_size + 2 * POLYNOMIAL_LEN_U]; nbr_channels];
+
+        let channel_mask = vec![true; nbr_channels];
+
+        let last_index = -(POLYNOMIAL_LEN_I / 2) as f64;
+
+        let needed_input_size = Self::calculate_input_size(chunk_size, resample_ratio, resample_ratio, last_index, &fixed);
+
+        let needed_output_size = Self::calculate_output_size(chunk_size, resample_ratio, resample_ratio, last_index, &fixed);
+
+        Ok(Fast {
+            nbr_channels,
+            chunk_size,
+            needed_input_size,
+            needed_output_size,
+            current_buffer_fill: needed_input_size,
+            last_index,
+            resample_ratio,
+            resample_ratio_original: resample_ratio,
+            target_ratio: resample_ratio,
+            max_relative_ratio: max_resample_ratio_relative,
+            buffer,
+            interpolation: interpolation_type,
+            channel_mask,
+            fixed,
+        })
+    }
+
+    fn calculate_input_size(chunk_size: usize , resample_ratio: f64, target_ratio: f64, last_index: f64, fixed: &Fixed) -> usize {
+        match fixed {
+            Fixed::Input => chunk_size,
+            Fixed::Output =>
+                (last_index
+                + chunk_size as f64 / (0.5 * resample_ratio + 0.5 * target_ratio)
+                + POLYNOMIAL_LEN_U as f64)
+                .ceil() as usize,
+        }
+    }
+
+    fn calculate_output_size(chunk_size: usize , resample_ratio: f64, target_ratio: f64, last_index: f64, fixed: &Fixed) -> usize {
+        match fixed {
+            Fixed::Output => chunk_size,
+            Fixed::Input =>
+                ((chunk_size as f64 - (POLYNOMIAL_LEN_U + 1) as f64 - last_index)
+                * (0.5 * resample_ratio + 0.5 * target_ratio)).floor() as usize,
+        }
+    }
+
+    fn update_lengths(&mut self) {
+        self.needed_input_size = Fast::<T>::calculate_input_size(self.chunk_size, self.resample_ratio, self.target_ratio, self.last_index, &self.fixed);
+        self.needed_output_size = Fast::<T>::calculate_output_size(self.chunk_size, self.resample_ratio, self.target_ratio, self.last_index, &self.fixed);
+    }
+}
+
+impl<T> Resampler<T> for Fast<T>
+where
+    T: Sample,
+{
+    fn process_into_buffer<Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
+        &mut self,
+        wave_in: &[Vin],
+        wave_out: &mut [Vout],
+        active_channels_mask: Option<&[bool]>,
+    ) -> ResampleResult<(usize, usize)> {
+        if let Some(mask) = active_channels_mask {
+            self.channel_mask.copy_from_slice(mask);
+        } else {
+            update_mask_from_buffers(&mut self.channel_mask);
+        };
+
+        validate_buffers(
+            wave_in,
+            wave_out,
+            &self.channel_mask,
+            self.nbr_channels,
+            self.needed_input_size,
+            self.needed_output_size,
+        )?;
+
+        // Update buffer with new data.
+        for buf in self.buffer.iter_mut() {
+            buf.copy_within(self.current_buffer_fill..self.current_buffer_fill + 2 * POLYNOMIAL_LEN_U, 0);
+        }
+
+        for (chan, wave_in) in wave_in
+            .iter()
+            .enumerate()
+            .filter(|(chan, _)| self.channel_mask[*chan])
+        {
+            //debug_assert!(self.chunk_size <= wave_out[chan].as_mut().len());
+            self.buffer[chan][2 * POLYNOMIAL_LEN_U..2 * POLYNOMIAL_LEN_U + self.needed_input_size]
+                .copy_from_slice(&wave_in.as_ref()[..self.needed_input_size]);
+        }
+
+        let mut t_ratio = 1.0 / self.resample_ratio;
+        let t_ratio_end = 1.0 / self.target_ratio;
+
+        let t_ratio_increment = (t_ratio_end - t_ratio) / self.needed_output_size as f64;
+
+        trace!("approximate nbr: {}", approximate_nbr_frames);
+
+        //println!(
+        //    "start ratio {}, end_ratio {}, frames {}, t_increment {}",
+        //    t_ratio,
+        //    t_ratio_end,
+        //    approximate_nbr_frames,
+        //    t_ratio_increment
+        //);
+
+        let mut idx = self.last_index;
+
+        match self.interpolation {
+            PolynomialDegree::Septic => {
+                for n in 0..self.needed_output_size {
+                    t_ratio += t_ratio_increment;
+                    idx += t_ratio;
+                    let idx_floor = idx.floor();
+                    let start_idx = idx_floor as isize - 3;
+                    let frac = idx - idx_floor;
+                    let frac_offset = T::coerce(frac);
+                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                        if *active {
+                            unsafe {
+                                let buf = self.buffer.get_unchecked(chan).get_unchecked(
+                                    (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
+                                        ..(start_idx + 2 * POLYNOMIAL_LEN_I + 8) as usize,
+                                );
+                                *wave_out
+                                    .get_unchecked_mut(chan)
+                                    .as_mut()
+                                    .get_unchecked_mut(n) = interp_septic(frac_offset, buf);
+                            }
+                        }
+                    }
+                }
+            }
+            PolynomialDegree::Quintic => {
+                for n in 0..self.needed_output_size {
+                    t_ratio += t_ratio_increment;
+                    idx += t_ratio;
+                    let idx_floor = idx.floor();
+                    let start_idx = idx_floor as isize - 2;
+                    let frac = idx - idx_floor;
+                    let frac_offset = T::coerce(frac);
+                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                        if *active {
+                            unsafe {
+                                let buf = self.buffer.get_unchecked(chan).get_unchecked(
+                                    (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
+                                        ..(start_idx + 2 * POLYNOMIAL_LEN_I + 6) as usize,
+                                );
+                                *wave_out
+                                    .get_unchecked_mut(chan)
+                                    .as_mut()
+                                    .get_unchecked_mut(n) = interp_quintic(frac_offset, buf);
+                            }
+                        }
+                    }
+                }
+            }
+            PolynomialDegree::Cubic => {
+                for n in 0..self.needed_output_size {
+                    t_ratio += t_ratio_increment;
+                    idx += t_ratio;
+                    let idx_floor = idx.floor();
+                    let start_idx = idx_floor as isize - 1;
+                    let frac = idx - idx_floor;
+                    let frac_offset = T::coerce(frac);
+                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                        if *active {
+                            unsafe {
+                                let buf = self.buffer.get_unchecked(chan).get_unchecked(
+                                    (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
+                                        ..(start_idx + 2 * POLYNOMIAL_LEN_I + 4) as usize,
+                                );
+                                *wave_out
+                                    .get_unchecked_mut(chan)
+                                    .as_mut()
+                                    .get_unchecked_mut(n) = interp_cubic(frac_offset, buf);
+                            }
+                        }
+                    }
+                }
+            }
+            PolynomialDegree::Linear => {
+                for n in 0..self.needed_output_size {
+                    t_ratio += t_ratio_increment;
+                    idx += t_ratio;
+                    let idx_floor = idx.floor();
+                    let start_idx = idx_floor as isize;
+                    let frac = idx - idx_floor;
+                    let frac_offset = T::coerce(frac);
+                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                        if *active {
+                            unsafe {
+                                let buf = self.buffer.get_unchecked(chan).get_unchecked(
+                                    (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
+                                        ..(start_idx + 2 * POLYNOMIAL_LEN_I + 2) as usize,
+                                );
+                                *wave_out
+                                    .get_unchecked_mut(chan)
+                                    .as_mut()
+                                    .get_unchecked_mut(n) = interp_lin(frac_offset, buf);
+                            }
+                        }
+                    }
+                }
+            }
+            PolynomialDegree::Nearest => {
+                for n in 0..self.needed_output_size {
+                    t_ratio += t_ratio_increment;
+                    idx += t_ratio;
+                    let start_idx = idx.floor() as isize;
+                    for (chan, active) in self.channel_mask.iter().enumerate() {
+                        if *active {
+                            unsafe {
+                                let point = self
+                                    .buffer
+                                    .get_unchecked(chan)
+                                    .get_unchecked((start_idx + 2 * POLYNOMIAL_LEN_I) as usize);
+                                *wave_out
+                                    .get_unchecked_mut(chan)
+                                    .as_mut()
+                                    .get_unchecked_mut(n) = *point;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Store last index for next iteration.
+        self.last_index = idx - self.chunk_size as f64;
+        self.resample_ratio = self.target_ratio;
+        trace!(
+            "Resampling channels {:?}, {} frames in, {} frames out",
+            active_channels_mask,
+            self.needed_input_size,
+            self.needed_output_size,
+        );
+        Ok((self.needed_input_size, self.needed_output_size))
+    }
+
+    fn output_frames_max(&self) -> usize {
+        // Set length to chunksize*ratio plus a safety margin of 10 elements.
+        (self.chunk_size as f64 * self.resample_ratio_original * self.max_relative_ratio + 10.0)
+            as usize
+    }
+
+    fn output_frames_next(&self) -> usize {
+        self.needed_output_size
+    }
+
+    fn output_delay(&self) -> usize {
+        (POLYNOMIAL_LEN_U as f64 * self.resample_ratio / 2.0) as usize
+    }
+
+    fn nbr_channels(&self) -> usize {
+        self.nbr_channels
+    }
+
+    fn input_frames_max(&self) -> usize {
+        self.chunk_size // TODO update!
+    }
+
+    fn input_frames_next(&self) -> usize {
+        self.needed_input_size
+    }
+
+    fn set_resample_ratio(&mut self, new_ratio: f64, ramp: bool) -> ResampleResult<()> {
+        trace!("Change resample ratio to {}", new_ratio);
+        if (new_ratio / self.resample_ratio_original >= 1.0 / self.max_relative_ratio)
+            && (new_ratio / self.resample_ratio_original <= self.max_relative_ratio)
+        {
+            if !ramp {
+                self.resample_ratio = new_ratio;
+            }
+            self.target_ratio = new_ratio;
+            self.update_lengths();
+            Ok(())
+        } else {
+            Err(ResampleError::RatioOutOfBounds {
+                provided: new_ratio,
+                original: self.resample_ratio_original,
+                max_relative_ratio: self.max_relative_ratio,
+            })
+        }
+    }
+
+    fn set_resample_ratio_relative(&mut self, rel_ratio: f64, ramp: bool) -> ResampleResult<()> {
+        let new_ratio = self.resample_ratio_original * rel_ratio;
+        self.set_resample_ratio(new_ratio, ramp)
+    }
+
+    fn reset(&mut self) {
+        self.buffer
+            .iter_mut()
+            .for_each(|ch| ch.iter_mut().for_each(|s| *s = T::zero()));
+        self.channel_mask.iter_mut().for_each(|val| *val = true);
+        self.last_index = -(POLYNOMIAL_LEN_I / 2) as f64;
+        self.resample_ratio = self.resample_ratio_original;
+        self.target_ratio = self.resample_ratio_original;
+        self.update_lengths();
+    }
+}
+
+
+
 
 impl<T> FastFixedIn<T>
 where
