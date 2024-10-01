@@ -252,7 +252,7 @@ where
         fixed: Fixed,
     ) -> Result<Self, ResamplerConstructionError> {
         debug!(
-            "Create new Sinc fixed {}, ratio: {}, chunk_size: {}, channels: {}, parameters: {:?}",
+            "Create new Sinc fixed {:?}, ratio: {}, chunk_size: {}, channels: {}, parameters: {:?}",
             fixed, resample_ratio, chunk_size, nbr_channels, parameters
         );
 
@@ -451,6 +451,7 @@ where
         } else {
             update_mask_from_buffers(&mut self.channel_mask);
         };
+        trace!("Start processing, {:?}", self);
 
         validate_buffers(
             wave_in,
@@ -585,7 +586,7 @@ where
         }
 
         // Store last index for next iteration.
-        self.last_index = idx - self.chunk_size as f64;
+        self.last_index = idx - self.needed_input_size as f64;
         self.resample_ratio = self.target_ratio;
         trace!(
             "Resampling channels {:?}, {} frames in, {} frames out",
@@ -600,9 +601,12 @@ where
     }
 
     fn output_frames_max(&self) -> usize {
-        // Set length to chunksize*ratio plus a safety margin of 10 elements.
-        (self.max_chunk_size as f64 * self.resample_ratio_original * self.max_relative_ratio + 10.0)
-            as usize
+        Sinc::<T>::calculate_max_output_size(
+            self.max_chunk_size,
+            self.resample_ratio_original,
+            self.max_relative_ratio,
+            &self.fixed,
+        )
     }
 
     fn output_frames_next(&self) -> usize {
@@ -618,7 +622,13 @@ where
     }
 
     fn input_frames_max(&self) -> usize {
-        self.max_chunk_size
+        Sinc::<T>::calculate_max_input_size(
+            self.max_chunk_size,
+            self.resample_ratio_original,
+            self.max_relative_ratio,
+            self.interpolator.len(),
+            &self.fixed,
+        )
     }
 
     fn input_frames_next(&self) -> usize {
