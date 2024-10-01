@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::error::{ResampleError, ResampleResult, ResamplerConstructionError};
 use crate::{update_mask_from_buffers, validate_buffers, Resampler, Sample};
 
@@ -11,6 +13,7 @@ macro_rules! t {
     };
 }
 
+/// An enum for specifying which side of the resampler should be fixed size.
 #[derive(Debug)]
 pub enum Fixed {
     /// Input size is fixed, output size varies.
@@ -35,22 +38,24 @@ pub enum PolynomialDegree {
     Nearest,
 }
 
-/// An asynchronous resampler that returns a fixed number of audio frames.
-/// The number of input frames required is given by the
-/// [input_frames_next](Resampler::input_frames_next) function.
+/// An asynchronous resampler that either takes a fixed number of input frames,
+/// or returns a fixed number of audio frames.
+///
+/// The `fixed` argument determines if input of output should be fixed size.
+/// When the input size is fixed, the output size varies from call to call,
+/// and when output size is fixed, the input size varies.
 ///
 /// The resampling is done by interpolating between the input samples.
 /// The polynomial degree can be selected, see [PolynomialDegree] for the available options.
 ///
 /// Note that no anti-aliasing filter is used.
-/// This makes it run considerably faster than the corresponding SincFixedOut, which performs anti-aliasing filtering.
+/// This makes it run considerably faster than the corresponding Sinc resampler, which performs anti-aliasing filtering.
 /// The price is that the resampling creates some artefacts in the output, mainly at higher frequencies.
-/// Use SincFixedOut if this can not be tolerated.
+/// Use a Sinc resampler if this can not be tolerated.
 ///
 /// The resampling ratio can be freely adjusted within the range specified to the constructor.
 /// Higher maximum ratios require more memory to be allocated by
 /// [input_buffer_allocate](Resampler::input_buffer_allocate) and an internal buffer.
-#[derive(Debug)]
 pub struct Fast<T> {
     nbr_channels: usize,
     chunk_size: usize,
@@ -66,6 +71,27 @@ pub struct Fast<T> {
     interpolation: PolynomialDegree,
     channel_mask: Vec<bool>,
     fixed: Fixed,
+}
+
+impl<T> fmt::Debug for Fast<T> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt.debug_struct("Fast")
+            .field("nbr_channels", &self.nbr_channels)
+            .field("chunk_size,", &self.chunk_size)
+            .field("needed_input_size,", &self.needed_input_size)
+            .field("needed_output_size,", &self.needed_output_size)
+            .field("last_index", &self.last_index)
+            .field("current_buffer_fill", &self.current_buffer_fill)
+            .field("resample_ratio", &self.resample_ratio)
+            .field("resample_ratio_original", &self.resample_ratio_original)
+            .field("target_ratio", &self.target_ratio)
+            .field("max_relative_ratio", &self.max_relative_ratio)
+            .field("buffer[0].len()", &self.buffer[0].len())
+            .field("interpolation", &self.interpolation)
+            .field("channel_mask", &self.channel_mask)
+            .field("fixed", &self.fixed)
+            .finish()
+    }
 }
 
 /// Perform septic polynomial interpolation to get value at x.
