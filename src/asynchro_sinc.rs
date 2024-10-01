@@ -472,7 +472,7 @@ where
         // Update buffer with new data.
         for buf in self.buffer.iter_mut() {
             buf.copy_within(
-                self.needed_input_size..self.needed_input_size + 2 * sinc_len,
+                self.current_buffer_fill..self.current_buffer_fill + 2 * sinc_len,
                 0,
             );
         }
@@ -484,6 +484,7 @@ where
                     .copy_from_slice(&wave_in[chan].as_ref()[..self.needed_input_size]);
             }
         }
+        self.current_buffer_fill = self.needed_input_size;
 
         let mut idx = self.last_index;
 
@@ -680,6 +681,7 @@ where
             });
         }
         self.chunk_size = chunksize;
+        self.update_lengths();
         Ok(())
     }
 }
