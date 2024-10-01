@@ -1,7 +1,7 @@
 use std::fmt;
 
 use crate::error::{ResampleError, ResampleResult, ResamplerConstructionError};
-use crate::{update_mask_from_buffers, validate_buffers, Resampler, Sample};
+use crate::{update_mask_from_buffers, validate_buffers, Fixed, Resampler, Sample};
 
 const POLYNOMIAL_LEN_U: usize = 8;
 const POLYNOMIAL_LEN_I: isize = 8;
@@ -11,15 +11,6 @@ macro_rules! t {
     ($expression:expr) => {
         T::coerce($expression)
     };
-}
-
-/// An enum for specifying which side of the resampler should be fixed size.
-#[derive(Debug)]
-pub enum Fixed {
-    /// Input size is fixed, output size varies.
-    Input,
-    /// Output size is fixed, input size varies.
-    Output,
 }
 
 /// Degree of the polynomial used for interpolation.
@@ -553,8 +544,10 @@ where
             self.needed_input_size,
             self.needed_output_size,
         );
+        let input_size = self.needed_input_size;
+        let output_size = self.needed_output_size;
         self.update_lengths();
-        Ok((self.needed_input_size, self.needed_output_size))
+        Ok((input_size, output_size))
     }
 
     fn output_frames_max(&self) -> usize {

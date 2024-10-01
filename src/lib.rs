@@ -47,10 +47,8 @@ mod windows;
 
 pub mod sinc_interpolator;
 
-pub use crate::asynchro_fast::{Fast, Fixed, PolynomialDegree};
-pub use crate::asynchro_sinc::{
-    SincFixedIn, SincFixedOut, SincInterpolationParameters, SincInterpolationType,
-};
+pub use crate::asynchro_fast::{Fast, PolynomialDegree};
+pub use crate::asynchro_sinc::{Sinc, SincInterpolationParameters, SincInterpolationType};
 pub use crate::error::{
     CpuFeature, MissingCpuFeature, ResampleError, ResampleResult, ResamplerConstructionError,
 };
@@ -58,6 +56,15 @@ pub use crate::sample::Sample;
 #[cfg(feature = "fft_resampler")]
 pub use crate::synchro::{FftFixedIn, FftFixedInOut, FftFixedOut};
 pub use crate::windows::{calculate_cutoff, WindowFunction};
+
+/// An enum for specifying which side of the resampler should be fixed size.
+#[derive(Debug)]
+pub enum Fixed {
+    /// Input size is fixed, output size varies.
+    Input,
+    /// Output size is fixed, input size varies.
+    Output,
+}
 
 /// A resampler that is used to resample a chunk of audio to a new sample rate.
 /// For asynchronous resamplers, the rate can be adjusted as required.
@@ -566,7 +573,7 @@ pub fn buffer_capacity<T: Sample>(buffer: &[Vec<T>]) -> usize {
 #[cfg(test)]
 pub mod tests {
     use crate::{buffer_capacity, buffer_length, make_buffer, resize_buffer, VecResampler};
-    use crate::{Fast, Fixed, PolynomialDegree, SincFixedIn, SincFixedOut};
+    use crate::{Fast, Fixed, PolynomialDegree, Sinc};
     #[cfg(feature = "fft_resampler")]
     use crate::{FftFixedIn, FftFixedInOut, FftFixedOut};
     use test_log::test;
@@ -600,8 +607,8 @@ pub mod tests {
 
     fn impl_send<T: Send>() {
         fn is_send<T: Send>() {}
-        is_send::<SincFixedOut<T>>();
-        is_send::<SincFixedIn<T>>();
+        is_send::<Sinc<T>>();
+        is_send::<Fast<T>>();
         #[cfg(feature = "fft_resampler")]
         {
             is_send::<FftFixedOut<T>>();
