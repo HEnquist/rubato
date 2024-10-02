@@ -462,8 +462,9 @@ where
             self.needed_output_size,
         )?;
 
-        let sinc_len = self.interpolator.len();
+        let interpolator_len = self.interpolator.len();
         let oversampling_factor = self.interpolator.nbr_sincs();
+
         let mut t_ratio = 1.0 / self.resample_ratio;
         let t_ratio_end = 1.0 / self.target_ratio;
 
@@ -472,18 +473,20 @@ where
         // Update buffer with new data.
         for buf in self.buffer.iter_mut() {
             buf.copy_within(
-                self.current_buffer_fill..self.current_buffer_fill + 2 * sinc_len,
+                self.current_buffer_fill..self.current_buffer_fill + 2 * interpolator_len,
                 0,
             );
         }
 
-        for (chan, active) in self.channel_mask.iter().enumerate() {
-            if *active {
-                debug_assert!(self.needed_output_size <= wave_out[chan].as_mut().len());
-                self.buffer[chan][2 * sinc_len..2 * sinc_len + self.needed_input_size]
-                    .copy_from_slice(&wave_in[chan].as_ref()[..self.needed_input_size]);
-            }
+        for (chan, wave_in) in wave_in
+            .iter()
+            .enumerate()
+            .filter(|(chan, _)| self.channel_mask[*chan])
+        {
+            self.buffer[chan][2 * interpolator_len..2 * interpolator_len + self.needed_input_size]
+                .copy_from_slice(&wave_in.as_ref()[..self.needed_input_size]);
         }
+
         self.current_buffer_fill = self.needed_input_size;
 
         let mut idx = self.last_index;
@@ -505,7 +508,7 @@ where
                             for (n, p) in nearest.iter().zip(points.iter_mut()) {
                                 *p = self.interpolator.get_sinc_interpolated(
                                     buf,
-                                    (n.0 + 2 * sinc_len as isize) as usize,
+                                    (n.0 + 2 * interpolator_len as isize) as usize,
                                     n.1 as usize,
                                 );
                             }
@@ -530,7 +533,7 @@ where
                             for (n, p) in nearest.iter().zip(points.iter_mut()) {
                                 *p = self.interpolator.get_sinc_interpolated(
                                     buf,
-                                    (n.0 + 2 * sinc_len as isize) as usize,
+                                    (n.0 + 2 * interpolator_len as isize) as usize,
                                     n.1 as usize,
                                 );
                             }
@@ -555,7 +558,7 @@ where
                             for (n, p) in nearest.iter().zip(points.iter_mut()) {
                                 *p = self.interpolator.get_sinc_interpolated(
                                     buf,
-                                    (n.0 + 2 * sinc_len as isize) as usize,
+                                    (n.0 + 2 * interpolator_len as isize) as usize,
                                     n.1 as usize,
                                 );
                             }
@@ -576,7 +579,7 @@ where
                             let buf = &self.buffer[chan];
                             point = self.interpolator.get_sinc_interpolated(
                                 buf,
-                                (nearest.0 + 2 * sinc_len as isize) as usize,
+                                (nearest.0 + 2 * interpolator_len as isize) as usize,
                                 nearest.1 as usize,
                             );
                             wave_out[chan].as_mut()[n] = point;

@@ -384,10 +384,17 @@ where
             self.needed_output_size,
         )?;
 
+        let interpolator_len = POLYNOMIAL_LEN_U;
+
+        let mut t_ratio = 1.0 / self.resample_ratio;
+        let t_ratio_end = 1.0 / self.target_ratio;
+
+        let t_ratio_increment = (t_ratio_end - t_ratio) / self.needed_output_size as f64;
+
         // Update buffer with new data.
         for buf in self.buffer.iter_mut() {
             buf.copy_within(
-                self.current_buffer_fill..self.current_buffer_fill + 2 * POLYNOMIAL_LEN_U,
+                self.current_buffer_fill..self.current_buffer_fill + 2 * interpolator_len,
                 0,
             );
         }
@@ -397,24 +404,11 @@ where
             .enumerate()
             .filter(|(chan, _)| self.channel_mask[*chan])
         {
-            //debug_assert!(self.chunk_size <= wave_out[chan].as_mut().len());
-            self.buffer[chan][2 * POLYNOMIAL_LEN_U..2 * POLYNOMIAL_LEN_U + self.needed_input_size]
+            self.buffer[chan][2 * interpolator_len..2 * interpolator_len + self.needed_input_size]
                 .copy_from_slice(&wave_in.as_ref()[..self.needed_input_size]);
         }
+
         self.current_buffer_fill = self.needed_input_size;
-
-        let mut t_ratio = 1.0 / self.resample_ratio;
-        let t_ratio_end = 1.0 / self.target_ratio;
-
-        let t_ratio_increment = (t_ratio_end - t_ratio) / self.needed_output_size as f64;
-
-        //println!(
-        //    "start ratio {}, end_ratio {}, frames {}, t_increment {}",
-        //    t_ratio,
-        //    t_ratio_end,
-        //    approximate_nbr_frames,
-        //    t_ratio_increment
-        //);
 
         let mut idx = self.last_index;
 
@@ -431,8 +425,8 @@ where
                         if *active {
                             unsafe {
                                 let buf = self.buffer.get_unchecked(chan).get_unchecked(
-                                    (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
-                                        ..(start_idx + 2 * POLYNOMIAL_LEN_I + 8) as usize,
+                                    (start_idx + 2 * interpolator_len as isize) as usize
+                                        ..(start_idx + 2 * interpolator_len as isize + 8) as usize,
                                 );
                                 *wave_out
                                     .get_unchecked_mut(chan)
@@ -455,8 +449,8 @@ where
                         if *active {
                             unsafe {
                                 let buf = self.buffer.get_unchecked(chan).get_unchecked(
-                                    (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
-                                        ..(start_idx + 2 * POLYNOMIAL_LEN_I + 6) as usize,
+                                    (start_idx + 2 * interpolator_len as isize) as usize
+                                        ..(start_idx + 2 * interpolator_len as isize + 6) as usize,
                                 );
                                 *wave_out
                                     .get_unchecked_mut(chan)
@@ -479,8 +473,8 @@ where
                         if *active {
                             unsafe {
                                 let buf = self.buffer.get_unchecked(chan).get_unchecked(
-                                    (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
-                                        ..(start_idx + 2 * POLYNOMIAL_LEN_I + 4) as usize,
+                                    (start_idx + 2 * interpolator_len as isize) as usize
+                                        ..(start_idx + 2 * interpolator_len as isize + 4) as usize,
                                 );
                                 *wave_out
                                     .get_unchecked_mut(chan)
@@ -503,8 +497,8 @@ where
                         if *active {
                             unsafe {
                                 let buf = self.buffer.get_unchecked(chan).get_unchecked(
-                                    (start_idx + 2 * POLYNOMIAL_LEN_I) as usize
-                                        ..(start_idx + 2 * POLYNOMIAL_LEN_I + 2) as usize,
+                                    (start_idx + 2 * interpolator_len as isize) as usize
+                                        ..(start_idx + 2 * interpolator_len as isize + 2) as usize,
                                 );
                                 *wave_out
                                     .get_unchecked_mut(chan)
@@ -523,10 +517,9 @@ where
                     for (chan, active) in self.channel_mask.iter().enumerate() {
                         if *active {
                             unsafe {
-                                let point = self
-                                    .buffer
-                                    .get_unchecked(chan)
-                                    .get_unchecked((start_idx + 2 * POLYNOMIAL_LEN_I) as usize);
+                                let point = self.buffer.get_unchecked(chan).get_unchecked(
+                                    (start_idx + 2 * interpolator_len as isize) as usize,
+                                );
                                 *wave_out
                                     .get_unchecked_mut(chan)
                                     .as_mut()
@@ -1075,7 +1068,8 @@ mod tests {
 
     #[test]
     fn check_fo_output_resize() {
-        let mut resampler = Fast::<f64>::new(1.2, 100.0, PolynomialDegree::Cubic, 1024, 2, Fixed::Output).unwrap();
+        let mut resampler =
+            Fast::<f64>::new(1.2, 100.0, PolynomialDegree::Cubic, 1024, 2, Fixed::Output).unwrap();
         assert_eq!(resampler.output_frames_next(), 1024);
         resampler.set_chunk_size(256).unwrap();
         assert_eq!(resampler.output_frames_next(), 256);
@@ -1084,7 +1078,8 @@ mod tests {
 
     #[test]
     fn check_fi_output_resize() {
-        let mut resampler = Fast::<f64>::new(1.2, 100.0, PolynomialDegree::Cubic, 1024, 2, Fixed::Input).unwrap();
+        let mut resampler =
+            Fast::<f64>::new(1.2, 100.0, PolynomialDegree::Cubic, 1024, 2, Fixed::Input).unwrap();
         assert_eq!(resampler.input_frames_next(), 1024);
         resampler.set_chunk_size(256).unwrap();
         assert_eq!(resampler.input_frames_next(), 256);
