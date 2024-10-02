@@ -127,7 +127,7 @@ fn main() {
 
     // Create resampler
     let mut resampler: Box<dyn SliceResampler<f64>> = match resampler_type.as_str() {
-        "SincFixedIn" => {
+        "SincFixedInput" => {
             let sinc_len = 128;
             let oversampling_factor = 256;
             let interpolation = SincInterpolationType::Quadratic;
@@ -143,7 +143,7 @@ fn main() {
             };
             Box::new(Sinc::<f64>::new(f_ratio, 1.1, params, 1024, channels, Fixed::Input).unwrap())
         }
-        "SincFixedOut" => {
+        "SincFixedOutput" => {
             let sinc_len = 128;
             let oversampling_factor = 512;
             let interpolation = SincInterpolationType::Cubic;
@@ -159,10 +159,10 @@ fn main() {
             };
             Box::new(Sinc::<f64>::new(f_ratio, 1.1, params, 1024, channels, Fixed::Output).unwrap())
         }
-        "FastFixedIn" => {
+        "FastFixedInput" => {
             Box::new(Fast::<f64>::new(f_ratio, 1.1, PolynomialDegree::Septic, 1024, channels, Fixed::Input).unwrap())
         }
-        "FastFixedOut" => {
+        "FastFixedOutput" => {
             Box::new(Fast::<f64>::new(f_ratio, 1.1, PolynomialDegree::Septic, 1024, channels, Fixed::Output).unwrap())
         }
         #[cfg(feature = "fft_resampler")]
@@ -177,7 +177,7 @@ fn main() {
         "FftFixedInOut" => {
             Box::new(FftFixedInOut::<f64>::new(fs_in, fs_out, 1024, channels).unwrap())
         }
-        _ => panic!("Unknown resampler type {}\nMust be one of SincFixedIn, SincFixedOut, FastFixedIn, FastFixedOut, FftFixedIn, FftFixedOut, FftFixedInOut", resampler_type),
+        _ => panic!("Unknown resampler type {}\nMust be one of SincFixedInput, SincFixedOutput, FastFixedInput, FastFixedOutput, FftFixedIn, FftFixedOut, FftFixedInOut", resampler_type),
     };
 
     // Prepare

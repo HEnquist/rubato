@@ -72,14 +72,22 @@ pub enum SincInterpolationType {
     Nearest,
 }
 
-/// An asynchronous resampler that accepts a fixed number of audio frames for input
-/// and returns a variable number of frames.
-/// The number of input frames is determined by the chunk size argument to the constructor.
+/// An asynchronous resampler that either takes a fixed number of input frames,
+/// or returns a fixed number of audio frames.
+///
+/// The `fixed` argument determines if input of output should be fixed size.
+/// When the input size is fixed, the output size varies from call to call,
+/// and when output size is fixed, the input size varies.
+///
+/// The number of frames on the fixed side is determined by the chunk size argument to the constructor.
 /// This value can be changed by the `set_chunk_size()` method,
 /// to let the resampler process smaller chunks of audio data.
 /// Note that the chunk size cannot exceed the value given at creation time.
-/// The maximum value can be retrieved using the `input_size_max()` method,
+///
+/// When the input size is fixed, the maximum value can be retrieved using the `input_size_max()` method,
 /// and `input_frames_next()` gives the current value.
+/// When the output size is fixed, the corresponding values are instead provided by the `output_size_max()`
+/// and `output_size_next()` methods.
 ///
 /// The resampling is done by creating a number of intermediate points (defined by oversampling_factor)
 /// by sinc interpolation. The new samples are then calculated by interpolating between these points.
@@ -89,7 +97,9 @@ pub enum SincInterpolationType {
 /// This causes no issue when increasing the ratio (which slows down the output).
 /// However, when decreasing more than a few percent (or speeding up the output),
 /// the filters can no longer suppress all aliasing and this may lead to some artefacts.
-/// Higher maximum ratios require more memory to be allocated by [Resampler::output_buffer_allocate].
+/// Higher maximum ratios require more memory to be allocated by
+/// [input_buffer_allocate](Resampler::input_buffer_allocate),
+/// [output_buffer_allocate](Resampler::output_buffer_allocate), and an internal buffer.
 pub struct Sinc<T> {
     nbr_channels: usize,
     chunk_size: usize,

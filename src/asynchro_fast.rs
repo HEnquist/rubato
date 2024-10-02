@@ -36,6 +36,16 @@ pub enum PolynomialDegree {
 /// When the input size is fixed, the output size varies from call to call,
 /// and when output size is fixed, the input size varies.
 ///
+/// The number of frames on the fixed side is determined by the chunk size argument to the constructor.
+/// This value can be changed by the `set_chunk_size()` method,
+/// to let the resampler process smaller chunks of audio data.
+/// Note that the chunk size cannot exceed the value given at creation time.
+///
+/// When the input size is fixed, the maximum value can be retrieved using the `input_size_max()` method,
+/// and `input_frames_next()` gives the current value.
+/// When the output size is fixed, the corresponding values are instead provided by the `output_size_max()`
+/// and `output_size_next()` methods.
+///
 /// The resampling is done by interpolating between the input samples.
 /// The polynomial degree can be selected, see [PolynomialDegree] for the available options.
 ///
@@ -46,7 +56,8 @@ pub enum PolynomialDegree {
 ///
 /// The resampling ratio can be freely adjusted within the range specified to the constructor.
 /// Higher maximum ratios require more memory to be allocated by
-/// [input_buffer_allocate](Resampler::input_buffer_allocate) and an internal buffer.
+/// [input_buffer_allocate](Resampler::input_buffer_allocate),
+/// [output_buffer_allocate](Resampler::output_buffer_allocate), and an internal buffer.
 pub struct Fast<T> {
     nbr_channels: usize,
     chunk_size: usize,
@@ -420,7 +431,7 @@ where
                     let idx_floor = idx.floor();
                     let start_idx = idx_floor as isize - 3;
                     let frac = idx - idx_floor;
-                    let frac_offset = T::coerce(frac);
+                    let frac_offset = t!(frac);
                     for (chan, active) in self.channel_mask.iter().enumerate() {
                         if *active {
                             unsafe {
@@ -444,7 +455,7 @@ where
                     let idx_floor = idx.floor();
                     let start_idx = idx_floor as isize - 2;
                     let frac = idx - idx_floor;
-                    let frac_offset = T::coerce(frac);
+                    let frac_offset = t!(frac);
                     for (chan, active) in self.channel_mask.iter().enumerate() {
                         if *active {
                             unsafe {
@@ -468,7 +479,7 @@ where
                     let idx_floor = idx.floor();
                     let start_idx = idx_floor as isize - 1;
                     let frac = idx - idx_floor;
-                    let frac_offset = T::coerce(frac);
+                    let frac_offset = t!(frac);
                     for (chan, active) in self.channel_mask.iter().enumerate() {
                         if *active {
                             unsafe {
@@ -492,7 +503,7 @@ where
                     let idx_floor = idx.floor();
                     let start_idx = idx_floor as isize;
                     let frac = idx - idx_floor;
-                    let frac_offset = T::coerce(frac);
+                    let frac_offset = t!(frac);
                     for (chan, active) in self.channel_mask.iter().enumerate() {
                         if *active {
                             unsafe {
