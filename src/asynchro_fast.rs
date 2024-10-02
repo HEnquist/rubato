@@ -50,6 +50,7 @@ pub enum PolynomialDegree {
 pub struct Fast<T> {
     nbr_channels: usize,
     chunk_size: usize,
+    max_chunk_size: usize,
     needed_input_size: usize,
     needed_output_size: usize,
     last_index: f64,
@@ -69,6 +70,7 @@ impl<T> fmt::Debug for Fast<T> {
         fmt.debug_struct("Fast")
             .field("nbr_channels", &self.nbr_channels)
             .field("chunk_size,", &self.chunk_size)
+            .field("max_chunk_size,", &self.max_chunk_size)
             .field("needed_input_size,", &self.needed_input_size)
             .field("needed_output_size,", &self.needed_output_size)
             .field("last_index", &self.last_index)
@@ -255,6 +257,7 @@ where
         Ok(Fast {
             nbr_channels,
             chunk_size,
+            max_chunk_size: chunk_size,
             needed_input_size,
             needed_output_size,
             current_buffer_fill: needed_input_size,
@@ -552,7 +555,7 @@ where
 
     fn output_frames_max(&self) -> usize {
         Fast::<T>::calculate_max_output_size(
-            self.chunk_size,
+            self.max_chunk_size,
             self.resample_ratio_original,
             self.max_relative_ratio,
             &self.fixed,
@@ -573,7 +576,7 @@ where
 
     fn input_frames_max(&self) -> usize {
         Fast::<T>::calculate_max_input_size(
-            self.chunk_size,
+            self.max_chunk_size,
             self.resample_ratio_original,
             self.max_relative_ratio,
             &self.fixed,
@@ -617,7 +620,20 @@ where
         self.last_index = -(POLYNOMIAL_LEN_I / 2) as f64;
         self.resample_ratio = self.resample_ratio_original;
         self.target_ratio = self.resample_ratio_original;
+        self.chunk_size = self.max_chunk_size;
         self.update_lengths();
+    }
+
+    fn set_chunk_size(&mut self, chunksize: usize) -> ResampleResult<()> {
+        if chunksize > self.max_chunk_size || chunksize == 0 {
+            return Err(ResampleError::InvalidChunkSize {
+                max: self.max_chunk_size,
+                requested: chunksize,
+            });
+        }
+        self.chunk_size = chunksize;
+        self.update_lengths();
+        Ok(())
     }
 }
 
@@ -1055,5 +1071,23 @@ mod tests {
         let mut resampler =
             Fast::<f32>::new(ratio, 100.0, PolynomialDegree::Cubic, 1024, 2, Fixed::Input).unwrap();
         check_ratio!(resampler, ratio, 1000);
+    }
+
+    #[test]
+    fn check_fo_output_resize() {
+        let mut resampler = Fast::<f64>::new(1.2, 100.0, PolynomialDegree::Cubic, 1024, 2, Fixed::Output).unwrap();
+        assert_eq!(resampler.output_frames_next(), 1024);
+        resampler.set_chunk_size(256).unwrap();
+        assert_eq!(resampler.output_frames_next(), 256);
+        check_output!(resampler);
+    }
+
+    #[test]
+    fn check_fi_output_resize() {
+        let mut resampler = Fast::<f64>::new(1.2, 100.0, PolynomialDegree::Cubic, 1024, 2, Fixed::Input).unwrap();
+        assert_eq!(resampler.input_frames_next(), 1024);
+        resampler.set_chunk_size(256).unwrap();
+        assert_eq!(resampler.input_frames_next(), 256);
+        check_output!(resampler);
     }
 }

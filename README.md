@@ -190,7 +190,7 @@ RUST_LOG=trace cargo test --features log
 Resample a single chunk of a dummy audio file from 44100 to 48000 Hz.
 See also the "process_f64" example that can be used to process a file from disk.
 ```rust
-use rubato::{Resampler, SincFixedIn, SincInterpolationType, SincInterpolationParameters, WindowFunction};
+use rubato::{Resampler, Sinc, Fixed, SincInterpolationType, SincInterpolationParameters, WindowFunction};
 let params = SincInterpolationParameters {
     sinc_len: 256,
     f_cutoff: 0.95,
@@ -198,12 +198,13 @@ let params = SincInterpolationParameters {
     oversampling_factor: 256,
     window: WindowFunction::BlackmanHarris2,
 };
-let mut resampler = SincFixedIn::<f64>::new(
+let mut resampler = Sinc::<f64>::new(
     48000 as f64 / 44100 as f64,
     2.0,
     params,
     1024,
     2,
+    Fixed::Input,
 ).unwrap();
 
 let waves_in = vec![vec![0.0f64; 1024];2];
