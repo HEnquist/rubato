@@ -1,6 +1,6 @@
 extern crate rubato;
 use rubato::{
-    calculate_cutoff, Fixed, Resampler, Sinc, SincInterpolationParameters, SincInterpolationType,
+    calculate_cutoff, Async, Fixed, Resampler, SincInterpolationParameters, SincInterpolationType,
     WindowFunction,
 };
 use std::convert::TryInto;
@@ -128,7 +128,7 @@ fn main() {
 
     let chunksize = 1024;
     let target_ratio = final_ratio / 100.0;
-    let mut resampler = Sinc::<f64>::new(
+    let mut resampler = Async::<f64>::new_sinc(
         f_ratio,
         target_ratio,
         params,

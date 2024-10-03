@@ -35,6 +35,7 @@ macro_rules! error { ($($x:tt)*) => (
     }
 ) }
 
+mod asynchro;
 mod asynchro_fast;
 mod asynchro_sinc;
 mod error;
@@ -47,8 +48,9 @@ mod windows;
 
 pub mod sinc_interpolator;
 
-pub use crate::asynchro_fast::{Fast, PolynomialDegree};
-pub use crate::asynchro_sinc::{Sinc, SincInterpolationParameters, SincInterpolationType};
+pub use crate::asynchro::Async;
+pub use crate::asynchro_fast::PolynomialDegree;
+pub use crate::asynchro_sinc::{SincInterpolationParameters, SincInterpolationType};
 pub use crate::error::{
     CpuFeature, MissingCpuFeature, ResampleError, ResampleResult, ResamplerConstructionError,
 };
@@ -311,8 +313,8 @@ use crate as rubato;
 /// `&[AsRef<[T]>]` and `&mut [AsMut<[T]>]` to `&[Vec<T>]` and `&mut [Vec<T>]`.
 /// This allows a [VecResampler] to be made into a trait object like this:
 /// ```
-/// # use rubato::{Fast, Fixed, VecResampler, PolynomialDegree};
-/// let boxed: Box<dyn VecResampler<f64>> = Box::new(Fast::<f64>::new(44100 as f64 / 88200 as f64, 1.1, PolynomialDegree::Cubic, 2, 2, Fixed::Input).unwrap());
+/// # use rubato::{Async, Fixed, VecResampler, PolynomialDegree};
+/// let boxed: Box<dyn VecResampler<f64>> = Box::new(Async::<f64>::new_poly(44100 as f64 / 88200 as f64, 1.1, PolynomialDegree::Cubic, 2, 2, Fixed::Input).unwrap());
 /// ```
 /// Use this implementation as an example if you need to fix the input type to something else.
 #[macro_export]
@@ -573,7 +575,7 @@ pub fn buffer_capacity<T: Sample>(buffer: &[Vec<T>]) -> usize {
 #[cfg(test)]
 pub mod tests {
     use crate::{buffer_capacity, buffer_length, make_buffer, resize_buffer, VecResampler};
-    use crate::{Fast, Fixed, PolynomialDegree, Sinc};
+    use crate::{Async, Fixed, PolynomialDegree};
     #[cfg(feature = "fft_resampler")]
     use crate::{FftFixedIn, FftFixedInOut, FftFixedOut};
     use test_log::test;
@@ -582,7 +584,7 @@ pub mod tests {
     #[test]
     fn boxed_resampler() {
         let mut boxed: Box<dyn VecResampler<f64>> = Box::new(
-            Fast::<f64>::new(
+            Async::<f64>::new_poly(
                 88200 as f64 / 44100 as f64,
                 1.1,
                 PolynomialDegree::Cubic,
@@ -607,8 +609,7 @@ pub mod tests {
 
     fn impl_send<T: Send>() {
         fn is_send<T: Send>() {}
-        is_send::<Sinc<T>>();
-        is_send::<Fast<T>>();
+        is_send::<Async<T>>();
         #[cfg(feature = "fft_resampler")]
         {
             is_send::<FftFixedOut<T>>();
