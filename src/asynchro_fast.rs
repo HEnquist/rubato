@@ -26,8 +26,7 @@ pub enum PolynomialDegree {
 }
 
 impl PolynomialDegree {
-    #[allow(clippy::len_without_is_empty)]
-    pub fn len(&self) -> usize {
+    pub fn nbr_points(&self) -> usize {
         match self {
             PolynomialDegree::Nearest => 1,
             PolynomialDegree::Linear => 2,
@@ -155,7 +154,7 @@ where
         wave_in: &[Vec<T>],
         wave_out: &mut [&mut [T]],
     ) -> f64 {
-        let interpolator_len = self.len();
+        let interpolator_len = self.nbr_points();
         let mut t_ratio = t_ratio;
         let mut idx = idx;
         match self.interpolation {
@@ -268,7 +267,7 @@ where
         idx
     }
 
-    fn len(&self) -> usize {
-        self.interpolation.len()
+    fn nbr_points(&self) -> usize {
+        self.interpolation.nbr_points()
     }
 }

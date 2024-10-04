@@ -181,7 +181,7 @@ where
     ) -> f64 {
         let mut t_ratio = t_ratio;
         let mut idx = idx;
-        let interpolator_len = self.interpolator.len();
+        let interpolator_len = self.interpolator.nbr_points();
         match self.interpolation {
             SincInterpolationType::Cubic => {
                 let oversampling_factor = self.interpolator.nbr_sincs();
@@ -286,8 +286,8 @@ where
         idx
     }
 
-    fn len(&self) -> usize {
-        self.interpolator.len()
+    fn nbr_points(&self) -> usize {
+        self.interpolator.nbr_points()
     }
 }
 

@@ -25,7 +25,7 @@ pub trait InnerResampler<T>: Send {
     ) -> f64;
 
     /// Get interpolator length.
-    fn len(&self) -> usize;
+    fn nbr_points(&self) -> usize;
 }
 
 /// An asynchronous resampler that either takes a fixed number of input frames,
@@ -160,7 +160,7 @@ where
 
         let channel_mask = vec![true; nbr_channels];
 
-        let interpolator_len = interpolation_type.len();
+        let interpolator_len = interpolation_type.nbr_points();
 
         let last_index = -(interpolator_len as f64 / 2.0);
         let needed_input_size = Self::calculate_input_size(
@@ -276,7 +276,7 @@ where
     ) -> Result<Self, ResamplerConstructionError> {
         validate_ratios(resample_ratio, max_resample_ratio_relative)?;
 
-        let interpolator_len = interpolator.len();
+        let interpolator_len = interpolator.nbr_points();
 
         let last_index = -(interpolator_len as f64) / 2.0;
         let needed_input_size = Self::calculate_input_size(
@@ -307,7 +307,7 @@ where
         let buffer = vec![vec![T::zero(); buffer_len]; nbr_channels];
 
         let channel_mask = vec![true; nbr_channels];
-        let last_index = -((interpolator.len() / 2) as f64);
+        let last_index = -((interpolator.nbr_points() / 2) as f64);
 
         let inner_resampler = InnerSinc {
             interpolator,
@@ -406,7 +406,7 @@ where
             self.resample_ratio,
             self.target_ratio,
             self.last_index,
-            self.inner_resampler.len(),
+            self.inner_resampler.nbr_points(),
             &self.fixed,
         );
         self.needed_output_size = Async::<T>::calculate_output_size(
@@ -414,7 +414,7 @@ where
             self.resample_ratio,
             self.target_ratio,
             self.last_index,
-            self.inner_resampler.len(),
+            self.inner_resampler.nbr_points(),
             &self.fixed,
         );
         trace!(
@@ -451,7 +451,7 @@ where
             self.needed_output_size,
         )?;
 
-        let interpolator_len = self.inner_resampler.len();
+        let interpolator_len = self.inner_resampler.nbr_points();
 
         let t_ratio = 1.0 / self.resample_ratio;
         let t_ratio_end = 1.0 / self.target_ratio;
@@ -530,7 +530,7 @@ where
     }
 
     fn output_delay(&self) -> usize {
-        (self.inner_resampler.len() as f64 * self.resample_ratio / 2.0) as usize
+        (self.inner_resampler.nbr_points() as f64 * self.resample_ratio / 2.0) as usize
     }
 
     fn nbr_channels(&self) -> usize {
@@ -542,7 +542,7 @@ where
             self.max_chunk_size,
             self.resample_ratio_original,
             self.max_relative_ratio,
-            self.inner_resampler.len(),
+            self.inner_resampler.nbr_points(),
             &self.fixed,
         )
     }
@@ -581,7 +581,7 @@ where
             .iter_mut()
             .for_each(|ch| ch.iter_mut().for_each(|s| *s = T::zero()));
         self.channel_mask.iter_mut().for_each(|val| *val = true);
-        self.last_index = -(self.inner_resampler.len() as f64 / 2.0);
+        self.last_index = -(self.inner_resampler.nbr_points() as f64 / 2.0);
         self.resample_ratio = self.resample_ratio_original;
         self.target_ratio = self.resample_ratio_original;
         self.chunk_size = self.max_chunk_size;
