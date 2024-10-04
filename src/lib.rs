@@ -246,9 +246,9 @@ where
 
     /// Get the number of frames per channel that will be output from the next call to
     /// [process_into_buffer](Resampler::process_into_buffer) or [process](Resampler::process).
-    /// For the resamplers with a fixed output size, sush as [FastFixedOut],
+    /// For the resamplers with a fixed output size, sush as [FftFixedOut],
     /// this gives the exact number.
-    /// For the resamplers with a varying output size, like [FastFixedIn],
+    /// For the resamplers with a varying output size, like [FftFixedIn],
     /// the number is an estimation that may be a few frames larger than
     /// (and never smaller than) the actual number of output frames.
     fn output_frames_next(&self) -> usize;

@@ -44,19 +44,26 @@ pub trait InnerResampler<T>: Send {
 /// When the output size is fixed, the corresponding values are instead provided by the `output_size_max()`
 /// and `output_size_next()` methods.
 ///
-/// Polynomial
-/// The resampling is done by interpolating between the input samples.
+/// # Interpolation
+/// This resampler can use either polynomial or sinc interpolation.
+/// Sinc interpolation gives the best quality, while polynomial interpolation
+/// runs significantly faster.
+///
+/// ## Polynomial
+/// The resampling is done by interpolating between the input samples by fitting a polynomial.
 /// The polynomial degree can be selected, see [PolynomialDegree] for the available options.
+/// Higher polynomial degrees give better quality but run slower.
 ///
 /// Note that no anti-aliasing filter is used.
 /// This makes it run considerably faster than the corresponding Sinc resampler, which performs anti-aliasing filtering.
 /// The price is that the resampling creates some artefacts in the output, mainly at higher frequencies.
 /// Use a Sinc resampler if this can not be tolerated.
 ///
-/// Sinc
+/// ## Sinc
 /// The resampling is done by creating a number of intermediate points (defined by oversampling_factor)
 /// by sinc interpolation. The new samples are then calculated by interpolating between these points.
 ///
+/// # Adjusting the resampling ratio
 /// The resampling ratio can be freely adjusted within the range specified to the constructor.
 /// Adjusting the ratio does not recalculate the sinc functions used by the anti-aliasing filter.
 /// This causes no issue when increasing the ratio (which slows down the output).
@@ -126,7 +133,7 @@ impl<'a, T> Async<'a, T>
 where
     T: Sample,
 {
-    /// Create a new Async with polynomial interpolation.
+    /// Create a new Async resampler that uses polynomial interpolation.
     ///
     /// Parameters are:
     /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
@@ -208,12 +215,12 @@ where
         })
     }
 
-    /// Create a new Async with sinc interpolation.
+    /// Create a new [Async] resampler that uses sinc interpolation.
     ///
     /// Parameters are:
     /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
     /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Resampler::set_resample_ratio] relative to `resample_ratio`, must be >= 1.0. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio * 10.0` and `resample_ratio / 10.0`.
-    /// - `parameters`: Parameters for interpolation, see `SincInterpolationParameters`.
+    /// - `parameters`: Parameters for interpolation, see [SincInterpolationParameters].
     /// - `chunk_size`: Size of input data in frames.
     /// - `nbr_channels`: Number of channels in input/output.
     pub fn new_sinc(
