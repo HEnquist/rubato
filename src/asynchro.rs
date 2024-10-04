@@ -12,6 +12,7 @@ use crate::{update_mask_from_buffers, validate_buffers, Fixed, Resampler, Sample
 /// Functions for making the scalar product with a sinc.
 pub trait InnerResampler<T>: Send {
     /// Make the scalar product between the waveform starting at `index` and the sinc of `subindex`.
+    #[allow(clippy::too_many_arguments)]
     fn process(
         &self,
         index: f64,
@@ -483,7 +484,7 @@ where
         // This is safe because we drop them again right after the processing step.
         for wave in wave_out {
             // Transmute to work around the different lifetimes of the data and the vector.
-            let slice = unsafe { std::mem::transmute(wave.as_mut()) };
+            let slice = unsafe { std::mem::transmute::<&mut [T], &mut [T]>(wave.as_mut()) };
             self.temp_output.push(slice);
         }
         // Process
