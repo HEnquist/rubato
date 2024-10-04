@@ -347,7 +347,7 @@ where
 /// Higher maximum ratios require more memory to be allocated by
 /// [input_buffer_allocate](Resampler::input_buffer_allocate),
 /// [output_buffer_allocate](Resampler::output_buffer_allocate), and an internal buffer.
-pub struct Async<T> {
+pub struct Async<'a, T> {
     nbr_channels: usize,
     chunk_size: usize,
     max_chunk_size: usize,
@@ -363,9 +363,10 @@ pub struct Async<T> {
     inner_resampler: Box<dyn InnerResampler<T>>,
     channel_mask: Vec<bool>,
     fixed: Fixed,
+    temp_output: Vec<&'a mut [T]>,
 }
 
-impl<T> fmt::Debug for Async<T> {
+impl<'a, T> fmt::Debug for Async<'a, T> {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt.debug_struct("Fast")
             .field("nbr_channels", &self.nbr_channels)
@@ -401,7 +402,7 @@ fn validate_ratios(
     Ok(())
 }
 
-impl<T> Async<T>
+impl<'a, T> Async<'a, T>
 where
     T: Sample,
 {
@@ -465,6 +466,8 @@ where
             _phantom: PhantomData,
         };
 
+        let temp_output = Vec::with_capacity(nbr_channels);
+
         Ok(Async {
             nbr_channels,
             chunk_size,
@@ -481,6 +484,7 @@ where
             inner_resampler: Box::new(inner_resampler),
             channel_mask,
             fixed,
+            temp_output,
         })
     }
 
@@ -582,6 +586,8 @@ where
             interpolation: interpolation_type,
         };
 
+        let temp_output = Vec::with_capacity(nbr_channels);
+
         Ok(Async {
             nbr_channels,
             chunk_size,
@@ -598,6 +604,7 @@ where
             buffer,
             channel_mask,
             fixed,
+            temp_output,
         })
     }
 
@@ -690,7 +697,7 @@ where
     }
 }
 
-impl<T> Resampler<T> for Async<T>
+impl<'a, T> Resampler<T> for Async<'a, T>
 where
     T: Sample,
 {
@@ -744,10 +751,13 @@ where
 
         let mut idx = self.last_index;
 
-        let mut temp_output = Vec::with_capacity(self.nbr_channels);
+        // Get references to the channel data, store in the temp vec.
+        // This is to avoid allocating a vector.
+        // This is safe because we drop them again right after the processing step.
         for wave in wave_out {
-            let slice = wave.as_mut();
-            temp_output.push(slice);
+            // Transmute to work around the different lifetimes of the data and the vector.
+            let slice = unsafe { std::mem::transmute(wave.as_mut()) };
+            self.temp_output.push(slice);
         }
         // Process
         idx = self.inner_resampler.process(
@@ -757,8 +767,11 @@ where
             t_ratio,
             t_ratio_increment,
             &self.buffer,
-            &mut temp_output,
+            &mut self.temp_output,
         );
+
+        // Drop all the references
+        self.temp_output.clear();
 
         // Store last index for next iteration.
         self.last_index = idx - self.needed_input_size as f64;
