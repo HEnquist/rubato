@@ -1,4 +1,6 @@
+use crate::asynchro::InnerResampler;
 use crate::Sample;
+use std::marker::PhantomData;
 
 macro_rules! t {
     // Shorter form of T::coerce(value)
@@ -131,4 +133,141 @@ where
     T: Sample,
 {
     yvals[0] + x * (yvals[1] - yvals[0])
+}
+
+pub struct InnerPoly<T> {
+    pub _phantom: PhantomData<T>,
+    pub interpolation: PolynomialDegree,
+}
+
+impl<T> InnerResampler<T> for InnerPoly<T>
+where
+    T: Sample,
+{
+    fn process(
+        &self,
+        idx: f64,
+        nbr_frames: usize,
+        channel_mask: &[bool],
+        t_ratio: f64,
+        t_ratio_increment: f64,
+        wave_in: &[Vec<T>],
+        wave_out: &mut [&mut [T]],
+    ) -> f64 {
+        let interpolator_len = self.len();
+        let mut t_ratio = t_ratio;
+        let mut idx = idx;
+        match self.interpolation {
+            PolynomialDegree::Septic => {
+                for n in 0..nbr_frames {
+                    t_ratio += t_ratio_increment;
+                    idx += t_ratio;
+                    let idx_floor = idx.floor();
+                    let start_idx = idx_floor as isize - 3;
+                    let frac = idx - idx_floor;
+                    let frac_offset = t!(frac);
+                    for (chan, active) in channel_mask.iter().enumerate() {
+                        if *active {
+                            unsafe {
+                                let buf = wave_in.get_unchecked(chan).get_unchecked(
+                                    (start_idx + 2 * interpolator_len as isize) as usize
+                                        ..(start_idx + 2 * interpolator_len as isize + 8) as usize,
+                                );
+                                *wave_out.get_unchecked_mut(chan).get_unchecked_mut(n) =
+                                    interp_septic(frac_offset, buf);
+                            }
+                        }
+                    }
+                }
+            }
+            PolynomialDegree::Quintic => {
+                for n in 0..nbr_frames {
+                    t_ratio += t_ratio_increment;
+                    idx += t_ratio;
+                    let idx_floor = idx.floor();
+                    let start_idx = idx_floor as isize - 2;
+                    let frac = idx - idx_floor;
+                    let frac_offset = t!(frac);
+                    for (chan, active) in channel_mask.iter().enumerate() {
+                        if *active {
+                            unsafe {
+                                let buf = wave_in.get_unchecked(chan).get_unchecked(
+                                    (start_idx + 2 * interpolator_len as isize) as usize
+                                        ..(start_idx + 2 * interpolator_len as isize + 6) as usize,
+                                );
+                                *wave_out.get_unchecked_mut(chan).get_unchecked_mut(n) =
+                                    interp_quintic(frac_offset, buf);
+                            }
+                        }
+                    }
+                }
+            }
+            PolynomialDegree::Cubic => {
+                for n in 0..nbr_frames {
+                    t_ratio += t_ratio_increment;
+                    idx += t_ratio;
+                    let idx_floor = idx.floor();
+                    let start_idx = idx_floor as isize - 1;
+                    let frac = idx - idx_floor;
+                    let frac_offset = t!(frac);
+                    for (chan, active) in channel_mask.iter().enumerate() {
+                        if *active {
+                            unsafe {
+                                let buf = wave_in.get_unchecked(chan).get_unchecked(
+                                    (start_idx + 2 * interpolator_len as isize) as usize
+                                        ..(start_idx + 2 * interpolator_len as isize + 4) as usize,
+                                );
+                                *wave_out.get_unchecked_mut(chan).get_unchecked_mut(n) =
+                                    interp_cubic(frac_offset, buf);
+                            }
+                        }
+                    }
+                }
+            }
+            PolynomialDegree::Linear => {
+                for n in 0..nbr_frames {
+                    t_ratio += t_ratio_increment;
+                    idx += t_ratio;
+                    let idx_floor = idx.floor();
+                    let start_idx = idx_floor as isize;
+                    let frac = idx - idx_floor;
+                    let frac_offset = t!(frac);
+                    for (chan, active) in channel_mask.iter().enumerate() {
+                        if *active {
+                            unsafe {
+                                let buf = wave_in.get_unchecked(chan).get_unchecked(
+                                    (start_idx + 2 * interpolator_len as isize) as usize
+                                        ..(start_idx + 2 * interpolator_len as isize + 2) as usize,
+                                );
+                                *wave_out.get_unchecked_mut(chan).get_unchecked_mut(n) =
+                                    interp_lin(frac_offset, buf);
+                            }
+                        }
+                    }
+                }
+            }
+            PolynomialDegree::Nearest => {
+                for n in 0..nbr_frames {
+                    t_ratio += t_ratio_increment;
+                    idx += t_ratio;
+                    let start_idx = idx.floor() as isize;
+                    for (chan, active) in channel_mask.iter().enumerate() {
+                        if *active {
+                            unsafe {
+                                let point = wave_in.get_unchecked(chan).get_unchecked(
+                                    (start_idx + 2 * interpolator_len as isize) as usize,
+                                );
+                                *wave_out.get_unchecked_mut(chan).get_unchecked_mut(n) = *point;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        idx
+    }
+
+    fn len(&self) -> usize {
+        self.interpolation.len()
+    }
 }

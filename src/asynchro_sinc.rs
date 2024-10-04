@@ -1,3 +1,5 @@
+use crate::asynchro::InnerResampler;
+use crate::interpolation::*;
 #[cfg(target_arch = "x86_64")]
 use crate::sinc_interpolator::sinc_interpolator_avx::AvxInterpolator;
 #[cfg(target_arch = "aarch64")]
@@ -7,6 +9,13 @@ use crate::sinc_interpolator::sinc_interpolator_sse::SseInterpolator;
 use crate::sinc_interpolator::{ScalarInterpolator, SincInterpolator};
 use crate::windows::WindowFunction;
 use crate::Sample;
+
+macro_rules! t {
+    // Shorter form of T::coerce(value)
+    ($expression:expr) => {
+        T::coerce($expression)
+    };
+}
 
 /// A struct holding the parameters for sinc interpolation.
 #[derive(Debug)]
@@ -122,11 +131,9 @@ where
     T: Sample,
 {
     let a0 = yvals[1];
-    let a1 = -(T::one() / T::coerce(3.0)) * yvals[0] - T::coerce(0.5) * yvals[1] + yvals[2]
-        - (T::one() / T::coerce(6.0)) * yvals[3];
-    let a2 = T::coerce(0.5) * (yvals[0] + yvals[2]) - yvals[1];
-    let a3 = T::coerce(0.5) * (yvals[1] - yvals[2])
-        + (T::one() / T::coerce(6.0)) * (yvals[3] - yvals[0]);
+    let a1 = -t!(1.0 / 3.0) * yvals[0] - t!(0.5) * yvals[1] + yvals[2] - t!(1.0 / 6.0) * yvals[3];
+    let a2 = t!(0.5) * (yvals[0] + yvals[2]) - yvals[1];
+    let a3 = t!(0.5) * (yvals[1] - yvals[2]) + t!(1.0 / 6.0) * (yvals[3] - yvals[0]);
     let x2 = x * x;
     let x3 = x2 * x;
     a0 + a1 * x + a2 * x2 + a3 * x3
@@ -138,11 +145,11 @@ pub fn interp_quad<T>(x: T, yvals: &[T; 3]) -> T
 where
     T: Sample,
 {
-    let a2 = yvals[0] - T::coerce(2.0) * yvals[1] + yvals[2];
-    let a1 = -T::coerce(3.0) * yvals[0] + T::coerce(4.0) * yvals[1] - yvals[2];
-    let a0 = T::coerce(2.0) * yvals[0];
+    let a2 = yvals[0] - t!(2.0) * yvals[1] + yvals[2];
+    let a1 = -t!(3.0) * yvals[0] + t!(4.0) * yvals[1] - yvals[2];
+    let a0 = t!(2.0) * yvals[0];
     let x2 = x * x;
-    T::coerce(0.5) * (a0 + a1 * x + a2 * x2)
+    t!(0.5) * (a0 + a1 * x + a2 * x2)
 }
 
 /// Perform linear interpolation between two points at x=0 and x=1.
@@ -151,4 +158,168 @@ where
     T: Sample,
 {
     yvals[0] + x * (yvals[1] - yvals[0])
+}
+
+pub struct InnerSinc<T> {
+    pub interpolator: Box<dyn SincInterpolator<T>>,
+    pub interpolation: SincInterpolationType,
+}
+
+impl<T> InnerResampler<T> for InnerSinc<T>
+where
+    T: Sample,
+{
+    fn process(
+        &self,
+        idx: f64,
+        nbr_frames: usize,
+        channel_mask: &[bool],
+        t_ratio: f64,
+        t_ratio_increment: f64,
+        wave_in: &[Vec<T>],
+        wave_out: &mut [&mut [T]],
+    ) -> f64 {
+        let mut t_ratio = t_ratio;
+        let mut idx = idx;
+        let interpolator_len = self.interpolator.len();
+        match self.interpolation {
+            SincInterpolationType::Cubic => {
+                let oversampling_factor = self.interpolator.nbr_sincs();
+                let mut points = [T::zero(); 4];
+                let mut nearest = [(0isize, 0isize); 4];
+                for n in 0..nbr_frames {
+                    t_ratio += t_ratio_increment;
+                    idx += t_ratio;
+                    get_nearest_times_4(idx, oversampling_factor as isize, &mut nearest);
+                    let frac = idx * oversampling_factor as f64
+                        - (idx * oversampling_factor as f64).floor();
+                    let frac_offset = t!(frac);
+                    for (chan, active) in channel_mask.iter().enumerate() {
+                        if *active {
+                            let buf = &wave_in[chan];
+                            for (n, p) in nearest.iter().zip(points.iter_mut()) {
+                                *p = self.interpolator.get_sinc_interpolated(
+                                    buf,
+                                    (n.0 + 2 * interpolator_len as isize) as usize,
+                                    n.1 as usize,
+                                );
+                            }
+                            wave_out[chan][n] = interp_cubic(frac_offset, &points);
+                        }
+                    }
+                }
+            }
+            SincInterpolationType::Quadratic => {
+                let oversampling_factor = self.interpolator.nbr_sincs();
+                let mut points = [T::zero(); 3];
+                let mut nearest = [(0isize, 0isize); 3];
+                for n in 0..nbr_frames {
+                    t_ratio += t_ratio_increment;
+                    idx += t_ratio;
+                    get_nearest_times_3(idx, oversampling_factor as isize, &mut nearest);
+                    let frac = idx * oversampling_factor as f64
+                        - (idx * oversampling_factor as f64).floor();
+                    let frac_offset = t!(frac);
+                    for (chan, active) in channel_mask.iter().enumerate() {
+                        if *active {
+                            let buf = &wave_in[chan];
+                            for (n, p) in nearest.iter().zip(points.iter_mut()) {
+                                *p = self.interpolator.get_sinc_interpolated(
+                                    buf,
+                                    (n.0 + 2 * interpolator_len as isize) as usize,
+                                    n.1 as usize,
+                                );
+                            }
+                            wave_out[chan][n] = interp_quad(frac_offset, &points);
+                        }
+                    }
+                }
+            }
+            SincInterpolationType::Linear => {
+                let oversampling_factor = self.interpolator.nbr_sincs();
+                let mut points = [T::zero(); 2];
+                let mut nearest = [(0isize, 0isize); 2];
+                for n in 0..nbr_frames {
+                    t_ratio += t_ratio_increment;
+                    idx += t_ratio;
+                    get_nearest_times_2(idx, oversampling_factor as isize, &mut nearest);
+                    let frac = idx * oversampling_factor as f64
+                        - (idx * oversampling_factor as f64).floor();
+                    let frac_offset = t!(frac);
+                    for (chan, active) in channel_mask.iter().enumerate() {
+                        if *active {
+                            let buf = &wave_in[chan];
+                            for (n, p) in nearest.iter().zip(points.iter_mut()) {
+                                *p = self.interpolator.get_sinc_interpolated(
+                                    buf,
+                                    (n.0 + 2 * interpolator_len as isize) as usize,
+                                    n.1 as usize,
+                                );
+                            }
+                            wave_out[chan][n] = interp_lin(frac_offset, &points);
+                        }
+                    }
+                }
+            }
+            SincInterpolationType::Nearest => {
+                let oversampling_factor = self.interpolator.nbr_sincs();
+                let mut point;
+                let mut nearest;
+                for n in 0..nbr_frames {
+                    t_ratio += t_ratio_increment;
+                    idx += t_ratio;
+                    nearest = get_nearest_time(idx, oversampling_factor as isize);
+                    for (chan, active) in channel_mask.iter().enumerate() {
+                        if *active {
+                            let buf = &wave_in[chan];
+                            point = self.interpolator.get_sinc_interpolated(
+                                buf,
+                                (nearest.0 + 2 * interpolator_len as isize) as usize,
+                                nearest.1 as usize,
+                            );
+                            wave_out[chan][n] = point;
+                        }
+                    }
+                }
+            }
+        }
+        idx
+    }
+
+    fn len(&self) -> usize {
+        self.interpolator.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{interp_cubic, interp_lin};
+
+    #[test]
+    fn int_cubic() {
+        let yvals = [0.0f64, 2.0f64, 4.0f64, 6.0f64];
+        let interp = interp_cubic(0.5f64, &yvals);
+        assert_eq!(interp, 3.0f64);
+    }
+
+    #[test]
+    fn int_lin_32() {
+        let yvals = [1.0f32, 5.0f32];
+        let interp = interp_lin(0.25f32, &yvals);
+        assert_eq!(interp, 2.0f32);
+    }
+
+    #[test]
+    fn int_cubic_32() {
+        let yvals = [0.0f32, 2.0f32, 4.0f32, 6.0f32];
+        let interp = interp_cubic(0.5f32, &yvals);
+        assert_eq!(interp, 3.0f32);
+    }
+
+    #[test]
+    fn int_lin() {
+        let yvals = [1.0f64, 5.0f64];
+        let interp = interp_lin(0.25f64, &yvals);
+        assert_eq!(interp, 2.0f64);
+    }
 }
