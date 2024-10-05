@@ -4,7 +4,7 @@ use rubato::{
     SincInterpolationParameters, SincInterpolationType, WindowFunction,
 };
 #[cfg(feature = "fft_resampler")]
-use rubato::{FftFixedIn, FftFixedInOut, FftFixedOut};
+use rubato::{Fft, FftFixed};
 use std::convert::TryInto;
 use std::env;
 use std::fs::File;
@@ -166,16 +166,16 @@ fn main() {
             Box::new(Async::<f64>::new_poly(f_ratio, 1.1, PolynomialDegree::Septic, 1024, channels, Fixed::Output).unwrap())
         }
         #[cfg(feature = "fft_resampler")]
-        "FftFixedIn" => {
-            Box::new(FftFixedIn::<f64>::new(fs_in, fs_out, 1024, 2, channels).unwrap())
+        "FftFixedInput" => {
+            Box::new(Fft::<f64>::new(fs_in, fs_out, 1024, 2, channels, FftFixed::Input).unwrap())
         }
         #[cfg(feature = "fft_resampler")]
-        "FftFixedOut" => {
-            Box::new(FftFixedOut::<f64>::new(fs_in, fs_out, 1024, 2, channels).unwrap())
+        "FftFixedOutput" => {
+            Box::new(Fft::<f64>::new(fs_in, fs_out, 1024, 2, channels, FftFixed::Output).unwrap())
         }
         #[cfg(feature = "fft_resampler")]
-        "FftFixedInOut" => {
-            Box::new(FftFixedInOut::<f64>::new(fs_in, fs_out, 1024, channels).unwrap())
+        "FftFixedBoth" => {
+            Box::new(Fft::<f64>::new(fs_in, fs_out, 1024, 1, channels, FftFixed::Both).unwrap())
         }
         _ => panic!("Unknown resampler type {}\nMust be one of SincFixedInput, SincFixedOutput, FastFixedInput, FastFixedOutput, FftFixedIn, FftFixedOut, FftFixedInOut", resampler_type),
     };

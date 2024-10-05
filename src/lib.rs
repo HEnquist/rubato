@@ -56,7 +56,7 @@ pub use crate::error::{
 };
 pub use crate::sample::Sample;
 #[cfg(feature = "fft_resampler")]
-pub use crate::synchro::{FftFixedIn, FftFixedInOut, FftFixedOut};
+pub use crate::synchro::{Fft, FftFixed};
 pub use crate::windows::{calculate_cutoff, WindowFunction};
 
 /// An enum for specifying which side of the resampler should be fixed size.
@@ -577,7 +577,7 @@ pub mod tests {
     use crate::{buffer_capacity, buffer_length, make_buffer, resize_buffer, VecResampler};
     use crate::{Async, Fixed, PolynomialDegree};
     #[cfg(feature = "fft_resampler")]
-    use crate::{FftFixedIn, FftFixedInOut, FftFixedOut};
+    use crate::Fft;
     use test_log::test;
 
     // This tests that a VecResampler can be boxed.
@@ -612,9 +612,7 @@ pub mod tests {
         is_send::<Async<T>>();
         #[cfg(feature = "fft_resampler")]
         {
-            is_send::<FftFixedOut<T>>();
-            is_send::<FftFixedIn<T>>();
-            is_send::<FftFixedInOut<T>>();
+            is_send::<Fft<T>>();
         }
     }
 
@@ -662,7 +660,7 @@ pub mod tests {
                 for ch in 0..2 {
                     assert!(
                         out[ch][0] > prev_last,
-                        "Iteration {}, first value {} prev last value {}",
+                        "Iteration {}, too large diff between first value {} and prev last value {}",
                         n,
                         out[ch][0],
                         prev_last
@@ -671,7 +669,7 @@ pub mod tests {
                     let diff = out[ch][frames_out - 1] - out[ch][0];
                     assert!(
                         diff < 1.5 * expected_diff && diff > 0.25 * expected_diff,
-                        "Iteration {}, last value {} first value {}",
+                        "Iteration {}, too large diff between last value {} first value {}",
                         n,
                         out[ch][frames_out - 1],
                         out[ch][0]
@@ -683,7 +681,7 @@ pub mod tests {
                         let diff = out[ch][m + 1] - out[ch][m];
                         assert!(
                             diff < 0.15 && diff > -0.05,
-                            "Frame {}:{} next value {} value {}",
+                            "Iteration {} frame {} too large diff within output: next value {}, value {}",
                             n,
                             m,
                             out[ch][m + 1],
