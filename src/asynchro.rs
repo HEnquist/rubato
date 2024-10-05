@@ -169,6 +169,10 @@ where
 
         validate_ratios(resample_ratio, max_resample_ratio_relative)?;
 
+        if chunk_size == 0 {
+            return Err(ResamplerConstructionError::InvalidChunkSize(chunk_size));
+        }
+
         let channel_mask = vec![true; nbr_channels];
 
         let interpolator_len = interpolation_type.nbr_points();
@@ -286,6 +290,10 @@ where
         fixed: FixedAsync,
     ) -> Result<Self, ResamplerConstructionError> {
         validate_ratios(resample_ratio, max_resample_ratio_relative)?;
+
+        if chunk_size == 0 {
+            return Err(ResamplerConstructionError::InvalidChunkSize(chunk_size));
+        }
 
         let interpolator_len = interpolator.nbr_points();
 

@@ -223,6 +223,10 @@ where
     ) -> Result<Self, ResamplerConstructionError> {
         validate_sample_rates(sample_rate_input, sample_rate_output)?;
 
+        if chunk_size == 0 {
+            return Err(ResamplerConstructionError::InvalidChunkSize(chunk_size));
+        }
+
         // Set sub chunks to 1 of 0 is given.
         let sub_chunks = sub_chunks.max(1);
 

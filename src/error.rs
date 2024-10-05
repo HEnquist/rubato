@@ -83,6 +83,7 @@ pub enum ResamplerConstructionError {
     InvalidSampleRate { input: usize, output: usize },
     InvalidRelativeRatio(f64),
     InvalidRatio(f64),
+    InvalidChunkSize(usize),
 }
 
 impl fmt::Display for ResamplerConstructionError {
@@ -96,6 +97,9 @@ impl fmt::Display for ResamplerConstructionError {
             ),
             Self::InvalidRelativeRatio(provided) => write!(formatter,
                 "Invalid max_resample_ratio_relative provided: {}. max_resample_ratio_relative must be >= 1", provided
+            ),
+            Self::InvalidChunkSize(provided) => write!(formatter,
+                "Invalid chunk_size provided: {}. chunk_size must be >= 1", provided
             ),
         }
     }
