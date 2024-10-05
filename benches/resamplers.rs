@@ -11,8 +11,7 @@ use rubato::sinc_interpolator::sinc_interpolator_neon::NeonInterpolator;
 use rubato::sinc_interpolator::sinc_interpolator_sse::SseInterpolator;
 
 use rubato::{
-    Async, Fft, PolynomialDegree, Resampler, SincInterpolationType,
-    WindowFunction, Fixed, FftFixed
+    Async, Fft, FftFixed, Fixed, PolynomialDegree, Resampler, SincInterpolationType, WindowFunction,
 };
 
 fn bench_fft_64(c: &mut Criterion) {
@@ -279,9 +278,15 @@ macro_rules! bench_poly_async_resampler {
             let chunksize = 1024;
             let interpolation_type = $ip;
             let resample_ratio = 192000 as f64 / 44100 as f64;
-            let mut resampler =
-                Async::<$ft>::new_poly(resample_ratio, 1.1, interpolation_type, chunksize, 1, Fixed::Input)
-                    .unwrap();
+            let mut resampler = Async::<$ft>::new_poly(
+                resample_ratio,
+                1.1,
+                interpolation_type,
+                chunksize,
+                1,
+                Fixed::Input,
+            )
+            .unwrap();
             let waveform = vec![vec![0.0 as $ft; chunksize]; 1];
             c.bench_function($desc, |b| {
                 b.iter(|| resampler.process(black_box(&waveform), None).unwrap())
