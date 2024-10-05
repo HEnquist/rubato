@@ -48,7 +48,7 @@ mod windows;
 
 pub mod sinc_interpolator;
 
-pub use crate::asynchro::Async;
+pub use crate::asynchro::{Async, FixedAsync};
 pub use crate::asynchro_fast::PolynomialDegree;
 pub use crate::asynchro_sinc::{SincInterpolationParameters, SincInterpolationType};
 pub use crate::error::{
@@ -56,17 +56,8 @@ pub use crate::error::{
 };
 pub use crate::sample::Sample;
 #[cfg(feature = "fft_resampler")]
-pub use crate::synchro::{Fft, FftFixed};
+pub use crate::synchro::{Fft, FixedSync};
 pub use crate::windows::{calculate_cutoff, WindowFunction};
-
-/// An enum for specifying which side of the resampler should be fixed size.
-#[derive(Debug)]
-pub enum Fixed {
-    /// Input size is fixed, output size varies.
-    Input,
-    /// Output size is fixed, input size varies.
-    Output,
-}
 
 /// A resampler that is used to resample a chunk of audio to a new sample rate.
 /// For asynchronous resamplers, the rate can be adjusted as required.
@@ -217,14 +208,14 @@ where
         make_buffer(channels, frames, filled)
     }
 
-    /// Get the maximum number of input frames per channel the resampler could require.
+    /// Get the maximum possible number of input frames per channel the resampler could require.
     fn input_frames_max(&self) -> usize;
 
     /// Get the number of frames per channel needed for the next call to
     /// [process_into_buffer](Resampler::process_into_buffer) or [process](Resampler::process).
     fn input_frames_next(&self) -> usize;
 
-    /// Get the maximum number of channels this Resampler is configured for.
+    /// Get the number of channels this Resampler is configured for.
     fn nbr_channels(&self) -> usize;
 
     /// Convenience method for allocating an output buffer suitable for use with
@@ -241,19 +232,15 @@ where
         make_buffer(channels, frames, filled)
     }
 
-    /// Get the max number of output frames per channel.
+    /// Get the maximum possible number of output frames per channel.
     fn output_frames_max(&self) -> usize;
 
     /// Get the number of frames per channel that will be output from the next call to
     /// [process_into_buffer](Resampler::process_into_buffer) or [process](Resampler::process).
-    /// For the resamplers with a fixed output size, sush as [FftFixedOut],
-    /// this gives the exact number.
-    /// For the resamplers with a varying output size, like [FftFixedIn],
-    /// the number is an estimation that may be a few frames larger than
-    /// (and never smaller than) the actual number of output frames.
     fn output_frames_next(&self) -> usize;
 
     /// Get the delay for the resampler, reported as a number of output frames.
+    /// This gives how many frames any event in the input is delayed before it appears in the output.
     fn output_delay(&self) -> usize;
 
     /// Update the resample ratio.
@@ -293,10 +280,10 @@ where
     /// [ResampleError::InvalidChunkSize] is returned if the value is zero or too large.
     ///
     /// The meaning of chunk size depends on the resampler,
-    /// it refers to the input size for FixedIn,
-    /// and output size for FixedOut types.
+    /// it refers to the input size for resamplers with fixed input size,
+    /// and output size for resamplers with fixed output size.
     ///
-    /// Types that do not support changing the chunk size
+    /// Resamplers that do not support changing the chunk size
     /// return [ResampleError::ChunkSizeNotAdjustable].
     fn set_chunk_size(&mut self, _chunksize: usize) -> ResampleResult<()> {
         Err(ResampleError::ChunkSizeNotAdjustable)
@@ -313,8 +300,8 @@ use crate as rubato;
 /// `&[AsRef<[T]>]` and `&mut [AsMut<[T]>]` to `&[Vec<T>]` and `&mut [Vec<T>]`.
 /// This allows a [VecResampler] to be made into a trait object like this:
 /// ```
-/// # use rubato::{Async, Fixed, VecResampler, PolynomialDegree};
-/// let boxed: Box<dyn VecResampler<f64>> = Box::new(Async::<f64>::new_poly(44100 as f64 / 88200 as f64, 1.1, PolynomialDegree::Cubic, 2, 2, Fixed::Input).unwrap());
+/// # use rubato::{Async, FixedAsync, VecResampler, PolynomialDegree};
+/// let boxed: Box<dyn VecResampler<f64>> = Box::new(Async::<f64>::new_poly(44100 as f64 / 88200 as f64, 1.1, PolynomialDegree::Cubic, 2, 2, FixedAsync::Input).unwrap());
 /// ```
 /// Use this implementation as an example if you need to fix the input type to something else.
 #[macro_export]
@@ -577,7 +564,7 @@ pub mod tests {
     #[cfg(feature = "fft_resampler")]
     use crate::Fft;
     use crate::{buffer_capacity, buffer_length, make_buffer, resize_buffer, VecResampler};
-    use crate::{Async, Fixed, PolynomialDegree};
+    use crate::{Async, FixedAsync, PolynomialDegree};
     use test_log::test;
 
     // This tests that a VecResampler can be boxed.
@@ -590,7 +577,7 @@ pub mod tests {
                 PolynomialDegree::Cubic,
                 1024,
                 2,
-                Fixed::Input,
+                FixedAsync::Input,
             )
             .unwrap(),
         );

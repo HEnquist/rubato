@@ -62,7 +62,7 @@ For simplicity, the output is stored in a temporary buffer during resampling,
 and copied to the destination afterwards.
 
 Preparations:
-1. Create a resampler of suitable type, for example FFTFixedIn which is quite fast and gives good quality.
+1. Create a resampler of suitable type, for example `Fft` which is fast and gives good quality.
    Since neither input or output has any restrictions for the number of frames that can be read or written at a time,
    the chunk size can be chosen arbitrarily. Start with a chunk size of for example 1024.
 2. Create an input buffer.
@@ -111,8 +111,6 @@ Audio APIs such as [CoreAudio](https://crates.io/crates/coreaudio-rs) on MacOS,
 or the cross platform [cpal](https://crates.io/crates/cpal) crate,
 often use callback functions for data exchange.
 
-A complete
-
 When capturing audio from these, the application passes a function to the audio API.
 The API then calls this function periodically, with a pointer to a data buffer containing new audio frames.
 The data buffer size is usually the same on every call, but that varies between APIs.
@@ -151,7 +149,7 @@ for reading and writing uncompressed audio formats.
 
 ### Asynchronous resampling with anti-aliasing
 
-The asynchronous resampler supports SIMD on x86_64 and on aarch64.
+The asynchronous sinc resampler supports SIMD on x86_64 and on aarch64.
 The SIMD capabilities of the CPU are determined at runtime.
 If no supported SIMD instruction set is available, it falls back to a scalar implementation.
 
@@ -161,13 +159,13 @@ On aarch64 (64-bit Arm), it will use Neon if available.
 
 ### Synchronous resampling
 
-The synchronous resamplers benefit from the SIMD support of the RustFFT library.
+The synchronous FFT resampler benefits from the SIMD support of the RustFFT library.
 
 ## Cargo features
 
-### `fft_resampler`: Enable the FFT based synchronous resamplers
+### `fft_resampler`: Enable the FFT based synchronous resampler
 
-This feature is enabled by default. Disable it if the FFT resamplers are not needed,
+This feature is enabled by default. Disable it if the FFT resampler is not needed,
 to save compile time and reduce the resulting binary size.
 
 ### `log`: Enable logging
@@ -190,7 +188,7 @@ RUST_LOG=trace cargo test --features log
 Resample a single chunk of a dummy audio file from 44100 to 48000 Hz.
 See also the "process_f64" example that can be used to process a file from disk.
 ```rust
-use rubato::{Resampler, Async, Fixed, SincInterpolationType, SincInterpolationParameters, WindowFunction};
+use rubato::{Resampler, Async, FixedAsync, SincInterpolationType, SincInterpolationParameters, WindowFunction};
 let params = SincInterpolationParameters {
     sinc_len: 256,
     f_cutoff: 0.95,
@@ -204,7 +202,7 @@ let mut resampler = Async::<f64>::new_sinc(
     params,
     1024,
     2,
-    Fixed::Input,
+    FixedAsync::Input,
 ).unwrap();
 
 let waves_in = vec![vec![0.0f64; 1024];2];
@@ -235,6 +233,10 @@ The `rubato` crate requires rustc version 1.61 or newer.
 
 ## Changelog
 
+- v0.17.0
+  - Merged the FixedIn, FixedOut and FixedInOut resamplers into single types that supports all modes.
+  - Merged the sinc and polynomial asynchronous resamplers into
+    one type that supports both interpolation modes.
 - v0.16.0
   - Add support for changing the fixed input or output size of the asynchronous resamplers.
 - v0.15.0

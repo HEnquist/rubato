@@ -7,7 +7,19 @@ use crate::asynchro_sinc::{
 };
 use crate::error::{ResampleError, ResampleResult, ResamplerConstructionError};
 use crate::sinc_interpolator::SincInterpolator;
-use crate::{update_mask_from_buffers, validate_buffers, Fixed, Resampler, Sample};
+use crate::{update_mask_from_buffers, validate_buffers, Resampler, Sample};
+
+/// An enum for specifying which side of an asynchronous resampler should be fixed size.
+/// This is similar to [FixedSync](crate::FixedSync) that is used for the synchronous resamplers.
+/// The difference is asynchronous resamplers must allow one side to vary,
+/// and can therefore not support the `Both` option.
+#[derive(Debug)]
+pub enum FixedAsync {
+    /// Input size is fixed, output size varies.
+    Input,
+    /// Output size is fixed, input size varies.
+    Output,
+}
 
 /// Functions for making the scalar product with a sinc.
 pub trait InnerResampler<T>: Send {
@@ -90,7 +102,7 @@ pub struct Async<'a, T> {
     buffer: Vec<Vec<T>>,
     inner_resampler: Box<dyn InnerResampler<T>>,
     channel_mask: Vec<bool>,
-    fixed: Fixed,
+    fixed: FixedAsync,
     temp_output: Vec<&'a mut [T]>,
 }
 
@@ -149,7 +161,7 @@ where
         interpolation_type: PolynomialDegree,
         chunk_size: usize,
         nbr_channels: usize,
-        fixed: Fixed,
+        fixed: FixedAsync,
     ) -> Result<Self, ResamplerConstructionError> {
         debug!(
             "Create new Fast with fixed {:?}, ratio: {}, chunk_size: {}, channels: {}",
@@ -230,7 +242,7 @@ where
         parameters: SincInterpolationParameters,
         chunk_size: usize,
         nbr_channels: usize,
-        fixed: Fixed,
+        fixed: FixedAsync,
     ) -> Result<Self, ResamplerConstructionError> {
         debug!(
             "Create new Sinc fixed {:?}, ratio: {}, chunk_size: {}, channels: {}, parameters: {:?}",
@@ -272,7 +284,7 @@ where
         interpolator: Box<dyn SincInterpolator<T>>,
         chunk_size: usize,
         nbr_channels: usize,
-        fixed: Fixed,
+        fixed: FixedAsync,
     ) -> Result<Self, ResamplerConstructionError> {
         validate_ratios(resample_ratio, max_resample_ratio_relative)?;
 
@@ -342,11 +354,11 @@ where
         target_ratio: f64,
         last_index: f64,
         interpolator_len: usize,
-        fixed: &Fixed,
+        fixed: &FixedAsync,
     ) -> usize {
         match fixed {
-            Fixed::Input => chunk_size,
-            Fixed::Output => (last_index
+            FixedAsync::Input => chunk_size,
+            FixedAsync::Output => (last_index
                 + chunk_size as f64 / (0.5 * resample_ratio + 0.5 * target_ratio)
                 + interpolator_len as f64)
                 .ceil() as usize,
@@ -359,11 +371,11 @@ where
         target_ratio: f64,
         last_index: f64,
         interpolator_len: usize,
-        fixed: &Fixed,
+        fixed: &FixedAsync,
     ) -> usize {
         match fixed {
-            Fixed::Output => chunk_size,
-            Fixed::Input => ((chunk_size as f64 - (interpolator_len + 1) as f64 - last_index)
+            FixedAsync::Output => chunk_size,
+            FixedAsync::Input => ((chunk_size as f64 - (interpolator_len + 1) as f64 - last_index)
                 * (0.5 * resample_ratio + 0.5 * target_ratio))
                 .floor() as usize,
         }
@@ -374,11 +386,11 @@ where
         resample_ratio_original: f64,
         max_relative_ratio: f64,
         interpolator_len: usize,
-        fixed: &Fixed,
+        fixed: &FixedAsync,
     ) -> usize {
         match fixed {
-            Fixed::Input => chunk_size,
-            Fixed::Output => {
+            FixedAsync::Input => chunk_size,
+            FixedAsync::Output => {
                 (chunk_size as f64 / resample_ratio_original * max_relative_ratio).ceil() as usize
                     + 2
                     + interpolator_len / 2
@@ -390,11 +402,11 @@ where
         chunk_size: usize,
         resample_ratio_original: f64,
         max_relative_ratio: f64,
-        fixed: &Fixed,
+        fixed: &FixedAsync,
     ) -> usize {
         match fixed {
-            Fixed::Output => chunk_size,
-            Fixed::Input => {
+            FixedAsync::Output => chunk_size,
+            FixedAsync::Input => {
                 (chunk_size as f64 * resample_ratio_original * max_relative_ratio + 10.0) as usize
             }
         }
@@ -606,15 +618,21 @@ mod tests {
     use crate::PolynomialDegree;
     use crate::Resampler;
     use crate::{check_output, check_ratio};
-    use crate::{Async, Fixed};
+    use crate::{Async, FixedAsync};
     use rand::Rng;
     use test_log::test;
 
     #[test]
     fn make_poly_resampler_fi() {
-        let mut resampler =
-            Async::<f64>::new_poly(1.2, 1.0, PolynomialDegree::Cubic, 1024, 2, Fixed::Input)
-                .unwrap();
+        let mut resampler = Async::<f64>::new_poly(
+            1.2,
+            1.0,
+            PolynomialDegree::Cubic,
+            1024,
+            2,
+            FixedAsync::Input,
+        )
+        .unwrap();
         let waves = vec![vec![0.0f64; 1024]; 2];
         let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
@@ -638,9 +656,15 @@ mod tests {
 
     #[test]
     fn reset_poly_resampler_fi() {
-        let mut resampler =
-            Async::<f64>::new_poly(1.2, 1.0, PolynomialDegree::Cubic, 1024, 2, Fixed::Input)
-                .unwrap();
+        let mut resampler = Async::<f64>::new_poly(
+            1.2,
+            1.0,
+            PolynomialDegree::Cubic,
+            1024,
+            2,
+            FixedAsync::Input,
+        )
+        .unwrap();
 
         let mut rng = rand::thread_rng();
         let mut waves = vec![vec![0.0f64; 1024]; 2];
@@ -658,9 +682,15 @@ mod tests {
 
     #[test]
     fn make_poly_resampler_fi_32() {
-        let mut resampler =
-            Async::<f32>::new_poly(1.2, 1.0, PolynomialDegree::Cubic, 1024, 2, Fixed::Input)
-                .unwrap();
+        let mut resampler = Async::<f32>::new_poly(
+            1.2,
+            1.0,
+            PolynomialDegree::Cubic,
+            1024,
+            2,
+            FixedAsync::Input,
+        )
+        .unwrap();
         let waves = vec![vec![0.0f32; 1024]; 2];
         let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
@@ -684,9 +714,15 @@ mod tests {
 
     #[test]
     fn make_poly_resampler_fi_skipped() {
-        let mut resampler =
-            Async::<f64>::new_poly(1.2, 1.0, PolynomialDegree::Cubic, 1024, 2, Fixed::Input)
-                .unwrap();
+        let mut resampler = Async::<f64>::new_poly(
+            1.2,
+            1.0,
+            PolynomialDegree::Cubic,
+            1024,
+            2,
+            FixedAsync::Input,
+        )
+        .unwrap();
         let waves = vec![vec![0.0f64; 1024], Vec::new()];
         let mask = vec![true, false];
         let out = resampler.process(&waves, Some(&mask)).unwrap();
@@ -710,7 +746,7 @@ mod tests {
             PolynomialDegree::Cubic,
             1024,
             2,
-            Fixed::Input,
+            FixedAsync::Input,
         )
         .unwrap();
         let waves = vec![vec![0.0f64; 1024]; 2];
@@ -743,7 +779,7 @@ mod tests {
             PolynomialDegree::Cubic,
             1024,
             2,
-            Fixed::Input,
+            FixedAsync::Input,
         )
         .unwrap();
         let waves = vec![vec![0.0f64; 1024]; 2];
@@ -769,9 +805,15 @@ mod tests {
 
     #[test]
     fn make_poly_resampler_fo() {
-        let mut resampler =
-            Async::<f64>::new_poly(1.2, 1.0, PolynomialDegree::Cubic, 1024, 2, Fixed::Output)
-                .unwrap();
+        let mut resampler = Async::<f64>::new_poly(
+            1.2,
+            1.0,
+            PolynomialDegree::Cubic,
+            1024,
+            2,
+            FixedAsync::Output,
+        )
+        .unwrap();
         let frames = resampler.input_frames_next();
         println!("{}", frames);
         assert!(frames > 800 && frames < 900);
@@ -783,9 +825,15 @@ mod tests {
 
     #[test]
     fn reset_poly_resampler_fo() {
-        let mut resampler =
-            Async::<f64>::new_poly(1.2, 1.0, PolynomialDegree::Cubic, 1024, 2, Fixed::Output)
-                .unwrap();
+        let mut resampler = Async::<f64>::new_poly(
+            1.2,
+            1.0,
+            PolynomialDegree::Cubic,
+            1024,
+            2,
+            FixedAsync::Output,
+        )
+        .unwrap();
         let frames = resampler.input_frames_next();
 
         let mut rng = rand::thread_rng();
@@ -809,9 +857,15 @@ mod tests {
 
     #[test]
     fn make_poly_resampler_fo_32() {
-        let mut resampler =
-            Async::<f32>::new_poly(1.2, 1.0, PolynomialDegree::Cubic, 1024, 2, Fixed::Output)
-                .unwrap();
+        let mut resampler = Async::<f32>::new_poly(
+            1.2,
+            1.0,
+            PolynomialDegree::Cubic,
+            1024,
+            2,
+            FixedAsync::Output,
+        )
+        .unwrap();
         let frames = resampler.input_frames_next();
         println!("{}", frames);
         assert!(frames > 800 && frames < 900);
@@ -823,9 +877,15 @@ mod tests {
 
     #[test]
     fn make_poly_resampler_fo_skipped() {
-        let mut resampler =
-            Async::<f64>::new_poly(1.2, 1.0, PolynomialDegree::Cubic, 1024, 2, Fixed::Output)
-                .unwrap();
+        let mut resampler = Async::<f64>::new_poly(
+            1.2,
+            1.0,
+            PolynomialDegree::Cubic,
+            1024,
+            2,
+            FixedAsync::Output,
+        )
+        .unwrap();
         let frames = resampler.input_frames_next();
         println!("{}", frames);
         assert!(frames > 800 && frames < 900);
@@ -857,9 +917,15 @@ mod tests {
 
     #[test]
     fn make_poly_resampler_fo_downsample() {
-        let mut resampler =
-            Async::<f64>::new_poly(0.125, 1.0, PolynomialDegree::Cubic, 1024, 2, Fixed::Output)
-                .unwrap();
+        let mut resampler = Async::<f64>::new_poly(
+            0.125,
+            1.0,
+            PolynomialDegree::Cubic,
+            1024,
+            2,
+            FixedAsync::Output,
+        )
+        .unwrap();
         let frames = resampler.input_frames_next();
         println!("{}", frames);
         assert!(
@@ -900,9 +966,15 @@ mod tests {
 
     #[test]
     fn make_poly_resampler_fo_upsample() {
-        let mut resampler =
-            Async::<f64>::new_poly(8.0, 1.0, PolynomialDegree::Cubic, 1024, 2, Fixed::Output)
-                .unwrap();
+        let mut resampler = Async::<f64>::new_poly(
+            8.0,
+            1.0,
+            PolynomialDegree::Cubic,
+            1024,
+            2,
+            FixedAsync::Output,
+        )
+        .unwrap();
         let frames = resampler.input_frames_next();
         println!("{}", frames);
         assert!(
@@ -943,42 +1015,72 @@ mod tests {
 
     #[test]
     fn check_poly_fo_output_up() {
-        let mut resampler =
-            Async::<f64>::new_poly(8.0, 1.0, PolynomialDegree::Cubic, 1024, 2, Fixed::Output)
-                .unwrap();
+        let mut resampler = Async::<f64>::new_poly(
+            8.0,
+            1.0,
+            PolynomialDegree::Cubic,
+            1024,
+            2,
+            FixedAsync::Output,
+        )
+        .unwrap();
         check_output!(resampler);
     }
 
     #[test]
     fn check_poly_fo_output_down() {
-        let mut resampler =
-            Async::<f64>::new_poly(0.8, 1.0, PolynomialDegree::Cubic, 1024, 2, Fixed::Output)
-                .unwrap();
+        let mut resampler = Async::<f64>::new_poly(
+            0.8,
+            1.0,
+            PolynomialDegree::Cubic,
+            1024,
+            2,
+            FixedAsync::Output,
+        )
+        .unwrap();
         check_output!(resampler);
     }
 
     #[test]
     fn check_poly_fi_output_up() {
-        let mut resampler =
-            Async::<f64>::new_poly(8.0, 1.0, PolynomialDegree::Cubic, 1024, 2, Fixed::Input)
-                .unwrap();
+        let mut resampler = Async::<f64>::new_poly(
+            8.0,
+            1.0,
+            PolynomialDegree::Cubic,
+            1024,
+            2,
+            FixedAsync::Input,
+        )
+        .unwrap();
         check_output!(resampler);
     }
 
     #[test]
     fn check_poly_fi_output_down() {
-        let mut resampler =
-            Async::<f64>::new_poly(0.8, 1.0, PolynomialDegree::Cubic, 1024, 2, Fixed::Input)
-                .unwrap();
+        let mut resampler = Async::<f64>::new_poly(
+            0.8,
+            1.0,
+            PolynomialDegree::Cubic,
+            1024,
+            2,
+            FixedAsync::Input,
+        )
+        .unwrap();
         check_output!(resampler);
     }
 
     #[test]
     fn resample_poly_small_fo_up() {
         let ratio = 96000.0 / 44100.0;
-        let mut resampler =
-            Async::<f32>::new_poly(ratio, 100.0, PolynomialDegree::Cubic, 1, 2, Fixed::Output)
-                .unwrap();
+        let mut resampler = Async::<f32>::new_poly(
+            ratio,
+            100.0,
+            PolynomialDegree::Cubic,
+            1,
+            2,
+            FixedAsync::Output,
+        )
+        .unwrap();
         check_ratio!(resampler, ratio, 1000000);
     }
 
@@ -991,7 +1093,7 @@ mod tests {
             PolynomialDegree::Cubic,
             1024,
             2,
-            Fixed::Output,
+            FixedAsync::Output,
         )
         .unwrap();
         check_ratio!(resampler, ratio, 1000);
@@ -1000,9 +1102,15 @@ mod tests {
     #[test]
     fn resample_poly_small_fo_down() {
         let ratio = 44100.0 / 96000.0;
-        let mut resampler =
-            Async::<f32>::new_poly(ratio, 100.0, PolynomialDegree::Cubic, 1, 2, Fixed::Output)
-                .unwrap();
+        let mut resampler = Async::<f32>::new_poly(
+            ratio,
+            100.0,
+            PolynomialDegree::Cubic,
+            1,
+            2,
+            FixedAsync::Output,
+        )
+        .unwrap();
         check_ratio!(resampler, ratio, 1000000);
     }
 
@@ -1015,7 +1123,7 @@ mod tests {
             PolynomialDegree::Cubic,
             1024,
             2,
-            Fixed::Output,
+            FixedAsync::Output,
         )
         .unwrap();
         check_ratio!(resampler, ratio, 1000);
@@ -1024,44 +1132,74 @@ mod tests {
     #[test]
     fn resample_poly_small_fi_up() {
         let ratio = 96000.0 / 44100.0;
-        let mut resampler =
-            Async::<f32>::new_poly(ratio, 100.0, PolynomialDegree::Cubic, 1, 2, Fixed::Input)
-                .unwrap();
+        let mut resampler = Async::<f32>::new_poly(
+            ratio,
+            100.0,
+            PolynomialDegree::Cubic,
+            1,
+            2,
+            FixedAsync::Input,
+        )
+        .unwrap();
         check_ratio!(resampler, ratio, 1000000);
     }
 
     #[test]
     fn resample_poly_big_fi_up() {
         let ratio = 96000.0 / 44100.0;
-        let mut resampler =
-            Async::<f32>::new_poly(ratio, 100.0, PolynomialDegree::Cubic, 1024, 2, Fixed::Input)
-                .unwrap();
+        let mut resampler = Async::<f32>::new_poly(
+            ratio,
+            100.0,
+            PolynomialDegree::Cubic,
+            1024,
+            2,
+            FixedAsync::Input,
+        )
+        .unwrap();
         check_ratio!(resampler, ratio, 1000);
     }
 
     #[test]
     fn resample_poly_small_fi_down() {
         let ratio = 44100.0 / 96000.0;
-        let mut resampler =
-            Async::<f32>::new_poly(ratio, 100.0, PolynomialDegree::Cubic, 1, 2, Fixed::Input)
-                .unwrap();
+        let mut resampler = Async::<f32>::new_poly(
+            ratio,
+            100.0,
+            PolynomialDegree::Cubic,
+            1,
+            2,
+            FixedAsync::Input,
+        )
+        .unwrap();
         check_ratio!(resampler, ratio, 1000000);
     }
 
     #[test]
     fn resample_poly_big_fi_down() {
         let ratio = 44100.0 / 96000.0;
-        let mut resampler =
-            Async::<f32>::new_poly(ratio, 100.0, PolynomialDegree::Cubic, 1024, 2, Fixed::Input)
-                .unwrap();
+        let mut resampler = Async::<f32>::new_poly(
+            ratio,
+            100.0,
+            PolynomialDegree::Cubic,
+            1024,
+            2,
+            FixedAsync::Input,
+        )
+        .unwrap();
         check_ratio!(resampler, ratio, 1000);
     }
 
     #[test]
     fn check_poly_fo_output_resize() {
-        let mut resampler =
-            Async::<f64>::new_poly(1.2, 100.0, PolynomialDegree::Cubic, 1024, 2, Fixed::Output)
-                .unwrap();
+        let mut resampler = Async::<f64>::new_poly(
+            1.2,
+            100.0,
+            PolynomialDegree::Cubic,
+            1024,
+            2,
+            FixedAsync::Output,
+        )
+        .unwrap();
         assert_eq!(resampler.output_frames_next(), 1024);
         resampler.set_chunk_size(256).unwrap();
         assert_eq!(resampler.output_frames_next(), 256);
@@ -1070,9 +1208,15 @@ mod tests {
 
     #[test]
     fn check_poly_fi_output_resize() {
-        let mut resampler =
-            Async::<f64>::new_poly(1.2, 100.0, PolynomialDegree::Cubic, 1024, 2, Fixed::Input)
-                .unwrap();
+        let mut resampler = Async::<f64>::new_poly(
+            1.2,
+            100.0,
+            PolynomialDegree::Cubic,
+            1024,
+            2,
+            FixedAsync::Input,
+        )
+        .unwrap();
         assert_eq!(resampler.input_frames_next(), 1024);
         resampler.set_chunk_size(256).unwrap();
         assert_eq!(resampler.input_frames_next(), 256);
@@ -1098,7 +1242,7 @@ mod tests {
     fn make_sinc_resampler_fi() {
         let params = basic_params();
         let mut resampler =
-            Async::<f64>::new_sinc(1.2, 1.0, params, 1024, 2, Fixed::Input).unwrap();
+            Async::<f64>::new_sinc(1.2, 1.0, params, 1024, 2, FixedAsync::Input).unwrap();
         let waves = vec![vec![0.0f64; 1024]; 2];
         let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
@@ -1124,7 +1268,7 @@ mod tests {
     fn reset_sinc_resampler_fi() {
         let params = basic_params();
         let mut resampler =
-            Async::<f64>::new_sinc(1.2, 1.0, params, 1024, 2, Fixed::Input).unwrap();
+            Async::<f64>::new_sinc(1.2, 1.0, params, 1024, 2, FixedAsync::Input).unwrap();
 
         let mut rng = rand::thread_rng();
         let mut waves = vec![vec![0.0f64; 1024]; 2];
@@ -1144,7 +1288,7 @@ mod tests {
     fn make_sinc_resampler_fi_32() {
         let params = basic_params();
         let mut resampler =
-            Async::<f32>::new_sinc(1.2, 1.0, params, 1024, 2, Fixed::Input).unwrap();
+            Async::<f32>::new_sinc(1.2, 1.0, params, 1024, 2, FixedAsync::Input).unwrap();
         let waves = vec![vec![0.0f32; 1024]; 2];
         let out = resampler.process(&waves, None).unwrap();
         assert_eq!(out.len(), 2, "Expected {} channels, got {}", 2, out.len());
@@ -1170,7 +1314,7 @@ mod tests {
     fn make_sinc_resampler_fi_skipped() {
         let params = basic_params();
         let mut resampler =
-            Async::<f64>::new_sinc(1.2, 1.0, params, 1024, 2, Fixed::Input).unwrap();
+            Async::<f64>::new_sinc(1.2, 1.0, params, 1024, 2, FixedAsync::Input).unwrap();
         let waves = vec![vec![0.0f64; 1024], Vec::new()];
         let mask = vec![true, false];
         let out = resampler.process(&waves, Some(&mask)).unwrap();
@@ -1201,7 +1345,7 @@ mod tests {
             params,
             1024,
             2,
-            Fixed::Input,
+            FixedAsync::Input,
         )
         .unwrap();
         let waves = vec![vec![0.0f64; 1024]; 2];
@@ -1241,7 +1385,7 @@ mod tests {
             params,
             1024,
             2,
-            Fixed::Input,
+            FixedAsync::Input,
         )
         .unwrap();
         let waves = vec![vec![0.0f64; 1024]; 2];
@@ -1269,7 +1413,7 @@ mod tests {
     fn make_sinc_resampler_fo() {
         let params = basic_params();
         let mut resampler =
-            Async::<f64>::new_sinc(1.2, 1.0, params, 1024, 2, Fixed::Output).unwrap();
+            Async::<f64>::new_sinc(1.2, 1.0, params, 1024, 2, FixedAsync::Output).unwrap();
         let frames = resampler.input_frames_next();
         println!("{}", frames);
         assert!(frames > 800 && frames < 900);
@@ -1283,7 +1427,7 @@ mod tests {
     fn reset_sinc_resampler_fo() {
         let params = basic_params();
         let mut resampler =
-            Async::<f64>::new_sinc(1.2, 1.0, params, 1024, 2, Fixed::Output).unwrap();
+            Async::<f64>::new_sinc(1.2, 1.0, params, 1024, 2, FixedAsync::Output).unwrap();
         let frames = resampler.input_frames_next();
 
         let mut rng = rand::thread_rng();
@@ -1309,7 +1453,7 @@ mod tests {
     fn make_sinc_resampler_fo_32() {
         let params = basic_params();
         let mut resampler =
-            Async::<f32>::new_sinc(1.2, 1.0, params, 1024, 2, Fixed::Output).unwrap();
+            Async::<f32>::new_sinc(1.2, 1.0, params, 1024, 2, FixedAsync::Output).unwrap();
         let frames = resampler.input_frames_next();
         println!("{}", frames);
         assert!(frames > 800 && frames < 900);
@@ -1323,7 +1467,7 @@ mod tests {
     fn make_sinc_resampler_fo_skipped() {
         let params = basic_params();
         let mut resampler =
-            Async::<f64>::new_sinc(1.2, 1.0, params, 1024, 2, Fixed::Output).unwrap();
+            Async::<f64>::new_sinc(1.2, 1.0, params, 1024, 2, FixedAsync::Output).unwrap();
         let frames = resampler.input_frames_next();
         println!("{}", frames);
         assert!(frames > 800 && frames < 900);
@@ -1363,7 +1507,7 @@ mod tests {
             window: WindowFunction::BlackmanHarris2,
         };
         let mut resampler =
-            Async::<f64>::new_sinc(0.125, 1.0, params, 1024, 2, Fixed::Output).unwrap();
+            Async::<f64>::new_sinc(0.125, 1.0, params, 1024, 2, FixedAsync::Output).unwrap();
         let frames = resampler.input_frames_next();
         println!("{}", frames);
         assert!(
@@ -1412,7 +1556,7 @@ mod tests {
             window: WindowFunction::BlackmanHarris2,
         };
         let mut resampler =
-            Async::<f64>::new_sinc(8.0, 1.0, params, 1024, 2, Fixed::Output).unwrap();
+            Async::<f64>::new_sinc(8.0, 1.0, params, 1024, 2, FixedAsync::Output).unwrap();
         let frames = resampler.input_frames_next();
         println!("{}", frames);
         assert!(
@@ -1455,7 +1599,7 @@ mod tests {
     fn check_sinc_fo_output_up() {
         let params = basic_params();
         let mut resampler =
-            Async::<f64>::new_sinc(1.2, 1.0, params, 1024, 2, Fixed::Output).unwrap();
+            Async::<f64>::new_sinc(1.2, 1.0, params, 1024, 2, FixedAsync::Output).unwrap();
         check_output!(resampler);
     }
 
@@ -1463,7 +1607,7 @@ mod tests {
     fn check_sinc_fo_output_down() {
         let params = basic_params();
         let mut resampler =
-            Async::<f64>::new_sinc(0.8, 1.0, params, 1024, 2, Fixed::Output).unwrap();
+            Async::<f64>::new_sinc(0.8, 1.0, params, 1024, 2, FixedAsync::Output).unwrap();
         check_output!(resampler);
     }
 
@@ -1471,7 +1615,7 @@ mod tests {
     fn check_sinc_fi_output_up() {
         let params = basic_params();
         let mut resampler =
-            Async::<f64>::new_sinc(1.2, 1.0, params, 1024, 2, Fixed::Input).unwrap();
+            Async::<f64>::new_sinc(1.2, 1.0, params, 1024, 2, FixedAsync::Input).unwrap();
         check_output!(resampler);
     }
 
@@ -1479,7 +1623,7 @@ mod tests {
     fn check_sinc_fi_output_down() {
         let params = basic_params();
         let mut resampler =
-            Async::<f64>::new_sinc(0.8, 1.0, params, 1024, 2, Fixed::Input).unwrap();
+            Async::<f64>::new_sinc(0.8, 1.0, params, 1024, 2, FixedAsync::Input).unwrap();
         check_output!(resampler);
     }
 
@@ -1488,7 +1632,7 @@ mod tests {
         let ratio = 96000.0 / 44100.0;
         let params = basic_params();
         let mut resampler =
-            Async::<f32>::new_sinc(ratio, 1.0, params, 1, 2, Fixed::Output).unwrap();
+            Async::<f32>::new_sinc(ratio, 1.0, params, 1, 2, FixedAsync::Output).unwrap();
         check_ratio!(resampler, ratio, 100000);
     }
 
@@ -1497,7 +1641,7 @@ mod tests {
         let ratio = 96000.0 / 44100.0;
         let params = basic_params();
         let mut resampler =
-            Async::<f32>::new_sinc(ratio, 1.0, params, 1024, 2, Fixed::Output).unwrap();
+            Async::<f32>::new_sinc(ratio, 1.0, params, 1024, 2, FixedAsync::Output).unwrap();
         check_ratio!(resampler, ratio, 100);
     }
 
@@ -1506,7 +1650,7 @@ mod tests {
         let ratio = 44100.0 / 96000.0;
         let params = basic_params();
         let mut resampler =
-            Async::<f32>::new_sinc(ratio, 1.0, params, 1, 2, Fixed::Output).unwrap();
+            Async::<f32>::new_sinc(ratio, 1.0, params, 1, 2, FixedAsync::Output).unwrap();
         check_ratio!(resampler, ratio, 100000);
     }
 
@@ -1515,7 +1659,7 @@ mod tests {
         let ratio = 44100.0 / 96000.0;
         let params = basic_params();
         let mut resampler =
-            Async::<f32>::new_sinc(ratio, 1.0, params, 1024, 2, Fixed::Output).unwrap();
+            Async::<f32>::new_sinc(ratio, 1.0, params, 1024, 2, FixedAsync::Output).unwrap();
         check_ratio!(resampler, ratio, 100);
     }
 
@@ -1523,7 +1667,8 @@ mod tests {
     fn resample_sinc_small_fi_up() {
         let ratio = 96000.0 / 44100.0;
         let params = basic_params();
-        let mut resampler = Async::<f32>::new_sinc(ratio, 1.0, params, 1, 2, Fixed::Input).unwrap();
+        let mut resampler =
+            Async::<f32>::new_sinc(ratio, 1.0, params, 1, 2, FixedAsync::Input).unwrap();
         check_ratio!(resampler, ratio, 100000);
     }
 
@@ -1532,7 +1677,7 @@ mod tests {
         let ratio = 96000.0 / 44100.0;
         let params = basic_params();
         let mut resampler =
-            Async::<f32>::new_sinc(ratio, 1.0, params, 1024, 2, Fixed::Input).unwrap();
+            Async::<f32>::new_sinc(ratio, 1.0, params, 1024, 2, FixedAsync::Input).unwrap();
         check_ratio!(resampler, ratio, 100);
     }
 
@@ -1540,7 +1685,8 @@ mod tests {
     fn resample_sinc_small_fi_down() {
         let ratio = 44100.0 / 96000.0;
         let params = basic_params();
-        let mut resampler = Async::<f32>::new_sinc(ratio, 1.0, params, 1, 2, Fixed::Input).unwrap();
+        let mut resampler =
+            Async::<f32>::new_sinc(ratio, 1.0, params, 1, 2, FixedAsync::Input).unwrap();
         check_ratio!(resampler, ratio, 100000);
     }
 
@@ -1549,7 +1695,7 @@ mod tests {
         let ratio = 44100.0 / 96000.0;
         let params = basic_params();
         let mut resampler =
-            Async::<f32>::new_sinc(ratio, 1.0, params, 1024, 2, Fixed::Input).unwrap();
+            Async::<f32>::new_sinc(ratio, 1.0, params, 1024, 2, FixedAsync::Input).unwrap();
         check_ratio!(resampler, ratio, 100);
     }
 
@@ -1557,7 +1703,7 @@ mod tests {
     fn check_sinc_fo_output_resize() {
         let params = basic_params();
         let mut resampler =
-            Async::<f64>::new_sinc(1.2, 1.0, params, 1024, 2, Fixed::Output).unwrap();
+            Async::<f64>::new_sinc(1.2, 1.0, params, 1024, 2, FixedAsync::Output).unwrap();
         assert_eq!(resampler.output_frames_next(), 1024);
         resampler.set_chunk_size(256).unwrap();
         assert_eq!(resampler.output_frames_next(), 256);
@@ -1568,7 +1714,7 @@ mod tests {
     fn check_sinc_fi_output_resize() {
         let params = basic_params();
         let mut resampler =
-            Async::<f64>::new_sinc(1.2, 1.0, params, 1024, 2, Fixed::Input).unwrap();
+            Async::<f64>::new_sinc(1.2, 1.0, params, 1024, 2, FixedAsync::Input).unwrap();
         assert_eq!(resampler.input_frames_next(), 1024);
         resampler.set_chunk_size(256).unwrap();
         assert_eq!(resampler.input_frames_next(), 256);

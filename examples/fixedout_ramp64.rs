@@ -1,7 +1,7 @@
 extern crate rubato;
 use rubato::{
-    calculate_cutoff, Async, Fixed, Resampler, SincInterpolationParameters, SincInterpolationType,
-    WindowFunction,
+    calculate_cutoff, Async, FixedAsync, Resampler, SincInterpolationParameters,
+    SincInterpolationType, WindowFunction,
 };
 use std::convert::TryInto;
 use std::env;
@@ -134,7 +134,7 @@ fn main() {
         params,
         chunksize,
         channels,
-        Fixed::Output,
+        FixedAsync::Output,
     )
     .unwrap();
 

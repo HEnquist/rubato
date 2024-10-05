@@ -1,5 +1,5 @@
 extern crate rubato;
-use rubato::{Async, Fixed, PolynomialDegree, Resampler};
+use rubato::{Async, FixedAsync, PolynomialDegree, Resampler};
 use std::convert::TryInto;
 use std::env;
 use std::fs::File;
@@ -120,7 +120,7 @@ fn main() {
         PolynomialDegree::Cubic,
         chunksize,
         channels,
-        Fixed::Input,
+        FixedAsync::Input,
     )
     .unwrap();
 

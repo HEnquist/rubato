@@ -11,12 +11,13 @@ use rubato::sinc_interpolator::sinc_interpolator_neon::NeonInterpolator;
 use rubato::sinc_interpolator::sinc_interpolator_sse::SseInterpolator;
 
 use rubato::{
-    Async, Fft, FftFixed, Fixed, PolynomialDegree, Resampler, SincInterpolationType, WindowFunction,
+    Async, Fft, FixedAsync, FixedSync, PolynomialDegree, Resampler, SincInterpolationType,
+    WindowFunction,
 };
 
 fn bench_fft_64(c: &mut Criterion) {
     let chunksize = 1024;
-    let mut resampler = Fft::<f64>::new(44100, 192000, 1024, 2, 1, FftFixed::Input).unwrap();
+    let mut resampler = Fft::<f64>::new(44100, 192000, 1024, 2, 1, FixedSync::Input).unwrap();
     let waveform = vec![vec![0.0 as f64; chunksize]; 1];
     c.bench_function("fft sync f64", |b| {
         b.iter(|| resampler.process(black_box(&waveform), None).unwrap())
@@ -25,7 +26,7 @@ fn bench_fft_64(c: &mut Criterion) {
 
 fn bench_fft_32(c: &mut Criterion) {
     let chunksize = 1024;
-    let mut resampler = Fft::<f32>::new(44100, 192000, 1024, 2, 1, FftFixed::Input).unwrap();
+    let mut resampler = Fft::<f32>::new(44100, 192000, 1024, 2, 1, FixedSync::Input).unwrap();
     let waveform = vec![vec![0.0 as f32; chunksize]; 1];
     c.bench_function("fft sync f32", |b| {
         b.iter(|| resampler.process(black_box(&waveform), None).unwrap())
@@ -68,7 +69,7 @@ macro_rules! bench_async_resampler {
                 interpolator,
                 chunksize,
                 1,
-                Fixed::Input,
+                FixedAsync::Input,
             ).unwrap();
             let waveform = vec![vec![0.0 as $ft; chunksize]; 1];
             c.bench_function($desc, |b| b.iter(|| resampler.process(black_box(&waveform), None).unwrap()));
@@ -284,7 +285,7 @@ macro_rules! bench_poly_async_resampler {
                 interpolation_type,
                 chunksize,
                 1,
-                Fixed::Input,
+                FixedAsync::Input,
             )
             .unwrap();
             let waveform = vec![vec![0.0 as $ft; chunksize]; 1];

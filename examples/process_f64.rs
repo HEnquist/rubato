@@ -1,10 +1,10 @@
 extern crate rubato;
 use rubato::{
-    calculate_cutoff, implement_resampler, Async, Fixed, PolynomialDegree,
+    calculate_cutoff, implement_resampler, Async, FixedAsync, PolynomialDegree,
     SincInterpolationParameters, SincInterpolationType, WindowFunction,
 };
 #[cfg(feature = "fft_resampler")]
-use rubato::{Fft, FftFixed};
+use rubato::{Fft, FixedSync};
 use std::convert::TryInto;
 use std::env;
 use std::fs::File;
@@ -141,7 +141,7 @@ fn main() {
                 oversampling_factor,
                 window,
             };
-            Box::new(Async::<f64>::new_sinc(f_ratio, 1.1, params, 1024, channels, Fixed::Input).unwrap())
+            Box::new(Async::<f64>::new_sinc(f_ratio, 1.1, params, 1024, channels, FixedAsync::Input).unwrap())
         }
         "SincFixedOutput" => {
             let sinc_len = 128;
@@ -157,25 +157,25 @@ fn main() {
                 oversampling_factor,
                 window,
             };
-            Box::new(Async::<f64>::new_sinc(f_ratio, 1.1, params, 1024, channels, Fixed::Output).unwrap())
+            Box::new(Async::<f64>::new_sinc(f_ratio, 1.1, params, 1024, channels, FixedAsync::Output).unwrap())
         }
         "FastFixedInput" => {
-            Box::new(Async::<f64>::new_poly(f_ratio, 1.1, PolynomialDegree::Septic, 1024, channels, Fixed::Input).unwrap())
+            Box::new(Async::<f64>::new_poly(f_ratio, 1.1, PolynomialDegree::Septic, 1024, channels, FixedAsync::Input).unwrap())
         }
         "FastFixedOutput" => {
-            Box::new(Async::<f64>::new_poly(f_ratio, 1.1, PolynomialDegree::Septic, 1024, channels, Fixed::Output).unwrap())
+            Box::new(Async::<f64>::new_poly(f_ratio, 1.1, PolynomialDegree::Septic, 1024, channels, FixedAsync::Output).unwrap())
         }
         #[cfg(feature = "fft_resampler")]
         "FftFixedInput" => {
-            Box::new(Fft::<f64>::new(fs_in, fs_out, 1024, 2, channels, FftFixed::Input).unwrap())
+            Box::new(Fft::<f64>::new(fs_in, fs_out, 1024, 2, channels, FixedSync::Input).unwrap())
         }
         #[cfg(feature = "fft_resampler")]
         "FftFixedOutput" => {
-            Box::new(Fft::<f64>::new(fs_in, fs_out, 1024, 2, channels, FftFixed::Output).unwrap())
+            Box::new(Fft::<f64>::new(fs_in, fs_out, 1024, 2, channels, FixedSync::Output).unwrap())
         }
         #[cfg(feature = "fft_resampler")]
         "FftFixedBoth" => {
-            Box::new(Fft::<f64>::new(fs_in, fs_out, 1024, 1, channels, FftFixed::Both).unwrap())
+            Box::new(Fft::<f64>::new(fs_in, fs_out, 1024, 1, channels, FixedSync::Both).unwrap())
         }
         _ => panic!("Unknown resampler type {}\nMust be one of SincFixedInput, SincFixedOutput, FastFixedInput, FastFixedOutput, FftFixedIn, FftFixedOut, FftFixedInOut", resampler_type),
     };

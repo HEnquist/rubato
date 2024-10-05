@@ -26,14 +26,17 @@ struct FftResampler<T> {
     output_buf: Vec<T>,
 }
 
-/// An enum for specifying which side of the resampler should be fixed size.
-#[derive(Debug, PartialEq)]
-pub enum FftFixed {
+/// An enum for specifying which side of a synchronous resampler should be fixed size.
+/// This is similar to [FixedAsync](crate::FixedAsync) that is used for the asynchronous resamplers.
+/// The difference is asynchronous resamplers must allow one side to vary,
+/// and can therefore not support the `Both` option.
+#[derive(Debug)]
+pub enum FixedSync {
     /// Input size is fixed, output size varies.
     Input,
     /// Output size is fixed, input size varies.
     Output,
-    /// Both input and output size is fixed.
+    /// Both input and output sizes are fixed.
     Both,
 }
 
@@ -53,7 +56,7 @@ pub struct Fft<T> {
     channel_mask: Vec<bool>,
     saved_frames: usize,
     resampler: FftResampler<T>,
-    fixed: FftFixed,
+    fixed: FixedSync,
 }
 
 impl<T> fmt::Debug for Fft<T> {
@@ -84,7 +87,6 @@ impl<T> FftResampler<T>
 where
     T: Sample,
 {
-    //
     pub fn new(fft_size_in: usize, fft_size_out: usize) -> Self {
         // calculate antialiasing cutoff
         let cutoff = if fft_size_in > fft_size_out {
@@ -186,38 +188,55 @@ impl<T> Fft<T>
 where
     T: Sample,
 {
-    /// Create a new Fft.
+    /// Create a new `Fft` synchronous resampler.
+    ///
+    /// `Fft` resampler supports fixed input size, fixed output size, and both.
+    /// With fixed input or output size, the fixed side accepts or returns the chosen number of frames,
+    /// while the size on the opposite side varies from call to call.
+    /// When both are fixed, the chunk size is fixed on both sides.
+    /// In this mode, the chunk size is not arbitrarily selectable.
+    /// Instead, it is automatically calculated based on the provided value as a reference.
+    ///
+    /// The delay from the resampler depends on the length of the FFT.
+    /// It can be reduced by increasing the `sub_chunks` value.
+    /// This determines how many sub chunks each chunk should be split into while processing.
+    /// The actual number may be different,
+    /// based on what is possible for the given input and output sample rates.
+    /// A large number of sub chunks (i.e. short sub chunks) reduces the cutoff frequency
+    /// of the anti-aliasing filter.
+    /// It is recommended to set `sub_chunks` to 1 unless this leads to an unacceptably large delay.
     ///
     /// Parameters are:
     /// - `sample_rate_input`: Input sample rate, must be > 0.
     /// - `sample_rate_output`: Output sample rate, must be > 0.
     /// - `chunk_size`: desired chunk size in frames.
-    /// - `sub_chunks`: desired number of subchunks for processing, actual number may be different.
+    /// - `sub_chunks`: desired number of sub chunks to use for processing.
     /// - `nbr_channels`: number of channels in input/output.
+    /// - `fixed`: Deciding whether input size, output size, or both should be fixed.
     pub fn new(
         sample_rate_input: usize,
         sample_rate_output: usize,
         chunk_size: usize,
         sub_chunks: usize,
         nbr_channels: usize,
-        fixed: FftFixed,
+        fixed: FixedSync,
     ) -> Result<Self, ResamplerConstructionError> {
         validate_sample_rates(sample_rate_input, sample_rate_output)?;
 
         let gcd = integer::gcd(sample_rate_input, sample_rate_output);
 
         let fft_chunks = match fixed {
-            FftFixed::Input => {
+            FixedSync::Input => {
                 let min_chunk_in = sample_rate_input / gcd;
                 let wanted_subsize = chunk_size / sub_chunks;
                 (wanted_subsize as f32 / min_chunk_in as f32).ceil() as usize
             }
-            FftFixed::Output => {
+            FixedSync::Output => {
                 let min_chunk_out = sample_rate_output / gcd;
                 let wanted_subsize = chunk_size / sub_chunks;
                 (wanted_subsize as f32 / min_chunk_out as f32).ceil() as usize
             }
-            FftFixed::Both => {
+            FixedSync::Both => {
                 let min_chunk_in = sample_rate_input / gcd;
                 (chunk_size as f32 / min_chunk_in as f32).ceil() as usize
             }
@@ -235,9 +254,9 @@ where
         let overlaps: Vec<Vec<T>> = vec![vec![T::zero(); fft_size_out]; nbr_channels];
 
         let needed_buffer_size = match fixed {
-            FftFixed::Input => chunk_size + fft_size_in,
-            FftFixed::Output => chunk_size + fft_size_out,
-            FftFixed::Both => 0,
+            FixedSync::Input => chunk_size + fft_size_in,
+            FixedSync::Output => chunk_size + fft_size_out,
+            FixedSync::Both => 0,
         };
         let buffers: Vec<Vec<T>> = vec![vec![T::zero(); needed_buffer_size]; nbr_channels];
 
@@ -268,16 +287,16 @@ where
         fft_size_out: usize,
         chunk_size: usize,
         saved_frames: usize,
-        fixed: &FftFixed,
+        fixed: &FixedSync,
     ) -> (usize, usize) {
         match fixed {
-            FftFixed::Input => {
+            FixedSync::Input => {
                 let subchunks_available: f32 =
                     ((chunk_size + saved_frames) as f32 / fft_size_in as f32).floor();
                 let frames_available = (subchunks_available as usize) * fft_size_out;
                 (chunk_size, frames_available)
             }
-            FftFixed::Output => {
+            FixedSync::Output => {
                 let subchunks_needed = ((chunk_size as f32 - saved_frames as f32)
                     / fft_size_out as f32)
                     .ceil()
@@ -285,7 +304,7 @@ where
                 let frames_needed = (subchunks_needed as usize) * fft_size_in;
                 (frames_needed, chunk_size)
             }
-            FftFixed::Both => {
+            FixedSync::Both => {
                 let subchunks_needed = (chunk_size as f32 / fft_size_in as f32).ceil() as usize;
                 let frames_needed_in = subchunks_needed * fft_size_in;
                 let frames_needed_out = subchunks_needed * fft_size_out;
@@ -296,7 +315,7 @@ where
 
     fn update_chunk_sizes(&mut self) {
         match self.fixed {
-            FftFixed::Input => {
+            FixedSync::Input => {
                 (self.chunk_size_in, self.chunk_size_out) = Self::calc_chunk_sizes(
                     self.fft_size_in,
                     self.fft_size_out,
@@ -305,7 +324,7 @@ where
                     &self.fixed,
                 )
             }
-            FftFixed::Output => {
+            FixedSync::Output => {
                 (self.chunk_size_in, self.chunk_size_out) = Self::calc_chunk_sizes(
                     self.fft_size_in,
                     self.fft_size_out,
@@ -314,7 +333,7 @@ where
                     &self.fixed,
                 )
             }
-            FftFixed::Both => {}
+            FixedSync::Both => {}
         }
     }
 }
@@ -346,7 +365,7 @@ where
         )?;
 
         match self.fixed {
-            FftFixed::Input => {
+            FixedSync::Input => {
                 // Fixed input. Buffer input in the internal buffer, and resample directly to output
                 let available_input_frames = self.saved_frames + self.chunk_size_in;
                 let nbr_chunks_ready =
@@ -397,7 +416,7 @@ where
                 }
             }
 
-            FftFixed::Output => {
+            FixedSync::Output => {
                 // Fixed Output. Buffer output in the internal buffer, and resample directly from input
 
                 // Resample from input to internal buffer
@@ -436,7 +455,7 @@ where
                 }
             }
 
-            FftFixed::Both => {
+            FixedSync::Both => {
                 // Fixed Input and Output. Resample directly from input to output.
                 for (channel, active) in self.channel_mask.iter().enumerate() {
                     if *active {
@@ -458,8 +477,8 @@ where
 
     fn input_frames_max(&self) -> usize {
         match self.fixed {
-            FftFixed::Both | FftFixed::Input => self.chunk_size_in,
-            FftFixed::Output => {
+            FixedSync::Both | FixedSync::Input => self.chunk_size_in,
+            FixedSync::Output => {
                 (self.chunk_size_out as f32 / self.fft_size_out as f32).ceil() as usize
                     * self.fft_size_in
             }
@@ -476,8 +495,8 @@ where
 
     fn output_frames_max(&self) -> usize {
         match self.fixed {
-            FftFixed::Both | FftFixed::Output => self.chunk_size_out,
-            FftFixed::Input => {
+            FixedSync::Both | FixedSync::Output => self.chunk_size_out,
+            FixedSync::Input => {
                 let max_stored_frames = self.fft_size_in - 1;
                 let max_available_frames = max_stored_frames + self.chunk_size_in;
                 let max_subchunks_to_process = max_available_frames / self.fft_size_in;
@@ -522,7 +541,7 @@ where
 #[cfg(test)]
 mod tests {
     use crate::check_output;
-    use crate::synchro::{Fft, FftFixed, FftResampler};
+    use crate::synchro::{Fft, FftResampler, FixedSync};
     use crate::Resampler;
     use rand::Rng;
     use test_log::test;
@@ -551,7 +570,7 @@ mod tests {
     #[test]
     fn make_resampler_fio() {
         // asking for 1024 give the nearest which is 1029 -> 1120
-        let mut resampler = Fft::<f64>::new(44100, 48000, 1024, 1, 2, FftFixed::Both).unwrap();
+        let mut resampler = Fft::<f64>::new(44100, 48000, 1024, 1, 2, FixedSync::Both).unwrap();
         let frames = resampler.input_frames_next();
         let waves = vec![vec![0.0f64; frames]; 2];
         let out = resampler.process(&waves, None).unwrap();
@@ -561,7 +580,7 @@ mod tests {
 
     #[test]
     fn reset_resampler_fio() {
-        let mut resampler = Fft::<f64>::new(44100, 48000, 1024, 1, 2, FftFixed::Both).unwrap();
+        let mut resampler = Fft::<f64>::new(44100, 48000, 1024, 1, 2, FixedSync::Both).unwrap();
         let frames = resampler.input_frames_next();
 
         let mut rng = rand::thread_rng();
@@ -586,7 +605,7 @@ mod tests {
     #[test]
     fn make_resampler_fio_skipped() {
         // Asking for 1024 give the nearest which is 1029 -> 1120.
-        let mut resampler = Fft::<f64>::new(44100, 48000, 1024, 1, 2, FftFixed::Both).unwrap();
+        let mut resampler = Fft::<f64>::new(44100, 48000, 1024, 1, 2, FixedSync::Both).unwrap();
         let frames = resampler.input_frames_next();
         let waves = vec![vec![0.0f64; frames], Vec::new()];
         let mask = vec![true, false];
@@ -598,7 +617,7 @@ mod tests {
 
     #[test]
     fn make_resampler_fo() {
-        let mut resampler = Fft::<f64>::new(44100, 192000, 1024, 2, 2, FftFixed::Output).unwrap();
+        let mut resampler = Fft::<f64>::new(44100, 192000, 1024, 2, 2, FixedSync::Output).unwrap();
         let frames = resampler.input_frames_next();
         assert_eq!(frames, 294);
         let waves = vec![vec![0.0f64; frames]; 2];
@@ -609,7 +628,7 @@ mod tests {
 
     #[test]
     fn reset_resampler_fo() {
-        let mut resampler = Fft::<f64>::new(44100, 192000, 1024, 2, 2, FftFixed::Output).unwrap();
+        let mut resampler = Fft::<f64>::new(44100, 192000, 1024, 2, 2, FixedSync::Output).unwrap();
         let frames = resampler.input_frames_next();
 
         let mut rng = rand::thread_rng();
@@ -633,7 +652,7 @@ mod tests {
 
     #[test]
     fn make_resampler_fo_skipped() {
-        let mut resampler = Fft::<f64>::new(44100, 192000, 1024, 2, 2, FftFixed::Output).unwrap();
+        let mut resampler = Fft::<f64>::new(44100, 192000, 1024, 2, 2, FixedSync::Output).unwrap();
         let frames = resampler.input_frames_next();
         assert_eq!(frames, 294);
         let waves = vec![vec![0.0f64; frames], Vec::new()];
@@ -646,7 +665,7 @@ mod tests {
 
     #[test]
     fn make_resampler_fo_empty() {
-        let mut resampler = Fft::<f64>::new(44100, 192000, 1024, 2, 2, FftFixed::Output).unwrap();
+        let mut resampler = Fft::<f64>::new(44100, 192000, 1024, 2, 2, FixedSync::Output).unwrap();
         let frames = resampler.input_frames_next();
         assert_eq!(frames, 294);
         let waves = vec![Vec::new(); 2];
@@ -659,7 +678,7 @@ mod tests {
 
     #[test]
     fn make_resampler_fi() {
-        let mut resampler = Fft::<f64>::new(44100, 48000, 1024, 2, 2, FftFixed::Input).unwrap();
+        let mut resampler = Fft::<f64>::new(44100, 48000, 1024, 2, 2, FixedSync::Input).unwrap();
         let frames = resampler.input_frames_next();
         assert_eq!(frames, 1024);
         let waves = vec![vec![0.0f64; frames]; 2];
@@ -670,7 +689,7 @@ mod tests {
 
     #[test]
     fn reset_resampler_fi() {
-        let mut resampler = Fft::<f64>::new(44100, 48000, 1024, 2, 2, FftFixed::Input).unwrap();
+        let mut resampler = Fft::<f64>::new(44100, 48000, 1024, 2, 2, FixedSync::Input).unwrap();
 
         let mut rng = rand::thread_rng();
         let mut waves = vec![vec![0.0f64; 1024]; 2];
@@ -688,7 +707,7 @@ mod tests {
 
     #[test]
     fn make_resampler_fi_noalloc() {
-        let mut resampler = Fft::<f64>::new(44100, 48000, 1024, 2, 2, FftFixed::Input).unwrap();
+        let mut resampler = Fft::<f64>::new(44100, 48000, 1024, 2, 2, FixedSync::Input).unwrap();
         let frames = resampler.input_frames_next();
         assert_eq!(frames, 1024);
         let waves = vec![vec![0.0f64; frames]; 2];
@@ -709,7 +728,7 @@ mod tests {
 
     #[test]
     fn make_resampler_fi_downsample() {
-        let mut resampler = Fft::<f64>::new(48000, 16000, 1200, 2, 2, FftFixed::Input).unwrap();
+        let mut resampler = Fft::<f64>::new(48000, 16000, 1200, 2, 2, FixedSync::Input).unwrap();
         let frames = resampler.input_frames_next();
         assert_eq!(frames, 1200);
         let waves = vec![vec![0.0f64; frames]; 2];
@@ -720,7 +739,7 @@ mod tests {
 
     #[test]
     fn make_resampler_fi_skipped() {
-        let mut resampler = Fft::<f64>::new(44100, 48000, 1024, 2, 2, FftFixed::Input).unwrap();
+        let mut resampler = Fft::<f64>::new(44100, 48000, 1024, 2, 2, FixedSync::Input).unwrap();
         let frames = resampler.input_frames_next();
         assert_eq!(frames, 1024);
         let waves = vec![vec![0.0f64; frames], Vec::new()];
@@ -733,7 +752,7 @@ mod tests {
 
     #[test]
     fn make_resampler_fi_empty() {
-        let mut resampler = Fft::<f64>::new(44100, 48000, 1024, 2, 2, FftFixed::Input).unwrap();
+        let mut resampler = Fft::<f64>::new(44100, 48000, 1024, 2, 2, FixedSync::Input).unwrap();
         let frames = resampler.input_frames_next();
         assert_eq!(frames, 1024);
         let waves = vec![Vec::new(); 2];
@@ -747,7 +766,7 @@ mod tests {
     #[test]
     fn make_resampler_fio_unusualratio() {
         // Asking for 1024 give the nearest which is 1029 -> 1120.
-        let mut resampler = Fft::<f64>::new(44100, 44110, 1024, 1, 2, FftFixed::Both).unwrap();
+        let mut resampler = Fft::<f64>::new(44100, 44110, 1024, 1, 2, FixedSync::Both).unwrap();
         let frames = resampler.input_frames_next();
         let waves = vec![vec![0.0f64; frames]; 2];
         let out = resampler.process(&waves, None).unwrap();
@@ -757,7 +776,7 @@ mod tests {
 
     #[test]
     fn make_resampler_fo_unusualratio() {
-        let mut resampler = Fft::<f64>::new(44100, 44110, 1024, 2, 2, FftFixed::Output).unwrap();
+        let mut resampler = Fft::<f64>::new(44100, 44110, 1024, 2, 2, FixedSync::Output).unwrap();
         let frames = resampler.input_frames_next();
         assert_eq!(frames, 4410);
         let waves = vec![vec![0.0f64; frames]; 2];
@@ -768,19 +787,19 @@ mod tests {
 
     #[test]
     fn check_fo_output() {
-        let mut resampler = Fft::<f64>::new(44100, 48000, 4096, 4, 2, FftFixed::Output).unwrap();
+        let mut resampler = Fft::<f64>::new(44100, 48000, 4096, 4, 2, FixedSync::Output).unwrap();
         check_output!(resampler);
     }
 
     #[test]
     fn check_fi_output() {
-        let mut resampler = Fft::<f64>::new(44100, 48000, 4096, 4, 2, FftFixed::Input).unwrap();
+        let mut resampler = Fft::<f64>::new(44100, 48000, 4096, 4, 2, FixedSync::Input).unwrap();
         check_output!(resampler);
     }
 
     #[test]
     fn check_fio_output() {
-        let mut resampler = Fft::<f64>::new(44100, 48000, 4096, 1, 2, FftFixed::Both).unwrap();
+        let mut resampler = Fft::<f64>::new(44100, 48000, 4096, 1, 2, FixedSync::Both).unwrap();
         check_output!(resampler);
     }
 
@@ -810,7 +829,7 @@ mod tests {
             println!("params: {:?}", params);
             let [rate_in, rate_out, chunksize, subchunks, fft_in_len, fft_out_len] = params;
             let resampler =
-                Fft::<f64>::new(rate_in, rate_out, chunksize, subchunks, 1, FftFixed::Input)
+                Fft::<f64>::new(rate_in, rate_out, chunksize, subchunks, 1, FixedSync::Input)
                     .unwrap();
             assert_eq!(resampler.fft_size_in, fft_in_len);
             assert_eq!(resampler.fft_size_out, fft_out_len);
@@ -855,9 +874,15 @@ mod tests {
         for params in params_to_test {
             println!("params: {:?}", params);
             let [rate_in, rate_out, chunksize, subchunks, fft_in_len, fft_out_len] = params;
-            let resampler =
-                Fft::<f64>::new(rate_in, rate_out, chunksize, subchunks, 1, FftFixed::Output)
-                    .unwrap();
+            let resampler = Fft::<f64>::new(
+                rate_in,
+                rate_out,
+                chunksize,
+                subchunks,
+                1,
+                FixedSync::Output,
+            )
+            .unwrap();
             assert_eq!(resampler.fft_size_in, fft_in_len);
             assert_eq!(resampler.fft_size_out, fft_out_len);
             let resampler_max_input_len = resampler.input_frames_max();
