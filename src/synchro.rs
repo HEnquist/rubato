@@ -190,7 +190,7 @@ where
 {
     /// Create a new `Fft` synchronous resampler.
     ///
-    /// `Fft` resampler supports fixed input size, fixed output size, and both.
+    /// The `Fft` resampler supports fixed input size, fixed output size, and both.
     /// With fixed input or output size, the fixed side accepts or returns the chosen number of frames,
     /// while the size on the opposite side varies from call to call.
     /// When both are fixed, the chunk size is fixed on both sides.
@@ -222,6 +222,9 @@ where
         fixed: FixedSync,
     ) -> Result<Self, ResamplerConstructionError> {
         validate_sample_rates(sample_rate_input, sample_rate_output)?;
+
+        // Set sub chunks to 1 of 0 is given.
+        let sub_chunks = sub_chunks.max(1);
 
         let gcd = integer::gcd(sample_rate_input, sample_rate_output);
 

@@ -40,8 +40,7 @@ pub trait InnerResampler<T>: Send {
     fn nbr_points(&self) -> usize;
 }
 
-/// An asynchronous resampler that either takes a fixed number of input frames,
-/// or returns a fixed number of audio frames.
+/// An asynchronous resampler that uses either polynomial or sinc interpolation.
 ///
 /// The `fixed` argument determines if input of output should be fixed size.
 /// When the input size is fixed, the output size varies from call to call,
