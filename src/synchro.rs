@@ -204,34 +204,26 @@ where
     ) -> Result<Self, ResamplerConstructionError> {
         validate_sample_rates(sample_rate_input, sample_rate_output)?;
 
-        let (fft_size_in, fft_size_out) = match fixed {
+        let gcd = integer::gcd(sample_rate_input, sample_rate_output);
+
+        let fft_chunks = match fixed {
             FftFixed::Input => {
-                let gcd = integer::gcd(sample_rate_input, sample_rate_output);
                 let min_chunk_in = sample_rate_input / gcd;
                 let wanted_subsize = chunk_size / sub_chunks;
-                let fft_chunks = (wanted_subsize as f32 / min_chunk_in as f32).ceil() as usize;
-                let size_out = fft_chunks * sample_rate_output / gcd;
-                let size_in = fft_chunks * sample_rate_input / gcd;
-                (size_in, size_out)
+                (wanted_subsize as f32 / min_chunk_in as f32).ceil() as usize
             }
             FftFixed::Output => {
-                let gcd = integer::gcd(sample_rate_input, sample_rate_output);
                 let min_chunk_out = sample_rate_output / gcd;
                 let wanted_subsize = chunk_size / sub_chunks;
-                let fft_chunks = (wanted_subsize as f32 / min_chunk_out as f32).ceil() as usize;
-                let size_out = fft_chunks * sample_rate_output / gcd;
-                let size_in = fft_chunks * sample_rate_input / gcd;
-                (size_in, size_out)
+                (wanted_subsize as f32 / min_chunk_out as f32).ceil() as usize
             }
             FftFixed::Both => {
-                let gcd = integer::gcd(sample_rate_input, sample_rate_output);
                 let min_chunk_in = sample_rate_input / gcd;
-                let fft_chunks = (chunk_size as f32 / min_chunk_in as f32).ceil() as usize;
-                let size_out = fft_chunks * sample_rate_output / gcd;
-                let size_in = fft_chunks * sample_rate_input / gcd;
-                (size_in, size_out)
+                (chunk_size as f32 / min_chunk_in as f32).ceil() as usize
             }
         };
+        let fft_size_out = fft_chunks * sample_rate_output / gcd;
+        let fft_size_in = fft_chunks * sample_rate_input / gcd;
 
         let resampler = FftResampler::<T>::new(fft_size_in, fft_size_out);
 

@@ -574,10 +574,10 @@ pub fn buffer_capacity<T: Sample>(buffer: &[Vec<T>]) -> usize {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::{buffer_capacity, buffer_length, make_buffer, resize_buffer, VecResampler};
-    use crate::{Async, Fixed, PolynomialDegree};
     #[cfg(feature = "fft_resampler")]
     use crate::Fft;
+    use crate::{buffer_capacity, buffer_length, make_buffer, resize_buffer, VecResampler};
+    use crate::{Async, Fixed, PolynomialDegree};
     use test_log::test;
 
     // This tests that a VecResampler can be boxed.
