@@ -1,3 +1,4 @@
+use audioadapter::AdapterMut;
 use crate::asynchro::InnerResampler;
 use crate::interpolation::*;
 #[cfg(target_arch = "x86_64")]
@@ -169,7 +170,7 @@ impl<T> InnerResampler<T> for InnerSinc<T>
 where
     T: Sample,
 {
-    fn process(
+    fn process<'a>(
         &self,
         idx: f64,
         nbr_frames: usize,
@@ -177,7 +178,7 @@ where
         t_ratio: f64,
         t_ratio_increment: f64,
         wave_in: &[Vec<T>],
-        wave_out: &mut [&mut [T]],
+        wave_out: &mut dyn AdapterMut<'a, T>,
     ) -> f64 {
         let mut t_ratio = t_ratio;
         let mut idx = idx;
@@ -204,7 +205,7 @@ where
                                     n.1 as usize,
                                 );
                             }
-                            wave_out[chan][n] = interp_cubic(frac_offset, &points);
+                            wave_out.write_sample(chan, n, &interp_cubic(frac_offset, &points));
                         }
                     }
                 }
@@ -230,7 +231,7 @@ where
                                     n.1 as usize,
                                 );
                             }
-                            wave_out[chan][n] = interp_quad(frac_offset, &points);
+                            wave_out.write_sample(chan, n, &interp_quad(frac_offset, &points));
                         }
                     }
                 }
@@ -256,7 +257,7 @@ where
                                     n.1 as usize,
                                 );
                             }
-                            wave_out[chan][n] = interp_lin(frac_offset, &points);
+                            wave_out.write_sample(chan, n, &interp_lin(frac_offset, &points));
                         }
                     }
                 }
@@ -277,7 +278,7 @@ where
                                 (nearest.0 + 2 * interpolator_len as isize) as usize,
                                 nearest.1 as usize,
                             );
-                            wave_out[chan][n] = point;
+                            wave_out.write_sample(chan, n, &point);
                         }
                     }
                 }
