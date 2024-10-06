@@ -35,6 +35,7 @@ macro_rules! error { ($($x:tt)*) => (
     }
 ) }
 
+mod asynchro;
 mod asynchro_fast;
 mod asynchro_sinc;
 mod error;
@@ -47,16 +48,15 @@ mod windows;
 
 pub mod sinc_interpolator;
 
-pub use crate::asynchro_fast::{FastFixedIn, FastFixedOut, PolynomialDegree};
-pub use crate::asynchro_sinc::{
-    SincFixedIn, SincFixedOut, SincInterpolationParameters, SincInterpolationType,
-};
+pub use crate::asynchro::{Async, FixedAsync};
+pub use crate::asynchro_fast::PolynomialDegree;
+pub use crate::asynchro_sinc::{SincInterpolationParameters, SincInterpolationType};
 pub use crate::error::{
     CpuFeature, MissingCpuFeature, ResampleError, ResampleResult, ResamplerConstructionError,
 };
 pub use crate::sample::Sample;
 #[cfg(feature = "fft_resampler")]
-pub use crate::synchro::{FftFixedIn, FftFixedInOut, FftFixedOut};
+pub use crate::synchro::{Fft, FixedSync};
 pub use crate::windows::{calculate_cutoff, WindowFunction};
 
 /// A resampler that is used to resample a chunk of audio to a new sample rate.
@@ -208,14 +208,14 @@ where
         make_buffer(channels, frames, filled)
     }
 
-    /// Get the maximum number of input frames per channel the resampler could require.
+    /// Get the maximum possible number of input frames per channel the resampler could require.
     fn input_frames_max(&self) -> usize;
 
     /// Get the number of frames per channel needed for the next call to
     /// [process_into_buffer](Resampler::process_into_buffer) or [process](Resampler::process).
     fn input_frames_next(&self) -> usize;
 
-    /// Get the maximum number of channels this Resampler is configured for.
+    /// Get the number of channels this Resampler is configured for.
     fn nbr_channels(&self) -> usize;
 
     /// Convenience method for allocating an output buffer suitable for use with
@@ -232,19 +232,15 @@ where
         make_buffer(channels, frames, filled)
     }
 
-    /// Get the max number of output frames per channel.
+    /// Get the maximum possible number of output frames per channel.
     fn output_frames_max(&self) -> usize;
 
     /// Get the number of frames per channel that will be output from the next call to
     /// [process_into_buffer](Resampler::process_into_buffer) or [process](Resampler::process).
-    /// For the resamplers with a fixed output size, sush as [FastFixedOut],
-    /// this gives the exact number.
-    /// For the resamplers with a varying output size, like [FastFixedIn],
-    /// the number is an estimation that may be a few frames larger than
-    /// (and never smaller than) the actual number of output frames.
     fn output_frames_next(&self) -> usize;
 
     /// Get the delay for the resampler, reported as a number of output frames.
+    /// This gives how many frames any event in the input is delayed before it appears in the output.
     fn output_delay(&self) -> usize;
 
     /// Update the resample ratio.
@@ -284,10 +280,10 @@ where
     /// [ResampleError::InvalidChunkSize] is returned if the value is zero or too large.
     ///
     /// The meaning of chunk size depends on the resampler,
-    /// it refers to the input size for FixedIn,
-    /// and output size for FixedOut types.
+    /// it refers to the input size for resamplers with fixed input size,
+    /// and output size for resamplers with fixed output size.
     ///
-    /// Types that do not support changing the chunk size
+    /// Resamplers that do not support changing the chunk size
     /// return [ResampleError::ChunkSizeNotAdjustable].
     fn set_chunk_size(&mut self, _chunksize: usize) -> ResampleResult<()> {
         Err(ResampleError::ChunkSizeNotAdjustable)
@@ -304,8 +300,8 @@ use crate as rubato;
 /// `&[AsRef<[T]>]` and `&mut [AsMut<[T]>]` to `&[Vec<T>]` and `&mut [Vec<T>]`.
 /// This allows a [VecResampler] to be made into a trait object like this:
 /// ```
-/// # use rubato::{FastFixedIn, VecResampler, PolynomialDegree};
-/// let boxed: Box<dyn VecResampler<f64>> = Box::new(FastFixedIn::<f64>::new(44100 as f64 / 88200 as f64, 1.1, PolynomialDegree::Cubic, 2, 2).unwrap());
+/// # use rubato::{Async, FixedAsync, VecResampler, PolynomialDegree};
+/// let boxed: Box<dyn VecResampler<f64>> = Box::new(Async::<f64>::new_poly(44100 as f64 / 88200 as f64, 1.1, PolynomialDegree::Cubic, 2, 2, FixedAsync::Input).unwrap());
 /// ```
 /// Use this implementation as an example if you need to fix the input type to something else.
 #[macro_export]
@@ -565,22 +561,23 @@ pub fn buffer_capacity<T: Sample>(buffer: &[Vec<T>]) -> usize {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::{buffer_capacity, buffer_length, make_buffer, resize_buffer, VecResampler};
-    use crate::{FastFixedIn, PolynomialDegree, SincFixedIn, SincFixedOut};
     #[cfg(feature = "fft_resampler")]
-    use crate::{FftFixedIn, FftFixedInOut, FftFixedOut};
+    use crate::Fft;
+    use crate::{buffer_capacity, buffer_length, make_buffer, resize_buffer, VecResampler};
+    use crate::{Async, FixedAsync, PolynomialDegree};
     use test_log::test;
 
     // This tests that a VecResampler can be boxed.
     #[test]
     fn boxed_resampler() {
         let mut boxed: Box<dyn VecResampler<f64>> = Box::new(
-            FastFixedIn::<f64>::new(
+            Async::<f64>::new_poly(
                 88200 as f64 / 44100 as f64,
                 1.1,
                 PolynomialDegree::Cubic,
                 1024,
                 2,
+                FixedAsync::Input,
             )
             .unwrap(),
         );
@@ -599,13 +596,10 @@ pub mod tests {
 
     fn impl_send<T: Send>() {
         fn is_send<T: Send>() {}
-        is_send::<SincFixedOut<T>>();
-        is_send::<SincFixedIn<T>>();
+        is_send::<Async<T>>();
         #[cfg(feature = "fft_resampler")]
         {
-            is_send::<FftFixedOut<T>>();
-            is_send::<FftFixedIn<T>>();
-            is_send::<FftFixedInOut<T>>();
+            is_send::<Fft<T>>();
         }
     }
 
@@ -653,7 +647,7 @@ pub mod tests {
                 for ch in 0..2 {
                     assert!(
                         out[ch][0] > prev_last,
-                        "Iteration {}, first value {} prev last value {}",
+                        "Iteration {}, too large diff between first value {} and prev last value {}",
                         n,
                         out[ch][0],
                         prev_last
@@ -662,7 +656,7 @@ pub mod tests {
                     let diff = out[ch][frames_out - 1] - out[ch][0];
                     assert!(
                         diff < 1.5 * expected_diff && diff > 0.25 * expected_diff,
-                        "Iteration {}, last value {} first value {}",
+                        "Iteration {}, too large diff between last value {} first value {}",
                         n,
                         out[ch][frames_out - 1],
                         out[ch][0]
@@ -674,7 +668,7 @@ pub mod tests {
                         let diff = out[ch][m + 1] - out[ch][m];
                         assert!(
                             diff < 0.15 && diff > -0.05,
-                            "Frame {}:{} next value {} value {}",
+                            "Iteration {} frame {} too large diff within output: next value {}, value {}",
                             n,
                             m,
                             out[ch][m + 1],

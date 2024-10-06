@@ -1,15 +1,15 @@
 extern crate rubato;
 use rubato::{
-    calculate_cutoff, implement_resampler, FastFixedIn, FastFixedOut, PolynomialDegree,
-    SincFixedIn, SincFixedOut, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+    calculate_cutoff, implement_resampler, Async, FixedAsync, PolynomialDegree,
+    SincInterpolationParameters, SincInterpolationType, WindowFunction,
 };
 #[cfg(feature = "fft_resampler")]
-use rubato::{FftFixedIn, FftFixedInOut, FftFixedOut};
+use rubato::{Fft, FixedSync};
 use std::convert::TryInto;
 use std::env;
 use std::fs::File;
 use std::io::prelude::{Read, Seek, Write};
-use std::io::BufReader;
+use std::io::{BufReader, BufWriter};
 use std::time::Instant;
 
 extern crate env_logger;
@@ -20,9 +20,9 @@ const BYTE_PER_SAMPLE: usize = 8;
 
 // A resampler app that reads a raw file of little-endian 64 bit floats, and writes the output in the same format.
 // The command line arguments are resampler type, input filename, output filename, input samplerate, output samplerate, number of channels
-// To use a SincFixedIn resampler to resample the file `sine_f64_2ch.raw` from 44.1kHz to 192kHz, and assuming the file has two channels, the command is:
+// To use a sinc resampler with fixed input size to resample the file `sine_f64_2ch.raw` from 44.1kHz to 192kHz, and assuming the file has two channels, the command is:
 // ```
-// cargo run --release --example process_f64 SincFixedIn sine_f64_2ch.raw test.raw 44100 192000 2
+// cargo run --release --example process_f64 SincFixedInput sine_f64_2ch.raw test.raw 44100 192000 2
 // ```
 // There are two helper python scripts for testing. `makesineraw.py` simply writes a stereo file
 // with a 1 second long 1kHz tone (at 44.1kHz). This script takes no aruments. Modify as needed to create other test files.
@@ -125,9 +125,10 @@ fn main() {
 
     let f_ratio = fs_out as f64 / fs_in as f64;
 
+    println!("Creating resampler");
     // Create resampler
     let mut resampler: Box<dyn SliceResampler<f64>> = match resampler_type.as_str() {
-        "SincFixedIn" => {
+        "SincFixedInput" => {
             let sinc_len = 128;
             let oversampling_factor = 256;
             let interpolation = SincInterpolationType::Quadratic;
@@ -141,9 +142,9 @@ fn main() {
                 oversampling_factor,
                 window,
             };
-            Box::new(SincFixedIn::<f64>::new(f_ratio, 1.1, params, 1024, channels).unwrap())
+            Box::new(Async::<f64>::new_sinc(f_ratio, 1.1, params, 1024, channels, FixedAsync::Input).unwrap())
         }
-        "SincFixedOut" => {
+        "SincFixedOutput" => {
             let sinc_len = 128;
             let oversampling_factor = 512;
             let interpolation = SincInterpolationType::Cubic;
@@ -157,27 +158,27 @@ fn main() {
                 oversampling_factor,
                 window,
             };
-            Box::new(SincFixedOut::<f64>::new(f_ratio, 1.1, params, 1024, channels).unwrap())
+            Box::new(Async::<f64>::new_sinc(f_ratio, 1.1, params, 1024, channels, FixedAsync::Output).unwrap())
         }
-        "FastFixedIn" => {
-            Box::new(FastFixedIn::<f64>::new(f_ratio, 1.1, PolynomialDegree::Septic, 1024, channels).unwrap())
+        "PolyFixedInput" => {
+            Box::new(Async::<f64>::new_poly(f_ratio, 1.1, PolynomialDegree::Septic, 1024, channels, FixedAsync::Input).unwrap())
         }
-        "FastFixedOut" => {
-            Box::new(FastFixedOut::<f64>::new(f_ratio, 1.1, PolynomialDegree::Septic, 1024, channels).unwrap())
-        }
-        #[cfg(feature = "fft_resampler")]
-        "FftFixedIn" => {
-            Box::new(FftFixedIn::<f64>::new(fs_in, fs_out, 1024, 2, channels).unwrap())
+        "PolyFixedOutput" => {
+            Box::new(Async::<f64>::new_poly(f_ratio, 1.1, PolynomialDegree::Septic, 1024, channels, FixedAsync::Output).unwrap())
         }
         #[cfg(feature = "fft_resampler")]
-        "FftFixedOut" => {
-            Box::new(FftFixedOut::<f64>::new(fs_in, fs_out, 1024, 2, channels).unwrap())
+        "FftFixedInput" => {
+            Box::new(Fft::<f64>::new(fs_in, fs_out, 1024, 2, channels, FixedSync::Input).unwrap())
         }
         #[cfg(feature = "fft_resampler")]
-        "FftFixedInOut" => {
-            Box::new(FftFixedInOut::<f64>::new(fs_in, fs_out, 1024, channels).unwrap())
+        "FftFixedOutput" => {
+            Box::new(Fft::<f64>::new(fs_in, fs_out, 1024, 2, channels, FixedSync::Output).unwrap())
         }
-        _ => panic!("Unknown resampler type {}\nMust be one of SincFixedIn, SincFixedOut, FastFixedIn, FastFixedOut, FftFixedIn, FftFixedOut, FftFixedInOut", resampler_type),
+        #[cfg(feature = "fft_resampler")]
+        "FftFixedBoth" => {
+            Box::new(Fft::<f64>::new(fs_in, fs_out, 1024, 1, channels, FixedSync::Both).unwrap())
+        }
+        _ => panic!("Unknown resampler type {}\nMust be one of SincFixedInput, SincFixedOutput, PolyFixedInput, PolyFixedOutput, FftFixedInput, FftFixedOutput, FftFixedBoth", resampler_type),
     };
 
     // Prepare
@@ -186,7 +187,7 @@ fn main() {
     let mut outbuffer = vec![vec![0.0f64; resampler.output_frames_max()]; channels];
     let mut indata_slices: Vec<&[f64]> = indata.iter().map(|v| &v[..]).collect();
 
-    // Process all full chunks
+    println!("Process all full chunks");
     let start = Instant::now();
 
     while indata_slices[0].len() >= input_frames_next {
@@ -200,7 +201,7 @@ fn main() {
         input_frames_next = resampler.input_frames_next();
     }
 
-    // Process a partial chunk with the last frames.
+    println!("Process a partial chunk with the last frames.");
     if !indata_slices[0].is_empty() {
         let (_nbr_in, nbr_out) = resampler
             .process_partial_into_buffer(Some(&indata_slices), &mut outbuffer, None)
@@ -217,8 +218,8 @@ fn main() {
         nbr_input_frames, nbr_output_frames
     );
 
-    // Write output to file, trimming off the silent frames from both ends.
-    let mut file_out_disk = File::create(file_out).unwrap();
+    println!("Write output to file, trimming off the silent frames from both ends.");
+    let mut file_out_disk = BufWriter::new(File::create(file_out).unwrap());
     write_frames(
         outdata,
         &mut file_out_disk,
