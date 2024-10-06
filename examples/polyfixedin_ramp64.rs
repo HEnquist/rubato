@@ -18,7 +18,7 @@ use log::LevelFilter;
 ///! To resample the file `sine_f64_2ch.raw` from 44.1kHz to 192kHz, and assuming the file has two channels,
 ///  and that the resampling ratio should be ramped to 150% during 3 seconds, the command is:
 ///! ```
-///! cargo run --release --example fastfixedin_ramp64 sine_f64_2ch.raw test.raw 44100 192000 2 150 3
+///! cargo run --release --example polyfixedin_ramp64 sine_f64_2ch.raw test.raw 44100 192000 2 150 3
 ///! ```
 ///! There are two helper python scripts for testing. `makesineraw.py` simply writes a stereo file
 ///! with a 1 second long 1kHz tone (at 44.1kHz). This script takes no aruments. Modify as needed to create other test files.
