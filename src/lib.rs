@@ -37,7 +37,7 @@ macro_rules! error { ($($x:tt)*) => (
 ) }
 
 mod asynchro;
-//mod asynchro_fast;
+mod asynchro_fast;
 mod asynchro_sinc;
 mod error;
 mod interpolation;
@@ -50,7 +50,7 @@ mod windows;
 pub mod sinc_interpolator;
 
 pub use crate::asynchro::{Async, FixedAsync};
-//pub use crate::asynchro_fast::PolynomialDegree;
+pub use crate::asynchro_fast::PolynomialDegree;
 pub use crate::asynchro_sinc::{SincInterpolationParameters, SincInterpolationType};
 pub use crate::error::{
     CpuFeature, MissingCpuFeature, ResampleError, ResampleResult, ResamplerConstructionError,
@@ -60,11 +60,34 @@ pub use crate::sample::Sample;
 //pub use crate::synchro::{Fft, FixedSync};
 pub use crate::windows::{calculate_cutoff, WindowFunction};
 
+#[derive(Debug)]
 pub struct Indexing {
-    input_offset: usize,
-    output_offset: usize,
-    partial_len: Option<usize>,
+    pub input_offset: usize,
+    pub output_offset: usize,
+    pub partial_len: Option<usize>,
+    pub active_channels_mask: Option<Vec<bool>>,
 }
+
+pub(crate) fn get_offsets(indexing: &Option<&Indexing>) -> (usize, usize) {
+    indexing.as_ref().map(|idx| (idx.input_offset, idx.output_offset)).unwrap_or((0, 0))
+}
+
+pub(crate) fn get_partial_len(indexing: &Option<&Indexing>) -> Option<usize> {
+    indexing.as_ref().and_then(|idx| idx.partial_len)
+}
+
+/// Helper to update the mask from an optional Indexing struct
+pub(crate) fn update_mask(indexing: &Option<&Indexing>, mask: &mut [bool]) {
+    if let Some(idx) = indexing {
+        if let Some(new_mask) = &idx.active_channels_mask {
+            mask.copy_from_slice(new_mask);
+            return;
+        }
+    }
+    mask.iter_mut().for_each(|v| *v = true);
+}
+
+
 
 /// A resampler that is used to resample a chunk of audio to a new sample rate.
 /// For asynchronous resamplers, the rate can be adjusted as required.
@@ -136,7 +159,7 @@ where
         &mut self,
         buffer_in: &dyn Adapter<'a, T>,
         buffer_out: &mut dyn AdapterMut<'a, T>,
-        active_channels_mask: Option<&[bool]>,
+        indexing: Option<&Indexing>,
     ) -> ResampleResult<(usize, usize)>;
 
     /*
@@ -302,11 +325,6 @@ where
     }
 }
 
-
-/// Helper to make a mask where all channels are marked as active.
-fn update_mask_from_buffers(mask: &mut [bool]) {
-    mask.iter_mut().for_each(|v| *v = true);
-}
 
 pub(crate) fn validate_buffers<'a, T: 'a>(
     wave_in: &dyn Adapter<'a, T>,
@@ -507,12 +525,16 @@ pub mod tests {
             }
         };
     }
-/*
+
     #[macro_export]
     macro_rules! check_ratio {
-        ($resampler:ident, $ratio:ident, $repetitions:literal) => {
-            let input = $resampler.input_buffer_allocate(true);
-            let mut output = $resampler.output_buffer_allocate(true);
+        ($resampler:ident, $ratio:ident, $repetitions:literal, $fty:ty) => {
+            let max_input_len = $resampler.input_frames_max();
+            let max_output_len = $resampler.output_frames_max();
+            let waves_in = vec![vec![0.0 as $fty; max_input_len]; 2];
+            let input = SequentialSliceOfVecs::new(&waves_in, 2, max_input_len).unwrap();
+            let mut waves_out = vec![vec![0.0 as $fty; max_output_len]; 2];
+            let mut output = SequentialSliceOfVecs::new_mut(&mut waves_out, 2, max_output_len).unwrap();
             let mut total_in = 0;
             let mut total_out = 0;
             for _ in 0..$repetitions {
@@ -527,7 +549,7 @@ pub mod tests {
             assert!(measured_ratio < 1.001 * $ratio);
         };
     }
-
+/*
     #[test]
     fn test_buffer_helpers() {
         let buf1 = vec![vec![0.0f64; 7], vec![0.0f64; 5], vec![0.0f64; 10]];

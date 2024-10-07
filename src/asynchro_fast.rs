@@ -1,3 +1,4 @@
+use audioadapter::AdapterMut;
 use crate::asynchro::InnerResampler;
 use crate::Sample;
 use std::marker::PhantomData;
@@ -152,14 +153,15 @@ where
         t_ratio: f64,
         t_ratio_increment: f64,
         wave_in: &[Vec<T>],
-        wave_out: &mut [&mut [T]],
+        wave_out: &mut dyn AdapterMut<'_, T>,
+        output_offset: usize,
     ) -> f64 {
         let interpolator_len = self.nbr_points();
         let mut t_ratio = t_ratio;
         let mut idx = idx;
         match self.interpolation {
             PolynomialDegree::Septic => {
-                for n in 0..nbr_frames {
+                for frame in 0..nbr_frames {
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     let idx_floor = idx.floor();
@@ -173,15 +175,14 @@ where
                                     (start_idx + 2 * interpolator_len as isize) as usize
                                         ..(start_idx + 2 * interpolator_len as isize + 8) as usize,
                                 );
-                                *wave_out.get_unchecked_mut(chan).get_unchecked_mut(n) =
-                                    interp_septic(frac_offset, buf);
+                                wave_out.write_sample_unchecked(chan, frame + output_offset, &interp_septic(frac_offset, buf));
                             }
                         }
                     }
                 }
             }
             PolynomialDegree::Quintic => {
-                for n in 0..nbr_frames {
+                for frame in 0..nbr_frames {
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     let idx_floor = idx.floor();
@@ -195,15 +196,14 @@ where
                                     (start_idx + 2 * interpolator_len as isize) as usize
                                         ..(start_idx + 2 * interpolator_len as isize + 6) as usize,
                                 );
-                                *wave_out.get_unchecked_mut(chan).get_unchecked_mut(n) =
-                                    interp_quintic(frac_offset, buf);
+                                wave_out.write_sample_unchecked(chan, frame + output_offset, &interp_quintic(frac_offset, buf));
                             }
                         }
                     }
                 }
             }
             PolynomialDegree::Cubic => {
-                for n in 0..nbr_frames {
+                for frame in 0..nbr_frames {
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     let idx_floor = idx.floor();
@@ -217,15 +217,14 @@ where
                                     (start_idx + 2 * interpolator_len as isize) as usize
                                         ..(start_idx + 2 * interpolator_len as isize + 4) as usize,
                                 );
-                                *wave_out.get_unchecked_mut(chan).get_unchecked_mut(n) =
-                                    interp_cubic(frac_offset, buf);
+                                wave_out.write_sample_unchecked(chan, frame + output_offset, &interp_cubic(frac_offset, buf));
                             }
                         }
                     }
                 }
             }
             PolynomialDegree::Linear => {
-                for n in 0..nbr_frames {
+                for frame in 0..nbr_frames {
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     let idx_floor = idx.floor();
@@ -239,15 +238,14 @@ where
                                     (start_idx + 2 * interpolator_len as isize) as usize
                                         ..(start_idx + 2 * interpolator_len as isize + 2) as usize,
                                 );
-                                *wave_out.get_unchecked_mut(chan).get_unchecked_mut(n) =
-                                    interp_lin(frac_offset, buf);
+                                wave_out.write_sample_unchecked(chan, frame + output_offset, &interp_lin(frac_offset, buf));
                             }
                         }
                     }
                 }
             }
             PolynomialDegree::Nearest => {
-                for n in 0..nbr_frames {
+                for frame in 0..nbr_frames {
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     let start_idx = idx.floor() as isize;
@@ -257,7 +255,7 @@ where
                                 let point = wave_in.get_unchecked(chan).get_unchecked(
                                     (start_idx + 2 * interpolator_len as isize) as usize,
                                 );
-                                *wave_out.get_unchecked_mut(chan).get_unchecked_mut(n) = *point;
+                                wave_out.write_sample_unchecked(chan, frame + output_offset, point);
                             }
                         }
                     }

@@ -170,7 +170,7 @@ impl<T> InnerResampler<T> for InnerSinc<T>
 where
     T: Sample,
 {
-    fn process<'a>(
+    fn process(
         &self,
         idx: f64,
         nbr_frames: usize,
@@ -178,7 +178,8 @@ where
         t_ratio: f64,
         t_ratio_increment: f64,
         wave_in: &[Vec<T>],
-        wave_out: &mut dyn AdapterMut<'a, T>,
+        wave_out: &mut dyn AdapterMut<'_, T>,
+        output_offset: usize,
     ) -> f64 {
         let mut t_ratio = t_ratio;
         let mut idx = idx;
@@ -188,7 +189,7 @@ where
                 let oversampling_factor = self.interpolator.nbr_sincs();
                 let mut points = [T::zero(); 4];
                 let mut nearest = [(0isize, 0isize); 4];
-                for n in 0..nbr_frames {
+                for frame in 0..nbr_frames {
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     get_nearest_times_4(idx, oversampling_factor as isize, &mut nearest);
@@ -205,7 +206,7 @@ where
                                     n.1 as usize,
                                 );
                             }
-                            wave_out.write_sample(chan, n, &interp_cubic(frac_offset, &points));
+                            wave_out.write_sample(chan, frame + output_offset, &interp_cubic(frac_offset, &points));
                         }
                     }
                 }
@@ -214,7 +215,7 @@ where
                 let oversampling_factor = self.interpolator.nbr_sincs();
                 let mut points = [T::zero(); 3];
                 let mut nearest = [(0isize, 0isize); 3];
-                for n in 0..nbr_frames {
+                for frame in 0..nbr_frames {
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     get_nearest_times_3(idx, oversampling_factor as isize, &mut nearest);
@@ -231,7 +232,7 @@ where
                                     n.1 as usize,
                                 );
                             }
-                            wave_out.write_sample(chan, n, &interp_quad(frac_offset, &points));
+                            wave_out.write_sample(chan, frame + output_offset, &interp_quad(frac_offset, &points));
                         }
                     }
                 }
@@ -240,7 +241,7 @@ where
                 let oversampling_factor = self.interpolator.nbr_sincs();
                 let mut points = [T::zero(); 2];
                 let mut nearest = [(0isize, 0isize); 2];
-                for n in 0..nbr_frames {
+                for frame in 0..nbr_frames {
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     get_nearest_times_2(idx, oversampling_factor as isize, &mut nearest);
@@ -257,7 +258,7 @@ where
                                     n.1 as usize,
                                 );
                             }
-                            wave_out.write_sample(chan, n, &interp_lin(frac_offset, &points));
+                            wave_out.write_sample(chan, frame + output_offset, &interp_lin(frac_offset, &points));
                         }
                     }
                 }
@@ -266,7 +267,7 @@ where
                 let oversampling_factor = self.interpolator.nbr_sincs();
                 let mut point;
                 let mut nearest;
-                for n in 0..nbr_frames {
+                for frame in 0..nbr_frames {
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     nearest = get_nearest_time(idx, oversampling_factor as isize);
@@ -278,7 +279,7 @@ where
                                 (nearest.0 + 2 * interpolator_len as isize) as usize,
                                 nearest.1 as usize,
                             );
-                            wave_out.write_sample(chan, n, &point);
+                            wave_out.write_sample(chan, frame + output_offset, &point);
                         }
                     }
                 }
