@@ -43,8 +43,8 @@ mod error;
 mod interpolation;
 mod sample;
 mod sinc;
-//#[cfg(feature = "fft_resampler")]
-//mod synchro;
+#[cfg(feature = "fft_resampler")]
+mod synchro;
 mod windows;
 
 pub mod sinc_interpolator;
@@ -56,8 +56,8 @@ pub use crate::error::{
     CpuFeature, MissingCpuFeature, ResampleError, ResampleResult, ResamplerConstructionError,
 };
 pub use crate::sample::Sample;
-//#[cfg(feature = "fft_resampler")]
-//pub use crate::synchro::{Fft, FixedSync};
+#[cfg(feature = "fft_resampler")]
+pub use crate::synchro::{Fft, FixedSync};
 pub use crate::windows::{calculate_cutoff, WindowFunction};
 
 #[derive(Debug)]
@@ -502,10 +502,12 @@ pub mod tests {
                     let diff = waves_out[ch][output_frames - 1] - waves_out[ch][0];
                     assert!(
                         diff < 1.5 * expected_diff && diff > 0.25 * expected_diff,
-                        "Iteration {}, last value {} first value {}",
+                        "Iteration {}, last value {} first value {}, diff {}, expected {}",
                         n,
                         waves_out[ch][output_frames - 1],
-                        waves_out[ch][0]
+                        waves_out[ch][0],
+                        diff,
+                        expected_diff,
                     );
                 }
                 prev_last = waves_out[0][output_frames - 1];

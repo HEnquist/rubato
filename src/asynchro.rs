@@ -527,7 +527,7 @@ where
         self.resample_ratio = self.target_ratio;
         trace!(
             "Resampling channels {:?}, {} frames in, {} frames out",
-            active_channels_mask,
+            self.channel_mask,
             self.needed_input_size,
             self.needed_output_size,
         );
