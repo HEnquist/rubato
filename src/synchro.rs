@@ -6,7 +6,6 @@ use num_integer as integer;
 use num_traits::Zero;
 use std::fmt;
 use std::sync::Arc;
-use std::thread::available_parallelism;
 
 use audioadapter::{Adapter, AdapterMut};
 
@@ -542,6 +541,10 @@ where
         Err(ResampleError::SyncNotAdjustable)
     }
 
+    fn resample_ratio(&self) -> f64 {
+        self.fft_size_out as f64 / self.fft_size_in as f64
+    }
+
     /// Update the resample ratio relative to the original one. This is not
     /// supported by this resampler and always returns [ResampleError::SyncNotAdjustable].
     fn set_resample_ratio_relative(&mut self, _rel_ratio: f64, _ramp: bool) -> ResampleResult<()> {
@@ -817,11 +820,13 @@ mod tests {
         let mut resampler = Fft::<f64>::new(44100, 48000, 4096, 4, 2, FixedSync::Output).unwrap();
         check_output!(resampler);
     }
+
     #[test]
     fn check_fft_fo_up_output() {
-        let mut resampler = Fft::<f64>::new(44100, 96000, 1024, 2, 2, FixedSync::Output).unwrap();
+        let mut resampler = Fft::<f64>::new(44100, 96000, 512, 2, 2, FixedSync::Output).unwrap();
         check_output!(resampler);
     }
+
     #[test]
     fn check_fft_fo_down_output() {
         let mut resampler = Fft::<f64>::new(96000, 44100, 1024, 2, 2, FixedSync::Output).unwrap();

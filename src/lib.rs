@@ -292,6 +292,9 @@ where
     /// If `ramp` is false, the new ratio will be applied from the start of the next chunk.
     fn set_resample_ratio(&mut self, new_ratio: f64, ramp: bool) -> ResampleResult<()>;
 
+    /// Get the current resample ratio, defined as output sample rate divided by input sample rate.
+    fn resample_ratio(&self) -> f64;
+
     /// Update the resample ratio as a factor relative to the original one.
     ///
     /// For asynchronous resamplers, the relative ratio must be within
@@ -468,55 +471,68 @@ pub mod tests {
     macro_rules! check_output {
         ($resampler:ident) => {
             let mut val = 0.0;
-            let mut prev_last = -0.1;
             let max_input_len = $resampler.input_frames_max();
             let max_output_len = $resampler.output_frames_max();
+            let ratio = $resampler.resample_ratio();
+            let mut delay = $resampler.output_delay();
+            let mut prev_last = -0.1 / ratio;
             for n in 0..50 {
-                let frames = $resampler.input_frames_next();
+                let frames_in = $resampler.input_frames_next();
                 let frames_out = $resampler.output_frames_next();
                 // Check that lengths are within the reported max values
-                assert!(frames <= max_input_len);
+                assert!(frames_in <= max_input_len);
                 assert!(frames_out <= max_output_len);
-                let mut waves = vec![vec![0.0f64; frames]; 2];
-                for m in 0..frames {
+                let mut waves = vec![vec![0.0f64; frames_in]; 2];
+                for m in 0..frames_in {
                     for ch in 0..2 {
                         waves[ch][m] = val;
                     }
                     val = val + 0.1;
                 }
-                let input = SequentialSliceOfVecs::new(&waves, 2, frames).unwrap();
+                let input = SequentialSliceOfVecs::new(&waves, 2, frames_in).unwrap();
                 let mut waves_out = vec![vec![0.0f64; frames_out]; 2];
                 let mut output = SequentialSliceOfVecs::new_mut(&mut waves_out, 2, frames_out).unwrap();
         
                 let (_input_frames, output_frames) = $resampler.process_into_buffer(&input, &mut output, None).unwrap();
             
                 for ch in 0..2 {
+                    let diff = waves_out[ch][0] - prev_last;
                     assert!(
-                        waves_out[ch][0] > prev_last,
+                        diff < 0.125/ratio && diff > 0.075/ratio,
                         "Iteration {}, first value {} prev last value {}",
                         n,
                         waves_out[ch][0],
                         prev_last
                     );
-                    let expected_diff = frames as f64 * 0.1;
-                    let diff = waves_out[ch][output_frames - 1] - waves_out[ch][0];
+                    let expected_diff = (frames_out - delay) as f64 * 0.1 / ratio;
+                    let first = waves_out[ch][0];
+                    let last = waves_out[ch][output_frames - 1];
+                    let diff = last - first;
                     assert!(
-                        diff < 1.5 * expected_diff && diff > 0.25 * expected_diff,
+                        diff < 1.1 * expected_diff && diff > 0.9 * expected_diff,
                         "Iteration {}, last value {} first value {}, diff {}, expected {}",
                         n,
-                        waves_out[ch][output_frames - 1],
-                        waves_out[ch][0],
+                        last,
+                        first,
                         diff,
                         expected_diff,
                     );
                 }
+
                 prev_last = waves_out[0][output_frames - 1];
                 for m in 0..output_frames - 1 {
+                    let (upper, lower) = if m < delay {
+                        // beginning of first iteration, allow a larger range here
+                        (0.2/ratio, -0.2/ratio)
+                    }
+                    else {
+                        (0.125/ratio, 0.075/ratio)
+                    };
                     for ch in 0..2 {
                         let diff = waves_out[ch][m + 1] - waves_out[ch][m];
                         assert!(
-                            diff < 0.5 && diff > -0.05,
-                            "Frame {}:{} next value {} value {}",
+                            diff < upper && diff > lower,
+                            "Too large diff, frame {}:{} next value {} value {}",
                             n,
                             m,
                             waves_out[ch][m + 1],
@@ -524,6 +540,8 @@ pub mod tests {
                         );
                     }
                 }
+                // set delay to zero, the value is only needed for the first process call
+                delay = 0;
             }
         };
     }

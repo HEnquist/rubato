@@ -592,6 +592,10 @@ where
         }
     }
 
+    fn resample_ratio(&self) -> f64 {
+        self.resample_ratio
+    }
+
     fn set_resample_ratio_relative(&mut self, rel_ratio: f64, ramp: bool) -> ResampleResult<()> {
         let new_ratio = self.resample_ratio_original * rel_ratio;
         self.set_resample_ratio(new_ratio, ramp)
@@ -953,7 +957,7 @@ mod tests {
             FixedAsync::Output,
         )
         .unwrap();
-        assert_fo_len!(resampler, 1024, 140, 200, f64);
+        assert_fo_len!(resampler, 1024, 128, 300, f64);
         assert_fo_len!(resampler, 1024, 124, 131, f64);
     }
 
@@ -1403,7 +1407,7 @@ mod tests {
         };
         let mut resampler =
             Async::<f64>::new_sinc(8.0, 1.0, params, 1024, 2, FixedAsync::Output).unwrap();
-        assert_fo_len!(resampler, 1024, 140, 200, f64);
+        assert_fo_len!(resampler, 1024, 128, 300, f64);
         assert_fo_len!(resampler, 1024, 125, 131, f64);
     }
 
@@ -1517,8 +1521,8 @@ mod tests {
         let mut resampler =
             Async::<f64>::new_sinc(1.2, 1.0, params, 1024, 2, FixedAsync::Output).unwrap();
         assert_eq!(resampler.output_frames_next(), 1024);
-        resampler.set_chunk_size(256).unwrap();
-        assert_eq!(resampler.output_frames_next(), 256);
+        resampler.set_chunk_size(600).unwrap();
+        assert_eq!(resampler.output_frames_next(), 600);
         check_output!(resampler);
     }
 
@@ -1528,8 +1532,8 @@ mod tests {
         let mut resampler =
             Async::<f64>::new_sinc(1.2, 1.0, params, 1024, 2, FixedAsync::Input).unwrap();
         assert_eq!(resampler.input_frames_next(), 1024);
-        resampler.set_chunk_size(256).unwrap();
-        assert_eq!(resampler.input_frames_next(), 256);
+        resampler.set_chunk_size(600).unwrap();
+        assert_eq!(resampler.input_frames_next(), 600);
         check_output!(resampler);
     }
 }
