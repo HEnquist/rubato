@@ -421,7 +421,11 @@ where
                 for (chan, active) in self.channel_mask.iter().enumerate() {
                     if *active {
                         buffer_in.write_from_channel_to_slice(chan, input_offset, &mut self.input_scratch[chan][self.saved_frames .. self.saved_frames + frames_to_read]);
-                        // TODO check partial_input_len and write zeros
+                        if frames_to_read < self.chunk_size_in {
+                            for value in self.input_scratch[chan][self.saved_frames + frames_to_read .. self.saved_frames + self.chunk_size_in].iter_mut() {
+                                *value = T::zero();
+                            }
+                        }
                     }
                 }
                 self.saved_frames = available_input_frames - input_frames_to_process;
@@ -434,7 +438,11 @@ where
                 for (chan, active) in self.channel_mask.iter().enumerate() {
                     if *active {
                         buffer_in.write_from_channel_to_slice(chan, input_offset, &mut self.input_scratch[chan][..frames_to_read]);
-                        // TODO check partial_input_len and write zeros
+                        if frames_to_read < self.chunk_size_in {
+                            for value in self.input_scratch[chan][frames_to_read .. self.chunk_size_in].iter_mut() {
+                                *value = T::zero();
+                            }
+                        }
                     }
                 }
                 (self.chunk_size_in/self.fft_size_in, self.saved_frames)
