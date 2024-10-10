@@ -10,7 +10,6 @@ keywords = ["interpolation", "resampling"]
 categories = ["multimedia::audio"]
 readme = "README.md"
 edition = "2021"
-autoexamples = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
