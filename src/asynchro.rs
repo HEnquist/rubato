@@ -1,14 +1,14 @@
+use audioadapter::{Adapter, AdapterMut};
 use std::fmt;
 use std::marker::PhantomData;
-use audioadapter::{Adapter, AdapterMut};
 
 use crate::asynchro_fast::{InnerPoly, PolynomialDegree};
-use crate::{Indexing, get_offsets, get_partial_len, update_mask};
 use crate::asynchro_sinc::{
     make_interpolator, InnerSinc, SincInterpolationParameters, SincInterpolationType,
 };
 use crate::error::{ResampleError, ResampleResult, ResamplerConstructionError};
 use crate::sinc_interpolator::SincInterpolator;
+use crate::{get_offsets, get_partial_len, update_mask, Indexing};
 use crate::{validate_buffers, Resampler, Sample};
 
 /// An enum for specifying which side of an asynchronous resampler should be fixed size.
@@ -453,7 +453,6 @@ where
         buffer_out: &mut dyn AdapterMut<'a, T>,
         indexing: Option<&Indexing>,
     ) -> ResampleResult<(usize, usize)> {
-
         // read the optional indexing struct
         update_mask(&indexing, &mut self.channel_mask);
         let (input_offset, output_offset) = get_offsets(&indexing);
@@ -462,8 +461,7 @@ where
         let partial_input_len = get_partial_len(&indexing);
         let frames_to_read = if let Some(frames) = partial_input_len {
             frames.min(self.needed_input_size)
-        }
-        else {
+        } else {
             self.needed_input_size
         };
 
@@ -495,11 +493,15 @@ where
 
         for (chan, active) in self.channel_mask.iter().enumerate() {
             if *active {
-                let slice = &mut self.buffer[chan][2 * interpolator_len..2 * interpolator_len + frames_to_read];
+                let slice = &mut self.buffer[chan]
+                    [2 * interpolator_len..2 * interpolator_len + frames_to_read];
                 buffer_in.write_from_channel_to_slice(chan, input_offset, slice);
                 // partial, write zeros to internal buffer
                 if frames_to_read < self.needed_input_size {
-                    for value in self.buffer[chan][2 * interpolator_len + frames_to_read .. 2 * interpolator_len + self.needed_input_size].iter_mut() {
+                    for value in self.buffer[chan][2 * interpolator_len + frames_to_read
+                        ..2 * interpolator_len + self.needed_input_size]
+                        .iter_mut()
+                    {
                         *value = T::zero();
                     }
                 }
@@ -628,10 +630,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::PolynomialDegree;
-    use crate::Resampler;
     use crate::check_output;
     use crate::check_ratio;
+    use crate::PolynomialDegree;
+    use crate::Resampler;
     use crate::{Async, FixedAsync};
     use rand::Rng;
     use test_log::test;
@@ -641,28 +643,34 @@ mod tests {
             let max_frames_out = $resampler.output_frames_max();
             let nbr_frames_in_next = $resampler.input_frames_next();
             let nbr_frames_in_max = $resampler.input_frames_max();
-            assert_eq!(nbr_frames_in_next, $chunksize, "expected {} for next input samples, got {}",
-                $chunksize,
-                nbr_frames_in_next);
-            assert_eq!(nbr_frames_in_next, $chunksize, "expected {} for max input samples, got {}",
-                $chunksize,
-                nbr_frames_in_max);
+            assert_eq!(
+                nbr_frames_in_next, $chunksize,
+                "expected {} for next input samples, got {}",
+                $chunksize, nbr_frames_in_next
+            );
+            assert_eq!(
+                nbr_frames_in_next, $chunksize,
+                "expected {} for max input samples, got {}",
+                $chunksize, nbr_frames_in_max
+            );
 
             let waves_in = vec![vec![0.0 as $fty; $chunksize]; 2];
             let mut waves_out = vec![vec![0.0 as $fty; max_frames_out]; 2];
 
             let input = SequentialSliceOfVecs::new(&waves_in, 2, $chunksize).unwrap();
-            let mut output = SequentialSliceOfVecs::new_mut(&mut waves_out, 2, max_frames_out).unwrap();
+            let mut output =
+                SequentialSliceOfVecs::new_mut(&mut waves_out, 2, max_frames_out).unwrap();
 
-            let (frames_in, frames_out) = $resampler.process_into_buffer(&input, &mut output, None).unwrap();
+            let (frames_in, frames_out) = $resampler
+                .process_into_buffer(&input, &mut output, None)
+                .unwrap();
             assert_eq!(
                 frames_in, $chunksize,
                 "expected {} input samples, got {}",
-                $chunksize,
-                frames_in
+                $chunksize, frames_in
             );
             assert!(
-            frames_out > $out_lower && frames_out < $out_upper,
+                frames_out > $out_lower && frames_out < $out_upper,
                 "expected {} - {} output samples, got {}",
                 $out_lower,
                 $out_upper,
@@ -676,12 +684,16 @@ mod tests {
             let max_frames_in = $resampler.input_frames_max();
             let nbr_frames_out_next = $resampler.output_frames_next();
             let nbr_frames_out_max = $resampler.output_frames_max();
-            assert_eq!(nbr_frames_out_next, $chunksize, "expected {} for next output samples, got {}",
-                $chunksize,
-                nbr_frames_out_next);
-            assert_eq!(nbr_frames_out_next, $chunksize, "expected {} for max output samples, got {}",
-                $chunksize,
-                nbr_frames_out_max);
+            assert_eq!(
+                nbr_frames_out_next, $chunksize,
+                "expected {} for next output samples, got {}",
+                $chunksize, nbr_frames_out_next
+            );
+            assert_eq!(
+                nbr_frames_out_next, $chunksize,
+                "expected {} for max output samples, got {}",
+                $chunksize, nbr_frames_out_max
+            );
 
             let waves_in = vec![vec![0.0 as $fty; max_frames_in]; 2];
             let mut waves_out = vec![vec![0.0 as $fty; $chunksize]; 2];
@@ -689,15 +701,16 @@ mod tests {
             let input = SequentialSliceOfVecs::new(&waves_in, 2, max_frames_in).unwrap();
             let mut output = SequentialSliceOfVecs::new_mut(&mut waves_out, 2, $chunksize).unwrap();
 
-            let (frames_in, frames_out) = $resampler.process_into_buffer(&input, &mut output, None).unwrap();
+            let (frames_in, frames_out) = $resampler
+                .process_into_buffer(&input, &mut output, None)
+                .unwrap();
             assert_eq!(
                 frames_out, $chunksize,
                 "expected {} output samples, got {}",
-                $chunksize,
-                frames_out
+                $chunksize, frames_out
             );
             assert!(
-            frames_in > $in_lower && frames_in < $in_upper,
+                frames_in > $in_lower && frames_in < $in_upper,
                 "expected {} - {} input samples, got {}",
                 $in_lower,
                 $in_upper,
@@ -705,7 +718,7 @@ mod tests {
             );
         };
     }
-    
+
     #[test]
     fn make_poly_resampler_fi() {
         let mut resampler = Async::<f64>::new_poly(
@@ -721,32 +734,32 @@ mod tests {
         assert_fi_len!(resampler, 1024, 1226, 1232, f64);
     }
     /*
-    #[test]
-    fn reset_poly_resampler_fi() {
-        let mut resampler = Async::<f64>::new_poly(
-            1.2,
-            1.0,
-            PolynomialDegree::Cubic,
-            1024,
-            2,
-            FixedAsync::Input,
-        )
-        .unwrap();
+        #[test]
+        fn reset_poly_resampler_fi() {
+            let mut resampler = Async::<f64>::new_poly(
+                1.2,
+                1.0,
+                PolynomialDegree::Cubic,
+                1024,
+                2,
+                FixedAsync::Input,
+            )
+            .unwrap();
 
-        let mut rng = rand::thread_rng();
-        let mut waves = vec![vec![0.0f64; 1024]; 2];
-        waves
-            .iter_mut()
-            .for_each(|ch| ch.iter_mut().for_each(|s| *s = rng.gen()));
-        let out1 = resampler.process(&waves, None).unwrap();
-        resampler.reset();
-        let out2 = resampler.process(&waves, None).unwrap();
-        assert_eq!(
-            out1, out2,
-            "Resampler gives different output when new and after a reset."
-        );
-    }
-*/
+            let mut rng = rand::thread_rng();
+            let mut waves = vec![vec![0.0f64; 1024]; 2];
+            waves
+                .iter_mut()
+                .for_each(|ch| ch.iter_mut().for_each(|s| *s = rng.gen()));
+            let out1 = resampler.process(&waves, None).unwrap();
+            resampler.reset();
+            let out2 = resampler.process(&waves, None).unwrap();
+            assert_eq!(
+                out1, out2,
+                "Resampler gives different output when new and after a reset."
+            );
+        }
+    */
     #[test]
     fn make_poly_resampler_fi_32() {
         let mut resampler = Async::<f32>::new_poly(
@@ -761,7 +774,7 @@ mod tests {
         assert_fi_len!(resampler, 1024, 1150, 1229, f32);
         assert_fi_len!(resampler, 1024, 1226, 1232, f32);
     }
-/*
+    /*
     #[test]
     fn make_poly_resampler_fi_skipped() {
         let mut resampler = Async::<f64>::new_poly(
@@ -818,119 +831,119 @@ mod tests {
         assert_fi_len!(resampler, 1024, 3800, 4458, f64);
         assert_fi_len!(resampler, 1024, 4455, 4461, f64);
     }
-/*
-    #[test]
-    fn make_poly_resampler_fo() {
-        let mut resampler = Async::<f64>::new_poly(
-            1.2,
-            1.0,
-            PolynomialDegree::Cubic,
-            1024,
-            2,
-            FixedAsync::Output,
-        )
-        .unwrap();
-        let frames = resampler.input_frames_next();
-        println!("{}", frames);
-        assert!(frames > 800 && frames < 900);
-        let waves = vec![vec![0.0f64; frames]; 2];
-        let out = resampler.process(&waves, None).unwrap();
-        assert_eq!(out.len(), 2);
-        assert_eq!(out[0].len(), 1024);
-    }
+    /*
+        #[test]
+        fn make_poly_resampler_fo() {
+            let mut resampler = Async::<f64>::new_poly(
+                1.2,
+                1.0,
+                PolynomialDegree::Cubic,
+                1024,
+                2,
+                FixedAsync::Output,
+            )
+            .unwrap();
+            let frames = resampler.input_frames_next();
+            println!("{}", frames);
+            assert!(frames > 800 && frames < 900);
+            let waves = vec![vec![0.0f64; frames]; 2];
+            let out = resampler.process(&waves, None).unwrap();
+            assert_eq!(out.len(), 2);
+            assert_eq!(out[0].len(), 1024);
+        }
 
-    #[test]
-    fn reset_poly_resampler_fo() {
-        let mut resampler = Async::<f64>::new_poly(
-            1.2,
-            1.0,
-            PolynomialDegree::Cubic,
-            1024,
-            2,
-            FixedAsync::Output,
-        )
-        .unwrap();
-        let frames = resampler.input_frames_next();
+        #[test]
+        fn reset_poly_resampler_fo() {
+            let mut resampler = Async::<f64>::new_poly(
+                1.2,
+                1.0,
+                PolynomialDegree::Cubic,
+                1024,
+                2,
+                FixedAsync::Output,
+            )
+            .unwrap();
+            let frames = resampler.input_frames_next();
 
-        let mut rng = rand::thread_rng();
-        let mut waves = vec![vec![0.0f64; frames]; 2];
-        waves
-            .iter_mut()
-            .for_each(|ch| ch.iter_mut().for_each(|s| *s = rng.gen()));
-        let out1 = resampler.process(&waves, None).unwrap();
-        resampler.reset();
-        assert_eq!(
-            frames,
-            resampler.input_frames_next(),
-            "Resampler requires different number of frames when new and after a reset."
-        );
-        let out2 = resampler.process(&waves, None).unwrap();
-        assert_eq!(
-            out1, out2,
-            "Resampler gives different output when new and after a reset."
-        );
-    }
+            let mut rng = rand::thread_rng();
+            let mut waves = vec![vec![0.0f64; frames]; 2];
+            waves
+                .iter_mut()
+                .for_each(|ch| ch.iter_mut().for_each(|s| *s = rng.gen()));
+            let out1 = resampler.process(&waves, None).unwrap();
+            resampler.reset();
+            assert_eq!(
+                frames,
+                resampler.input_frames_next(),
+                "Resampler requires different number of frames when new and after a reset."
+            );
+            let out2 = resampler.process(&waves, None).unwrap();
+            assert_eq!(
+                out1, out2,
+                "Resampler gives different output when new and after a reset."
+            );
+        }
 
-    #[test]
-    fn make_poly_resampler_fo_32() {
-        let mut resampler = Async::<f32>::new_poly(
-            1.2,
-            1.0,
-            PolynomialDegree::Cubic,
-            1024,
-            2,
-            FixedAsync::Output,
-        )
-        .unwrap();
-        let frames = resampler.input_frames_next();
-        println!("{}", frames);
-        assert!(frames > 800 && frames < 900);
-        let waves = vec![vec![0.0f32; frames]; 2];
-        let out = resampler.process(&waves, None).unwrap();
-        assert_eq!(out.len(), 2);
-        assert_eq!(out[0].len(), 1024);
-    }
+        #[test]
+        fn make_poly_resampler_fo_32() {
+            let mut resampler = Async::<f32>::new_poly(
+                1.2,
+                1.0,
+                PolynomialDegree::Cubic,
+                1024,
+                2,
+                FixedAsync::Output,
+            )
+            .unwrap();
+            let frames = resampler.input_frames_next();
+            println!("{}", frames);
+            assert!(frames > 800 && frames < 900);
+            let waves = vec![vec![0.0f32; frames]; 2];
+            let out = resampler.process(&waves, None).unwrap();
+            assert_eq!(out.len(), 2);
+            assert_eq!(out[0].len(), 1024);
+        }
 
-    #[test]
-    fn make_poly_resampler_fo_skipped() {
-        let mut resampler = Async::<f64>::new_poly(
-            1.2,
-            1.0,
-            PolynomialDegree::Cubic,
-            1024,
-            2,
-            FixedAsync::Output,
-        )
-        .unwrap();
-        let frames = resampler.input_frames_next();
-        println!("{}", frames);
-        assert!(frames > 800 && frames < 900);
-        let mut waves = vec![vec![0.0f64; frames], Vec::new()];
-        let mask = vec![true, false];
-        waves[0][100] = 3.0;
-        let out = resampler.process(&waves, Some(&mask)).unwrap();
-        assert_eq!(out.len(), 2);
-        assert_eq!(out[0].len(), 1024);
-        assert!(out[1].is_empty());
-        println!("{:?}", out[0]);
-        let summed = out[0].iter().sum::<f64>();
-        println!("sum: {}", summed);
-        assert!(summed < 4.0);
-        assert!(summed > 2.0);
+        #[test]
+        fn make_poly_resampler_fo_skipped() {
+            let mut resampler = Async::<f64>::new_poly(
+                1.2,
+                1.0,
+                PolynomialDegree::Cubic,
+                1024,
+                2,
+                FixedAsync::Output,
+            )
+            .unwrap();
+            let frames = resampler.input_frames_next();
+            println!("{}", frames);
+            assert!(frames > 800 && frames < 900);
+            let mut waves = vec![vec![0.0f64; frames], Vec::new()];
+            let mask = vec![true, false];
+            waves[0][100] = 3.0;
+            let out = resampler.process(&waves, Some(&mask)).unwrap();
+            assert_eq!(out.len(), 2);
+            assert_eq!(out[0].len(), 1024);
+            assert!(out[1].is_empty());
+            println!("{:?}", out[0]);
+            let summed = out[0].iter().sum::<f64>();
+            println!("sum: {}", summed);
+            assert!(summed < 4.0);
+            assert!(summed > 2.0);
 
-        let frames = resampler.input_frames_next();
-        let mut waves = vec![Vec::new(), vec![0.0f64; frames]];
-        let mask = vec![false, true];
-        waves[1][10] = 3.0;
-        let out = resampler.process(&waves, Some(&mask)).unwrap();
-        assert_eq!(out.len(), 2);
-        assert_eq!(out[1].len(), 1024);
-        assert!(out[0].is_empty());
-        let summed = out[1].iter().sum::<f64>();
-        assert!(summed < 4.0);
-        assert!(summed > 2.0);
-    }
-*/
+            let frames = resampler.input_frames_next();
+            let mut waves = vec![Vec::new(), vec![0.0f64; frames]];
+            let mask = vec![false, true];
+            waves[1][10] = 3.0;
+            let out = resampler.process(&waves, Some(&mask)).unwrap();
+            assert_eq!(out.len(), 2);
+            assert_eq!(out[1].len(), 1024);
+            assert!(out[0].is_empty());
+            let summed = out[1].iter().sum::<f64>();
+            assert!(summed < 4.0);
+            assert!(summed > 2.0);
+        }
+    */
     #[test]
     fn make_poly_resampler_fo_downsample() {
         let mut resampler = Async::<f64>::new_poly(
@@ -1017,7 +1030,6 @@ mod tests {
         check_output!(resampler);
     }
 
-
     #[test]
     fn resample_poly_small_fo_up() {
         let ratio = 96000.0 / 44100.0;
@@ -1032,7 +1044,6 @@ mod tests {
         .unwrap();
         check_ratio!(resampler, ratio, 1000000, f32);
     }
-
 
     #[test]
     fn resample_poly_big_fo_up() {
@@ -1138,46 +1149,46 @@ mod tests {
         .unwrap();
         check_ratio!(resampler, ratio, 1000, f32);
     }
-/*
-    #[test]
-    fn check_poly_fo_output_resize() {
-        let mut resampler = Async::<f64>::new_poly(
-            1.2,
-            100.0,
-            PolynomialDegree::Cubic,
-            1024,
-            2,
-            FixedAsync::Output,
-        )
-        .unwrap();
-        assert_eq!(resampler.output_frames_next(), 1024);
-        resampler.set_chunk_size(256).unwrap();
-        assert_eq!(resampler.output_frames_next(), 256);
-        check_output!(resampler);
-    }
+    /*
+        #[test]
+        fn check_poly_fo_output_resize() {
+            let mut resampler = Async::<f64>::new_poly(
+                1.2,
+                100.0,
+                PolynomialDegree::Cubic,
+                1024,
+                2,
+                FixedAsync::Output,
+            )
+            .unwrap();
+            assert_eq!(resampler.output_frames_next(), 1024);
+            resampler.set_chunk_size(256).unwrap();
+            assert_eq!(resampler.output_frames_next(), 256);
+            check_output!(resampler);
+        }
 
-    #[test]
-    fn check_poly_fi_output_resize() {
-        let mut resampler = Async::<f64>::new_poly(
-            1.2,
-            100.0,
-            PolynomialDegree::Cubic,
-            1024,
-            2,
-            FixedAsync::Input,
-        )
-        .unwrap();
-        assert_eq!(resampler.input_frames_next(), 1024);
-        resampler.set_chunk_size(256).unwrap();
-        assert_eq!(resampler.input_frames_next(), 256);
-        check_output!(resampler);
-    }
-*/
+        #[test]
+        fn check_poly_fi_output_resize() {
+            let mut resampler = Async::<f64>::new_poly(
+                1.2,
+                100.0,
+                PolynomialDegree::Cubic,
+                1024,
+                2,
+                FixedAsync::Input,
+            )
+            .unwrap();
+            assert_eq!(resampler.input_frames_next(), 1024);
+            resampler.set_chunk_size(256).unwrap();
+            assert_eq!(resampler.input_frames_next(), 256);
+            check_output!(resampler);
+        }
+    */
     // ------ Sinc tests ------
-    use audioadapter::direct::SequentialSliceOfVecs;
     use crate::SincInterpolationParameters;
     use crate::SincInterpolationType;
     use crate::WindowFunction;
+    use audioadapter::direct::SequentialSliceOfVecs;
 
     fn basic_params() -> SincInterpolationParameters {
         SincInterpolationParameters {
@@ -1197,27 +1208,27 @@ mod tests {
         assert_fi_len!(resampler, 1024, 1150, 1229, f64);
         assert_fi_len!(resampler, 1024, 1226, 1232, f64);
     }
-/*
-    #[test]
-    fn reset_sinc_resampler_fi() {
-        let params = basic_params();
-        let mut resampler =
-            Async::<f64>::new_sinc(1.2, 1.0, params, 1024, 2, FixedAsync::Input).unwrap();
+    /*
+        #[test]
+        fn reset_sinc_resampler_fi() {
+            let params = basic_params();
+            let mut resampler =
+                Async::<f64>::new_sinc(1.2, 1.0, params, 1024, 2, FixedAsync::Input).unwrap();
 
-        let mut rng = rand::thread_rng();
-        let mut waves = vec![vec![0.0f64; 1024]; 2];
-        waves
-            .iter_mut()
-            .for_each(|ch| ch.iter_mut().for_each(|s| *s = rng.gen()));
-        let out1 = resampler.process(&waves, None).unwrap();
-        resampler.reset();
-        let out2 = resampler.process(&waves, None).unwrap();
-        assert_eq!(
-            out1, out2,
-            "Resampler gives different output when new and after a reset."
-        );
-    }
-*/
+            let mut rng = rand::thread_rng();
+            let mut waves = vec![vec![0.0f64; 1024]; 2];
+            waves
+                .iter_mut()
+                .for_each(|ch| ch.iter_mut().for_each(|s| *s = rng.gen()));
+            let out1 = resampler.process(&waves, None).unwrap();
+            resampler.reset();
+            let out2 = resampler.process(&waves, None).unwrap();
+            assert_eq!(
+                out1, out2,
+                "Resampler gives different output when new and after a reset."
+            );
+        }
+    */
     #[test]
     fn make_sinc_resampler_fi_32() {
         let params = basic_params();
@@ -1226,7 +1237,7 @@ mod tests {
         assert_fi_len!(resampler, 1024, 1150, 1229, f32);
         assert_fi_len!(resampler, 1024, 1226, 1232, f32);
     }
-/*
+    /*
     #[test]
     fn make_sinc_resampler_fi_skipped() {
         let params = basic_params();
@@ -1292,95 +1303,95 @@ mod tests {
         assert_fi_len!(resampler, 1024, 3800, 4458, f64);
         assert_fi_len!(resampler, 1024, 4455, 4461, f64);
     }
-/* 
-    #[test]
-    fn make_sinc_resampler_fo() {
-        let params = basic_params();
-        let mut resampler =
-            Async::<f64>::new_sinc(1.2, 1.0, params, 1024, 2, FixedAsync::Output).unwrap();
-        let frames = resampler.input_frames_next();
-        println!("{}", frames);
-        assert!(frames > 800 && frames < 900);
-        let waves = vec![vec![0.0f64; frames]; 2];
-        let out = resampler.process(&waves, None).unwrap();
-        assert_eq!(out.len(), 2);
-        assert_eq!(out[0].len(), 1024);
-    }
+    /*
+        #[test]
+        fn make_sinc_resampler_fo() {
+            let params = basic_params();
+            let mut resampler =
+                Async::<f64>::new_sinc(1.2, 1.0, params, 1024, 2, FixedAsync::Output).unwrap();
+            let frames = resampler.input_frames_next();
+            println!("{}", frames);
+            assert!(frames > 800 && frames < 900);
+            let waves = vec![vec![0.0f64; frames]; 2];
+            let out = resampler.process(&waves, None).unwrap();
+            assert_eq!(out.len(), 2);
+            assert_eq!(out[0].len(), 1024);
+        }
 
-    #[test]
-    fn reset_sinc_resampler_fo() {
-        let params = basic_params();
-        let mut resampler =
-            Async::<f64>::new_sinc(1.2, 1.0, params, 1024, 2, FixedAsync::Output).unwrap();
-        let frames = resampler.input_frames_next();
+        #[test]
+        fn reset_sinc_resampler_fo() {
+            let params = basic_params();
+            let mut resampler =
+                Async::<f64>::new_sinc(1.2, 1.0, params, 1024, 2, FixedAsync::Output).unwrap();
+            let frames = resampler.input_frames_next();
 
-        let mut rng = rand::thread_rng();
-        let mut waves = vec![vec![0.0f64; frames]; 2];
-        waves
-            .iter_mut()
-            .for_each(|ch| ch.iter_mut().for_each(|s| *s = rng.gen()));
-        let out1 = resampler.process(&waves, None).unwrap();
-        resampler.reset();
-        assert_eq!(
-            frames,
-            resampler.input_frames_next(),
-            "Resampler requires different number of frames when new and after a reset."
-        );
-        let out2 = resampler.process(&waves, None).unwrap();
-        assert_eq!(
-            out1, out2,
-            "Resampler gives different output when new and after a reset."
-        );
-    }
+            let mut rng = rand::thread_rng();
+            let mut waves = vec![vec![0.0f64; frames]; 2];
+            waves
+                .iter_mut()
+                .for_each(|ch| ch.iter_mut().for_each(|s| *s = rng.gen()));
+            let out1 = resampler.process(&waves, None).unwrap();
+            resampler.reset();
+            assert_eq!(
+                frames,
+                resampler.input_frames_next(),
+                "Resampler requires different number of frames when new and after a reset."
+            );
+            let out2 = resampler.process(&waves, None).unwrap();
+            assert_eq!(
+                out1, out2,
+                "Resampler gives different output when new and after a reset."
+            );
+        }
 
-    #[test]
-    fn make_sinc_resampler_fo_32() {
-        let params = basic_params();
-        let mut resampler =
-            Async::<f32>::new_sinc(1.2, 1.0, params, 1024, 2, FixedAsync::Output).unwrap();
-        let frames = resampler.input_frames_next();
-        println!("{}", frames);
-        assert!(frames > 800 && frames < 900);
-        let waves = vec![vec![0.0f32; frames]; 2];
-        let out = resampler.process(&waves, None).unwrap();
-        assert_eq!(out.len(), 2);
-        assert_eq!(out[0].len(), 1024);
-    }
+        #[test]
+        fn make_sinc_resampler_fo_32() {
+            let params = basic_params();
+            let mut resampler =
+                Async::<f32>::new_sinc(1.2, 1.0, params, 1024, 2, FixedAsync::Output).unwrap();
+            let frames = resampler.input_frames_next();
+            println!("{}", frames);
+            assert!(frames > 800 && frames < 900);
+            let waves = vec![vec![0.0f32; frames]; 2];
+            let out = resampler.process(&waves, None).unwrap();
+            assert_eq!(out.len(), 2);
+            assert_eq!(out[0].len(), 1024);
+        }
 
-    #[test]
-    fn make_sinc_resampler_fo_skipped() {
-        let params = basic_params();
-        let mut resampler =
-            Async::<f64>::new_sinc(1.2, 1.0, params, 1024, 2, FixedAsync::Output).unwrap();
-        let frames = resampler.input_frames_next();
-        println!("{}", frames);
-        assert!(frames > 800 && frames < 900);
-        let mut waves = vec![vec![0.0f64; frames], Vec::new()];
-        let mask = vec![true, false];
-        waves[0][100] = 3.0;
-        let out = resampler.process(&waves, Some(&mask)).unwrap();
-        assert_eq!(out.len(), 2);
-        assert_eq!(out[0].len(), 1024);
-        assert!(out[1].is_empty());
-        println!("{:?}", out[0]);
-        let summed = out[0].iter().sum::<f64>();
-        println!("sum: {}", summed);
-        assert!(summed < 4.0);
-        assert!(summed > 2.0);
+        #[test]
+        fn make_sinc_resampler_fo_skipped() {
+            let params = basic_params();
+            let mut resampler =
+                Async::<f64>::new_sinc(1.2, 1.0, params, 1024, 2, FixedAsync::Output).unwrap();
+            let frames = resampler.input_frames_next();
+            println!("{}", frames);
+            assert!(frames > 800 && frames < 900);
+            let mut waves = vec![vec![0.0f64; frames], Vec::new()];
+            let mask = vec![true, false];
+            waves[0][100] = 3.0;
+            let out = resampler.process(&waves, Some(&mask)).unwrap();
+            assert_eq!(out.len(), 2);
+            assert_eq!(out[0].len(), 1024);
+            assert!(out[1].is_empty());
+            println!("{:?}", out[0]);
+            let summed = out[0].iter().sum::<f64>();
+            println!("sum: {}", summed);
+            assert!(summed < 4.0);
+            assert!(summed > 2.0);
 
-        let frames = resampler.input_frames_next();
-        let mut waves = vec![Vec::new(), vec![0.0f64; frames]];
-        let mask = vec![false, true];
-        waves[1][10] = 3.0;
-        let out = resampler.process(&waves, Some(&mask)).unwrap();
-        assert_eq!(out.len(), 2);
-        assert_eq!(out[1].len(), 1024);
-        assert!(out[0].is_empty());
-        let summed = out[1].iter().sum::<f64>();
-        assert!(summed < 4.0);
-        assert!(summed > 2.0);
-    }
-*/
+            let frames = resampler.input_frames_next();
+            let mut waves = vec![Vec::new(), vec![0.0f64; frames]];
+            let mask = vec![false, true];
+            waves[1][10] = 3.0;
+            let out = resampler.process(&waves, Some(&mask)).unwrap();
+            assert_eq!(out.len(), 2);
+            assert_eq!(out[1].len(), 1024);
+            assert!(out[0].is_empty());
+            let summed = out[1].iter().sum::<f64>();
+            assert!(summed < 4.0);
+            assert!(summed > 2.0);
+        }
+    */
     #[test]
     fn make_sinc_resampler_fo_downsample() {
         let params = SincInterpolationParameters {

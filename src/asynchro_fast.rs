@@ -1,6 +1,6 @@
-use audioadapter::AdapterMut;
 use crate::asynchro::InnerResampler;
 use crate::Sample;
+use audioadapter::AdapterMut;
 use std::marker::PhantomData;
 
 macro_rules! t {
@@ -175,7 +175,11 @@ where
                                     (start_idx + 2 * interpolator_len as isize) as usize
                                         ..(start_idx + 2 * interpolator_len as isize + 8) as usize,
                                 );
-                                wave_out.write_sample_unchecked(chan, frame + output_offset, &interp_septic(frac_offset, buf));
+                                wave_out.write_sample_unchecked(
+                                    chan,
+                                    frame + output_offset,
+                                    &interp_septic(frac_offset, buf),
+                                );
                             }
                         }
                     }
@@ -196,7 +200,11 @@ where
                                     (start_idx + 2 * interpolator_len as isize) as usize
                                         ..(start_idx + 2 * interpolator_len as isize + 6) as usize,
                                 );
-                                wave_out.write_sample_unchecked(chan, frame + output_offset, &interp_quintic(frac_offset, buf));
+                                wave_out.write_sample_unchecked(
+                                    chan,
+                                    frame + output_offset,
+                                    &interp_quintic(frac_offset, buf),
+                                );
                             }
                         }
                     }
@@ -217,7 +225,11 @@ where
                                     (start_idx + 2 * interpolator_len as isize) as usize
                                         ..(start_idx + 2 * interpolator_len as isize + 4) as usize,
                                 );
-                                wave_out.write_sample_unchecked(chan, frame + output_offset, &interp_cubic(frac_offset, buf));
+                                wave_out.write_sample_unchecked(
+                                    chan,
+                                    frame + output_offset,
+                                    &interp_cubic(frac_offset, buf),
+                                );
                             }
                         }
                     }
@@ -238,7 +250,11 @@ where
                                     (start_idx + 2 * interpolator_len as isize) as usize
                                         ..(start_idx + 2 * interpolator_len as isize + 2) as usize,
                                 );
-                                wave_out.write_sample_unchecked(chan, frame + output_offset, &interp_lin(frac_offset, buf));
+                                wave_out.write_sample_unchecked(
+                                    chan,
+                                    frame + output_offset,
+                                    &interp_lin(frac_offset, buf),
+                                );
                             }
                         }
                     }

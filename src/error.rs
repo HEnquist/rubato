@@ -195,20 +195,14 @@ impl fmt::Display for ResampleError {
                     actual, expected
                 )
             }
-            Self::InsufficientInputBufferSize {
-                expected,
-                actual,
-            } => {
+            Self::InsufficientInputBufferSize { expected, actual } => {
                 write!(
                     f,
                     "Insufficient buffer size {}, expected {} frames",
                     actual, expected
                 )
             }
-            Self::InsufficientOutputBufferSize {
-                expected,
-                actual,
-            } => {
+            Self::InsufficientOutputBufferSize { expected, actual } => {
                 write!(
                     f,
                     "Insufficient buffer size {}, expected {} frames",

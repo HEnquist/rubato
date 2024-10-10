@@ -1,4 +1,3 @@
-use audioadapter::AdapterMut;
 use crate::asynchro::InnerResampler;
 use crate::interpolation::*;
 #[cfg(target_arch = "x86_64")]
@@ -10,6 +9,7 @@ use crate::sinc_interpolator::sinc_interpolator_sse::SseInterpolator;
 use crate::sinc_interpolator::{ScalarInterpolator, SincInterpolator};
 use crate::windows::WindowFunction;
 use crate::Sample;
+use audioadapter::AdapterMut;
 
 macro_rules! t {
     // Shorter form of T::coerce(value)
@@ -206,7 +206,11 @@ where
                                     n.1 as usize,
                                 );
                             }
-                            wave_out.write_sample(chan, frame + output_offset, &interp_cubic(frac_offset, &points));
+                            wave_out.write_sample(
+                                chan,
+                                frame + output_offset,
+                                &interp_cubic(frac_offset, &points),
+                            );
                         }
                     }
                 }
@@ -232,7 +236,11 @@ where
                                     n.1 as usize,
                                 );
                             }
-                            wave_out.write_sample(chan, frame + output_offset, &interp_quad(frac_offset, &points));
+                            wave_out.write_sample(
+                                chan,
+                                frame + output_offset,
+                                &interp_quad(frac_offset, &points),
+                            );
                         }
                     }
                 }
@@ -258,7 +266,11 @@ where
                                     n.1 as usize,
                                 );
                             }
-                            wave_out.write_sample(chan, frame + output_offset, &interp_lin(frac_offset, &points));
+                            wave_out.write_sample(
+                                chan,
+                                frame + output_offset,
+                                &interp_lin(frac_offset, &points),
+                            );
                         }
                     }
                 }

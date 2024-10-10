@@ -69,7 +69,10 @@ pub struct Indexing {
 }
 
 pub(crate) fn get_offsets(indexing: &Option<&Indexing>) -> (usize, usize) {
-    indexing.as_ref().map(|idx| (idx.input_offset, idx.output_offset)).unwrap_or((0, 0))
+    indexing
+        .as_ref()
+        .map(|idx| (idx.input_offset, idx.output_offset))
+        .unwrap_or((0, 0))
 }
 
 pub(crate) fn get_partial_len(indexing: &Option<&Indexing>) -> Option<usize> {
@@ -86,8 +89,6 @@ pub(crate) fn update_mask(indexing: &Option<&Indexing>, mask: &mut [bool]) {
     }
     mask.iter_mut().for_each(|v| *v = true);
 }
-
-
 
 /// A resampler that is used to resample a chunk of audio to a new sample rate.
 /// For asynchronous resamplers, the rate can be adjusted as required.
@@ -328,7 +329,6 @@ where
     }
 }
 
-
 pub(crate) fn validate_buffers<'a, T: 'a>(
     wave_in: &dyn Adapter<'a, T>,
     wave_out: &dyn AdapterMut<'a, T>,
@@ -414,9 +414,11 @@ pub mod tests {
     #[cfg(feature = "fft_resampler")]
     //use crate::Fft;
     use crate::{buffer_capacity, buffer_length, make_buffer, resize_buffer, Resampler};
-    use crate::{Async, FixedAsync, SincInterpolationParameters, SincInterpolationType, WindowFunction}; //, PolynomialDegree};
-    use test_log::test;
+    use crate::{
+        Async, FixedAsync, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+    }; //, PolynomialDegree};
     use audioadapter::direct::SequentialSliceOfVecs;
+    use test_log::test;
 
     // This tests that a Resampler can be boxed.
     #[test]
@@ -447,7 +449,11 @@ pub mod tests {
         let _ = process_with_boxed(&mut boxed, &input, &mut output);
     }
 
-    fn process_with_boxed<'a>(resampler: &mut Box<dyn Resampler<f64>>, input: &SequentialSliceOfVecs<&'a [Vec<f64>]>, output: &mut SequentialSliceOfVecs<&'a mut [Vec<f64>]>) {
+    fn process_with_boxed<'a>(
+        resampler: &mut Box<dyn Resampler<f64>>,
+        input: &SequentialSliceOfVecs<&'a [Vec<f64>]>,
+        output: &mut SequentialSliceOfVecs<&'a mut [Vec<f64>]>,
+    ) {
         resampler.process_into_buffer(input, output, None).unwrap();
     }
 
@@ -491,14 +497,17 @@ pub mod tests {
                 }
                 let input = SequentialSliceOfVecs::new(&waves, 2, frames_in).unwrap();
                 let mut waves_out = vec![vec![0.0f64; frames_out]; 2];
-                let mut output = SequentialSliceOfVecs::new_mut(&mut waves_out, 2, frames_out).unwrap();
-        
-                let (_input_frames, output_frames) = $resampler.process_into_buffer(&input, &mut output, None).unwrap();
-            
+                let mut output =
+                    SequentialSliceOfVecs::new_mut(&mut waves_out, 2, frames_out).unwrap();
+
+                let (_input_frames, output_frames) = $resampler
+                    .process_into_buffer(&input, &mut output, None)
+                    .unwrap();
+
                 for ch in 0..2 {
                     let diff = waves_out[ch][0] - prev_last;
                     assert!(
-                        diff < 0.125/ratio && diff > 0.075/ratio,
+                        diff < 0.125 / ratio && diff > 0.075 / ratio,
                         "Iteration {}, first value {} prev last value {}",
                         n,
                         waves_out[ch][0],
@@ -523,10 +532,9 @@ pub mod tests {
                 for m in 0..output_frames - 1 {
                     let (upper, lower) = if m < delay {
                         // beginning of first iteration, allow a larger range here
-                        (0.2/ratio, -0.2/ratio)
-                    }
-                    else {
-                        (0.125/ratio, 0.075/ratio)
+                        (0.2 / ratio, -0.2 / ratio)
+                    } else {
+                        (0.125 / ratio, 0.075 / ratio)
                     };
                     for ch in 0..2 {
                         let diff = waves_out[ch][m + 1] - waves_out[ch][m];
@@ -554,7 +562,8 @@ pub mod tests {
             let waves_in = vec![vec![0.0 as $fty; max_input_len]; 2];
             let input = SequentialSliceOfVecs::new(&waves_in, 2, max_input_len).unwrap();
             let mut waves_out = vec![vec![0.0 as $fty; max_output_len]; 2];
-            let mut output = SequentialSliceOfVecs::new_mut(&mut waves_out, 2, max_output_len).unwrap();
+            let mut output =
+                SequentialSliceOfVecs::new_mut(&mut waves_out, 2, max_output_len).unwrap();
             let mut total_in = 0;
             let mut total_out = 0;
             for _ in 0..$repetitions {
@@ -569,7 +578,7 @@ pub mod tests {
             assert!(measured_ratio < 1.001 * $ratio);
         };
     }
-/*
+    /*
     #[test]
     fn test_buffer_helpers() {
         let buf1 = vec![vec![0.0f64; 7], vec![0.0f64; 5], vec![0.0f64; 10]];
