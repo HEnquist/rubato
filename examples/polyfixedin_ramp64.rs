@@ -13,7 +13,7 @@ extern crate log;
 use env_logger::Builder;
 use log::LevelFilter;
 
-const BYTE_PER_SAMPLE: usize = 8;
+const BYTE_PER_SAMPLE: usize = std::mem::size_of::<f64>();
 
 ///! A resampler app that reads a raw file of little-endian 64 bit floats, and writes the output in the same format.
 ///! The command line arguments are input filename, output filename, input samplerate, output samplerate,

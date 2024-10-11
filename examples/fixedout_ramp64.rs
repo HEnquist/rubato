@@ -1,19 +1,22 @@
 extern crate rubato;
+use audioadapter::direct::InterleavedSlice;
 use rubato::{
-    calculate_cutoff, Async, FixedAsync, Resampler, SincInterpolationParameters,
+    calculate_cutoff, Async, FixedAsync, Indexing, Resampler, SincInterpolationParameters,
     SincInterpolationType, WindowFunction,
 };
 use std::convert::TryInto;
 use std::env;
 use std::fs::File;
 use std::io::prelude::{Read, Seek, Write};
-use std::io::Cursor;
+use std::io::{BufReader, BufWriter};
 use std::time::Instant;
 
 extern crate env_logger;
 extern crate log;
 use env_logger::Builder;
 use log::LevelFilter;
+
+const BYTE_PER_SAMPLE: usize = std::mem::size_of::<f64>();
 
 ///! A resampler app that reads a raw file of little-endian 64 bit floats, and writes the output in the same format.
 ///! While resampling, it ramps the resampling ratio from 100% to a user-provided value, during a given time duration (measured in output time).
@@ -33,34 +36,26 @@ use log::LevelFilter;
 ///! python examples/analyze_result.py test.raw 2 192000 64
 ///! ```
 
-fn read_frames<R: Read + Seek>(inbuffer: &mut R, nbr: usize, channels: usize) -> Vec<Vec<f64>> {
-    let mut buffer = vec![0u8; 8];
-    let mut wfs = Vec::with_capacity(channels);
-    for _chan in 0..channels {
-        wfs.push(Vec::with_capacity(nbr));
-    }
-    let mut value: f64;
-    for _frame in 0..nbr {
-        for wf in wfs.iter_mut().take(channels) {
-            if inbuffer.read(&mut buffer).unwrap() < 8 {
-                return wfs;
-            }
-            value = f64::from_le_bytes(buffer.as_slice().try_into().unwrap());
-            //idx += 8;
-            wf.push(value);
+/// Helper to read an entire file to memory as f64 values
+fn read_file<R: Read + Seek>(inbuffer: &mut R) -> Vec<f64> {
+    let mut buffer = vec![0u8; BYTE_PER_SAMPLE];
+    let mut data = Vec::new();
+    loop {
+        let bytes_read = inbuffer.read(&mut buffer).unwrap();
+        if bytes_read == 0 {
+            break;
         }
+        let value = f64::from_le_bytes(buffer.as_slice().try_into().unwrap());
+        data.push(value);
     }
-    wfs
+    data
 }
 
-fn write_frames<W: Write + Seek>(waves: Vec<Vec<f64>>, outbuffer: &mut W, channels: usize) {
-    let nbr = waves[0].len();
-    for frame in 0..nbr {
-        for wave in waves.iter().take(channels) {
-            let value64 = wave[frame];
-            let bytes = value64.to_le_bytes();
-            outbuffer.write_all(&bytes).unwrap();
-        }
+/// Helper to write all frames to a file
+fn write_file<W: Write + Seek>(data: &[f64], output: &mut W) {
+    for value in data.iter() {
+        let bytes = value.to_le_bytes();
+        output.write_all(&bytes).unwrap();
     }
 }
 
@@ -98,18 +93,17 @@ fn main() {
         .expect("Please specify ramp time in seconds");
     let duration = duration_str.parse::<f64>().unwrap();
 
-    //open files
-    let mut f_in_disk = File::open(file_in).expect("Can't open file");
-    let mut f_in_ram: Vec<u8> = vec![];
-    let mut f_out_ram: Vec<u8> = vec![];
-
     println!("Copy input file to buffer");
-    std::io::copy(&mut f_in_disk, &mut f_in_ram).unwrap();
-
-    let mut f_in = Cursor::new(&f_in_ram);
-    let mut f_out = Cursor::new(&mut f_out_ram);
+    let file_in_disk = File::open(file_in).expect("Can't open file");
+    let mut file_in_reader = BufReader::new(file_in_disk);
+    let indata = read_file(&mut file_in_reader);
+    let nbr_input_frames = indata.len() / channels;
 
     let f_ratio = fs_out as f64 / fs_in as f64;
+
+    // Create buffer for storing output, size is preliminary and may grow
+    let mut outdata =
+        Vec::with_capacity(2 * channels * (nbr_input_frames as f64 * f_ratio) as usize);
 
     // Balanced for async, see the fixedin64 example for more config examples
     let sinc_len = 128;
@@ -138,17 +132,32 @@ fn main() {
     )
     .unwrap();
 
+    let input_adapter = InterleavedSlice::new(&indata, channels, nbr_input_frames).unwrap();
+    let mut indexing = Indexing {
+        input_offset: 0,
+        output_offset: 0,
+        active_channels_mask: None,
+        partial_len: None,
+    };
+
     let start = Instant::now();
     let mut output_time = 0.0;
-    loop {
-        let nbr_frames = resampler.input_frames_next();
-        let waves = read_frames(&mut f_in, nbr_frames, channels);
-        if waves[0].len() < nbr_frames {
-            break;
-        }
-        let waves_out = resampler.process(&waves, None).unwrap();
-        write_frames(waves_out, &mut f_out, channels);
-        output_time += chunksize as f64 / fs_out as f64;
+    let mut frames_left = nbr_input_frames;
+    let next_nbr_input_frames = resampler.input_frames_next();
+    while frames_left > next_nbr_input_frames {
+        let mut output_scratch = vec![0.0; channels * resampler.output_frames_next()];
+        let mut output_adapter = InterleavedSlice::new_mut(
+            &mut output_scratch,
+            channels,
+            resampler.output_frames_next(),
+        )
+        .unwrap();
+        let (nbr_in, nbr_out) = resampler
+            .process_into_buffer(&input_adapter, &mut output_adapter, Some(&indexing))
+            .unwrap();
+        outdata.append(&mut output_scratch);
+        frames_left -= nbr_in;
+        output_time += nbr_out as f64 / fs_out as f64;
         if output_time < duration {
             let rel_time = output_time / duration;
             let rel_ratio = 1.0 + (target_ratio - 1.0) * rel_time;
@@ -157,13 +166,13 @@ fn main() {
                 .set_resample_ratio_relative(rel_ratio, true)
                 .unwrap();
         }
+        indexing.input_offset += nbr_in;
     }
 
     let duration = start.elapsed();
 
     println!("Resampling took: {:?}", duration);
 
-    let mut f_out_disk = File::create(file_out).unwrap();
-    f_out.seek(std::io::SeekFrom::Start(0)).unwrap();
-    std::io::copy(&mut f_out, &mut f_out_disk).unwrap();
+    let mut f_out_disk = BufWriter::new(File::create(file_out).unwrap());
+    write_file(&outdata, &mut f_out_disk);
 }
