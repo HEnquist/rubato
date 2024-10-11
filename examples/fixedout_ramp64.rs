@@ -18,23 +18,25 @@ use log::LevelFilter;
 
 const BYTE_PER_SAMPLE: usize = std::mem::size_of::<f64>();
 
-///! A resampler app that reads a raw file of little-endian 64 bit floats, and writes the output in the same format.
-///! While resampling, it ramps the resampling ratio from 100% to a user-provided value, during a given time duration (measured in output time).
-///! This version takes a varying number of input samples per chunk, and outputs a fixed number of samples.
-///! The command line arguments are input filename, output filename, input samplerate, output samplerate,
-///! number of channels, final relative ratio in percent, and ramp duration in seconds.
-///! To resample the file `sine_f64_2ch.raw` from 44.1kHz to 192kHz, and assuming the file has two channels,
-///  and that the resampling ratio should be ramped to 150% during 3 seconds, the command is:
-///! ```
-///! cargo run --release --example fixedout_ramp64 sine_f64_2ch.raw test.raw 44100 192000 2 150 3
-///! ```
-///! There are two helper python scripts for testing. `makesineraw.py` simply writes a stereo file
-///! with a 1 second long 1kHz tone (at 44.1kHz). This script takes no aruments. Modify as needed to create other test files.
-///! To analyze the result, use the `analyze_result.py` script. This takes three arguments: number of channels, samplerate, and number of bits per sample (32 or 64).
-///! Example, to analyze the file created above:
-///! ```
-///! python examples/analyze_result.py test.raw 2 192000 64
-///! ```
+// A resampler app that reads a raw file of little-endian 64 bit floats, and writes the output in the same format.
+// While resampling, it ramps the resampling ratio from 100% to a user-provided value, during a given time duration (measured in output time).
+// This version takes a varying number of input samples per chunk, and outputs a fixed number of samples.
+// The command line arguments are input filename, output filename, input samplerate, output samplerate,
+// number of channels, final relative ratio in percent, and ramp duration in seconds.
+// To resample the file `sine_f64_2ch.raw` from 44.1kHz to 192kHz, and assuming the file has two channels,
+// and that the resampling ratio should be ramped to 150% during 3 seconds, the command is:
+// ```
+// cargo run --release --example fixedout_ramp64 sine_f64_2ch.raw test.raw 44100 192000 2 150 3
+// ```
+// There are two helper python scripts for testing.
+//  - `makesineraw.py` to generate test files in raw format.
+//    Run it with the `-h` flag for instructions.
+//  - `analyze_result.py` to analyze the result.
+//    This takes three arguments: number of channels, samplerate, and sample format.
+//    Example, to analyze the file created above:
+//    ```
+//    python examples/analyze_result.py test.raw 2 192000 f64
+//    ```
 
 /// Helper to read an entire file to memory as f64 values
 fn read_file<R: Read + Seek>(inbuffer: &mut R) -> Vec<f64> {
