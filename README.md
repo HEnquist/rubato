@@ -185,10 +185,12 @@ RUST_LOG=trace cargo test --features log
 
 ## Example
 
-Resample a single chunk of a dummy audio file from 44100 to 48000 Hz.
+Resample a dummy audio file from 44100 to 48000 Hz.
 See also the "process_f64" example that can be used to process a file from disk.
 ```rust
-use rubato::{Resampler, Async, FixedAsync, SincInterpolationType, SincInterpolationParameters, WindowFunction};
+use rubato::{Resampler, Async, FixedAsync, Indexing, SincInterpolationType, SincInterpolationParameters, WindowFunction};
+use audioadapter::direct::InterleavedSlice;
+
 let params = SincInterpolationParameters {
     sinc_len: 256,
     f_cutoff: 0.95,
@@ -205,8 +207,43 @@ let mut resampler = Async::<f64>::new_sinc(
     FixedAsync::Input,
 ).unwrap();
 
-let waves_in = vec![vec![0.0f64; 1024];2];
-let waves_out = resampler.process(&waves_in, None).unwrap();
+// create a short dummy audio clip, assuming it's stereo stored as interleaved f64 values
+let audio_clip = vec![0.0; 2*10000];
+
+// wrap it with an InterleavedSlice Adapter
+let nbr_input_frames = audio_clip.len() / 2;
+let input_adapter = InterleavedSlice::new(&audio_clip, 2, nbr_input_frames).unwrap();
+
+// create a buffer for the output
+let mut outdata = vec![0.0; 2*2*10000];
+let outdata_capacity = outdata.len() / 2;
+let mut output_adapter =
+    InterleavedSlice::new_mut(&mut outdata, 2, outdata_capacity).unwrap();
+
+// Preparations
+let mut indexing = Indexing {
+    input_offset: 0,
+    output_offset: 0,
+    active_channels_mask: None,
+    partial_len: None,
+};
+
+let mut input_frames_left = nbr_input_frames;
+let mut input_frames_next = resampler.input_frames_next();
+
+// Loop over all full chunks.
+// There will be some unprocessed input frames left after the last full chunk,
+// see the `process_f64` example for how to handle those.
+while input_frames_left >= input_frames_next {
+    let (frames_read, frames_written) = resampler
+        .process_into_buffer(&input_adapter, &mut output_adapter, Some(&indexing))
+        .unwrap();
+
+    indexing.input_offset += frames_read;
+    indexing.output_offset += frames_written;
+    input_frames_left -= frames_read;
+    input_frames_next = resampler.input_frames_next();
+}
 ```
 
 ## Included examples
