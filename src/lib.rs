@@ -2,6 +2,7 @@
 
 #[cfg(feature = "log")]
 extern crate log;
+use audioadapter::owned::InterleavedOwned;
 use audioadapter::{Adapter, AdapterMut};
 
 // Logging wrapper macros to avoid cluttering the code with conditionals.
@@ -60,6 +61,8 @@ pub use crate::sample::Sample;
 pub use crate::synchro::{Fft, FixedSync};
 pub use crate::windows::{calculate_cutoff, WindowFunction};
 
+/// A struct for providing optional parameters when calling
+/// [process_into_buffer](Resampler::process_into_buffer).
 #[derive(Debug)]
 pub struct Indexing {
     pub input_offset: usize,
@@ -92,66 +95,67 @@ pub(crate) fn update_mask(indexing: &Option<&Indexing>, mask: &mut [bool]) {
 
 /// A resampler that is used to resample a chunk of audio to a new sample rate.
 /// For asynchronous resamplers, the rate can be adjusted as required.
-///
-/// This trait is not object safe. If you need an object safe resampler,
-/// use the [VecResampler] wrapper trait.
 pub trait Resampler<T>: Send
 where
     T: Sample,
 {
-    /*
     /// This is a convenience wrapper for [process_into_buffer](Resampler::process_into_buffer)
     /// that allocates the output buffer with each call. For realtime applications, use
-    /// [process_into_buffer](Resampler::process_into_buffer) with a buffer allocated by
-    /// [output_buffer_allocate](Resampler::output_buffer_allocate) instead of this function.
-    fn process<V: AsRef<[T]>>(
+    /// [process_into_buffer](Resampler::process_into_buffer) with a pre-allocated buffer
+    /// instead of this function.
+    ///
+    /// The output is returned as an [InterleavedOwned] struct that wraps a `Vec<T>`
+    /// of interleaved samples.
+    ///
+    /// The `input_offset` and `active_channels_mask` parameters have the same meaning as in
+    /// [process_into_buffer](Resampler::process_into_buffer).
+    fn process(
         &mut self,
-        wave_in: &[V],
+        buffer_in: &dyn Adapter<'_, T>,
+        input_offset: usize,
         active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<Vec<Vec<T>>> {
+    ) -> ResampleResult<InterleavedOwned<T>> {
         let frames = self.output_frames_next();
         let channels = self.nbr_channels();
-        let mut wave_out = Vec::with_capacity(channels);
-        for chan in 0..channels {
-            let chan_out = if active_channels_mask.map(|mask| mask[chan]).unwrap_or(true) {
-                vec![T::zero(); frames]
-            } else {
-                vec![]
-            };
-            wave_out.push(chan_out);
-        }
-        let (_, out_len) =
-            self.process_into_buffer(wave_in, &mut wave_out, active_channels_mask)?;
-        for chan_out in wave_out.iter_mut() {
-            chan_out.truncate(out_len);
-        }
-        Ok(wave_out)
+        let mut buffer_out = InterleavedOwned::<T>::new(T::coerce_from(0.0), channels, frames);
+
+        let indexing = Indexing {
+            input_offset,
+            output_offset: 0,
+            partial_len: None,
+            active_channels_mask: active_channels_mask.map(|m| m.to_vec()),
+        };
+        self.process_into_buffer(buffer_in, &mut buffer_out, Some(&indexing))?;
+        Ok(buffer_out)
     }
-    */
+
     /// Resample a buffer of audio to a pre-allocated output buffer.
     /// Use this in real-time applications where the unpredictable time required to allocate
     /// memory from the heap can cause glitches. If this is not a problem, you may use
     /// the [process](Resampler::process) method instead.
     ///
-    /// The input and output buffers are used in a non-interleaved format.
-    /// The input is a slice, where each element of the slice is itself referenceable
-    /// as a slice ([AsRef<\[T\]>](AsRef)) which contains the samples for a single channel.
-    /// Because `[Vec<T>]` implements [`AsRef<\[T\]>`](AsRef), the input may be [`Vec<Vec<T>>`](Vec).
+    /// The input and output buffers are buffers from the [audioadapter] crate.
+    /// The input buffer must implement the [Adapter] trait,
+    /// and the output the corresponding [AdapterMut] trait.
+    /// This ensures that this method is able to both read and write
+    /// audio data from and to buffers with different layout, as well as different sample formats.
     ///
-    /// The output data is a slice, where each element of the slice is a `[T]` which contains
-    /// the samples for a single channel. If the output channel slices do not have sufficient
-    /// capacity for all output samples, the function will return an error with the expected
-    /// size. You could allocate the required output buffer with
-    /// [output_buffer_allocate](Resampler::output_buffer_allocate) before calling this function
-    /// and reuse the same buffer for each call.
+    /// The `indexing` parameter is optional. When left out, the default values are used.
+    ///  - `input_offset` and `output_offset`: these determine how many frames at the beginning
+    ///    of the input and output buffers will be skipped before reading or writing starts.
+    ///    See the `process_f64` example for how these may be used to process a longer sound clip.
+    ///  - `partial_len`: If the input buffer has fewer frames than the required input length,
+    ///    set `partial_len` to the available number.
+    ///    The resampler will then insert silence in place of the missing frames.
+    ///    This is useful for processing a longer buffer with repeated process calls,
+    ///    where at the last iteration there may be fewer frames left than what the resampler needs.
+    ///  - `active_channels_mask`: A vector of booleans determining what channels are to be processed.
+    ///    Any channel marked as inactive by a false value will be skipped during processing
+    ///    and the corresponding output will be left unchanged.
+    ///    If `None` is given, all channels will be considered active.
     ///
-    /// The `active_channels_mask` is optional.
-    /// Any channel marked as inactive by a false value will be skipped during processing
-    /// and the corresponding output will be left unchanged.
-    /// If `None` is given, all channels will be considered active.
-    ///
-    /// Before processing, it checks that the input and outputs are valid.
-    /// If either has the wrong number of channels, or if the buffer for any channel is too short,
+    /// Before processing, the input and output buffer sizes are checked.
+    /// If either has the wrong number of channels, or if the buffer can hold too few frames,
     /// a [ResampleError] is returned.
     /// Both input and output are allowed to be longer than required.
     /// The number of input samples consumed and the number output samples written
@@ -163,85 +167,6 @@ where
         indexing: Option<&Indexing>,
     ) -> ResampleResult<(usize, usize)>;
 
-    /*
-    /// This is a convenience method for processing the last frames at the end of a stream.
-    /// Use this when there are fewer frames remaining than what the resampler requires as input.
-    /// Calling this function is equivalent to padding the input buffer with zeros
-    /// to make it the right input length, and then calling [process_into_buffer](Resampler::process_into_buffer).
-    /// This method can also be called without any input frames, by providing `None` as input buffer.
-    /// This can be utilized to push any remaining delayed frames out from the internal buffers.
-    /// Note that this method allocates space for a temporary input buffer.
-    /// Real-time applications should instead call `process_into_buffer` with a zero-padded pre-allocated input buffer.
-    fn process_partial_into_buffer<Vin: AsRef<[T]>, Vout: AsMut<[T]>>(
-        &mut self,
-        wave_in: Option<&[Vin]>,
-        wave_out: &mut [Vout],
-        active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<(usize, usize)> {
-        let frames = self.input_frames_next();
-        let mut wave_in_padded = Vec::with_capacity(self.nbr_channels());
-        for _ in 0..self.nbr_channels() {
-            wave_in_padded.push(vec![T::zero(); frames]);
-        }
-        if let Some(input) = wave_in {
-            for (ch_input, ch_padded) in input.iter().zip(wave_in_padded.iter_mut()) {
-                let mut frames_in = ch_input.as_ref().len();
-                if frames_in > frames {
-                    frames_in = frames;
-                }
-                if frames_in > 0 {
-                    ch_padded[..frames_in].copy_from_slice(&ch_input.as_ref()[..frames_in]);
-                } else {
-                    ch_padded.clear();
-                }
-            }
-        }
-        self.process_into_buffer(&wave_in_padded, wave_out, active_channels_mask)
-    }
-
-    /// This is a convenience method for processing the last frames at the end of a stream.
-    /// It is similar to [process_partial_into_buffer](Resampler::process_partial_into_buffer)
-    /// but allocates the output buffer with each call.
-    /// Note that this method allocates space for both input and output.
-    fn process_partial<V: AsRef<[T]>>(
-        &mut self,
-        wave_in: Option<&[V]>,
-        active_channels_mask: Option<&[bool]>,
-    ) -> ResampleResult<Vec<Vec<T>>> {
-        let frames = self.output_frames_next();
-        let channels = self.nbr_channels();
-        let mut wave_out = Vec::with_capacity(channels);
-        for chan in 0..channels {
-            let chan_out = if active_channels_mask.map(|mask| mask[chan]).unwrap_or(true) {
-                vec![T::zero(); frames]
-            } else {
-                vec![]
-            };
-            wave_out.push(chan_out);
-        }
-        let (_, out_len) =
-            self.process_partial_into_buffer(wave_in, &mut wave_out, active_channels_mask)?;
-        for chan_out in wave_out.iter_mut() {
-            chan_out.truncate(out_len);
-        }
-        Ok(wave_out)
-    }
-
-    /// Convenience method for allocating an input buffer suitable for use with
-    /// [process_into_buffer](Resampler::process_into_buffer). The buffer's capacity
-    /// is big enough to prevent allocating additional heap memory before any call to
-    /// [process_into_buffer](Resampler::process_into_buffer) regardless of the current
-    /// resampling ratio.
-    ///
-    /// The `filled` argument determines if the vectors should be pre-filled with zeros or not.
-    /// When false, the vectors are only allocated but returned empty.
-    fn input_buffer_allocate(&self, filled: bool) -> Vec<Vec<T>> {
-        let frames = self.input_frames_max();
-        let channels = self.nbr_channels();
-        make_buffer(channels, frames, filled)
-    }
-    */
-
     /// Get the maximum possible number of input frames per channel the resampler could require.
     fn input_frames_max(&self) -> usize;
 
@@ -252,22 +177,6 @@ where
     /// Get the number of channels this Resampler is configured for.
     fn nbr_channels(&self) -> usize;
 
-    /*
-    /// Convenience method for allocating an output buffer suitable for use with
-    /// [process_into_buffer](Resampler::process_into_buffer). The buffer's capacity
-    /// is big enough to prevent allocating additional heap memory during any call to
-    /// [process_into_buffer](Resampler::process_into_buffer) regardless of the current
-    /// resampling ratio.
-    ///
-    /// The `filled` argument determines if the vectors should be pre-filled with zeros or not.
-    /// When false, the vectors are only allocated but returned empty.
-    fn output_buffer_allocate(&self, filled: bool) -> Vec<Vec<T>> {
-        let frames = self.output_frames_max();
-        let channels = self.nbr_channels();
-        make_buffer(channels, frames, filled)
-    }
-
-    */
     /// Get the maximum possible number of output frames per channel.
     fn output_frames_max(&self) -> usize;
 
@@ -412,7 +321,7 @@ pub fn buffer_capacity<T: Sample>(buffer: &[Vec<T>]) -> usize {
 #[cfg(test)]
 pub mod tests {
     #[cfg(feature = "fft_resampler")]
-    //use crate::Fft;
+    use crate::Fft;
     use crate::{buffer_capacity, buffer_length, make_buffer, resize_buffer, Resampler};
     use crate::{
         Async, FixedAsync, SincInterpolationParameters, SincInterpolationType, WindowFunction,
@@ -460,10 +369,10 @@ pub mod tests {
     fn impl_send<T: Send>() {
         fn is_send<T: Send>() {}
         is_send::<Async<T>>();
-        //#[cfg(feature = "fft_resampler")]
-        //{
-        //    is_send::<Fft<T>>();
-        //}
+        #[cfg(feature = "fft_resampler")]
+        {
+            is_send::<Fft<T>>();
+        }
     }
 
     // This tests that all resamplers are Send.

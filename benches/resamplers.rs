@@ -1,4 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
+extern crate audioadapter;
 extern crate rubato;
 
 use rubato::sinc_interpolator::ScalarInterpolator;
@@ -10,6 +11,8 @@ use rubato::sinc_interpolator::sinc_interpolator_neon::NeonInterpolator;
 #[cfg(target_arch = "x86_64")]
 use rubato::sinc_interpolator::sinc_interpolator_sse::SseInterpolator;
 
+use audioadapter::owned::InterleavedOwned;
+
 use rubato::{
     Async, Fft, FixedAsync, FixedSync, PolynomialDegree, Resampler, SincInterpolationType,
     WindowFunction,
@@ -18,18 +21,28 @@ use rubato::{
 fn bench_fft_64(c: &mut Criterion) {
     let chunksize = 1024;
     let mut resampler = Fft::<f64>::new(44100, 192000, 1024, 2, 1, FixedSync::Input).unwrap();
-    let waveform = vec![vec![0.0 as f64; chunksize]; 1];
+    let buffer_in = InterleavedOwned::new(0.0, 1, chunksize);
+    let mut buffer_out = InterleavedOwned::new(0.0, 1, resampler.output_frames_max());
     c.bench_function("fft sync f64", |b| {
-        b.iter(|| resampler.process(black_box(&waveform), None).unwrap())
+        b.iter(|| {
+            resampler
+                .process_into_buffer(black_box(&buffer_in), &mut buffer_out, None)
+                .unwrap()
+        })
     });
 }
 
 fn bench_fft_32(c: &mut Criterion) {
     let chunksize = 1024;
     let mut resampler = Fft::<f32>::new(44100, 192000, 1024, 2, 1, FixedSync::Input).unwrap();
-    let waveform = vec![vec![0.0 as f32; chunksize]; 1];
+    let buffer_in = InterleavedOwned::new(0.0, 1, chunksize);
+    let mut buffer_out = InterleavedOwned::new(0.0, 1, resampler.output_frames_max());
     c.bench_function("fft sync f32", |b| {
-        b.iter(|| resampler.process(black_box(&waveform), None).unwrap())
+        b.iter(|| {
+            resampler
+                .process_into_buffer(black_box(&buffer_in), &mut buffer_out, None)
+                .unwrap()
+        })
     });
 }
 
@@ -71,8 +84,9 @@ macro_rules! bench_async_resampler {
                 1,
                 FixedAsync::Input,
             ).unwrap();
-            let waveform = vec![vec![0.0 as $ft; chunksize]; 1];
-            c.bench_function($desc, |b| b.iter(|| resampler.process(black_box(&waveform), None).unwrap()));
+            let buffer_in =  InterleavedOwned::new(0.0, 1, chunksize);
+            let mut buffer_out =  InterleavedOwned::new(0.0, 1, resampler.output_frames_max());
+            c.bench_function($desc, |b| b.iter(|| resampler.process_into_buffer(black_box(&buffer_in), &mut buffer_out, None).unwrap()));
         }
     };
 }
@@ -288,9 +302,14 @@ macro_rules! bench_poly_async_resampler {
                 FixedAsync::Input,
             )
             .unwrap();
-            let waveform = vec![vec![0.0 as $ft; chunksize]; 1];
+            let buffer_in = InterleavedOwned::new(0.0, 1, chunksize);
+            let mut buffer_out = InterleavedOwned::new(0.0, 1, resampler.output_frames_max());
             c.bench_function($desc, |b| {
-                b.iter(|| resampler.process(black_box(&waveform), None).unwrap())
+                b.iter(|| {
+                    resampler
+                        .process_into_buffer(black_box(&buffer_in), &mut buffer_out, None)
+                        .unwrap()
+                })
             });
         }
     };

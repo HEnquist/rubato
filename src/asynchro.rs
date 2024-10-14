@@ -86,9 +86,8 @@ pub trait InnerResampler<T>: Send {
 /// the filters can no longer suppress all aliasing and this may lead to some artefacts.
 ///
 /// The resampling ratio can be freely adjusted within the range specified to the constructor.
-/// Higher maximum ratios require more memory to be allocated by
-/// [input_buffer_allocate](Resampler::input_buffer_allocate),
-/// [output_buffer_allocate](Resampler::output_buffer_allocate), and an internal buffer.
+/// Higher maximum ratios require more memory to be allocated by an internal buffer,
+/// and increase the maximum length of the variable length input or output buffer.
 pub struct Async<T> {
     nbr_channels: usize,
     chunk_size: usize,
