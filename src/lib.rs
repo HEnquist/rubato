@@ -167,6 +167,108 @@ where
         indexing: Option<&Indexing>,
     ) -> ResampleResult<(usize, usize)>;
 
+    /// Convenience method for processing longer audio clips.
+    /// This method repeatedly calls [process_into_buffer](Resampler::process_into_buffer)
+    /// until all frames of the input buffer have been processed.
+    /// The processed frames are written to the output buffer,
+    /// with the initial silence (caused by the resampler delay) trimmed off.
+    ///
+    /// Use [process_all_needed_output_len](Resampler::process_all_needed_output_len)
+    /// to get the minimal length of the output buffer required
+    /// to resample a clip of a given length.
+    ///
+    /// The `active_channels_mask` parameter has the same meaning as in
+    /// [process_into_buffer](Resampler::process_into_buffer).
+    fn process_all_into_buffer<'a>(
+        &mut self,
+        buffer_in: &dyn Adapter<'a, T>,
+        buffer_out: &mut dyn AdapterMut<'a, T>,
+        input_len: usize,
+        active_channels_mask: Option<&[bool]>,
+    ) -> ResampleResult<(usize, usize)> {
+        let expected_output_len = (self.resample_ratio() * input_len as f64).ceil() as usize;
+
+        let mut indexing = Indexing {
+            input_offset: 0,
+            output_offset: 0,
+            active_channels_mask: active_channels_mask.map(|m| m.to_vec()),
+            partial_len: None,
+        };
+
+        let mut frames_left = input_len;
+        let mut output_len = 0;
+        let mut frames_to_trim = self.output_delay();
+        debug!(
+            "resamping {} input frames to {} output frames, delay to trim off {} frames",
+            input_len, expected_output_len, frames_to_trim
+        );
+
+        let next_nbr_input_frames = self.input_frames_next();
+        while frames_left > next_nbr_input_frames {
+            debug!("process, {} input frames left", frames_left);
+            let (nbr_in, nbr_out) =
+                self.process_into_buffer(buffer_in, buffer_out, Some(&indexing))?;
+            frames_left -= nbr_in;
+            output_len += nbr_out;
+            indexing.input_offset += nbr_in;
+            indexing.output_offset += nbr_out;
+            if frames_to_trim > 0 && output_len > frames_to_trim {
+                debug!(
+                    "output, {} is longer  than delay to trim, {}, trimming..",
+                    output_len, frames_to_trim
+                );
+                // move useful putput data to start of output buffer
+                for chan in 0..self.nbr_channels() {
+                    if let Some(mask) = active_channels_mask {
+                        if !mask[chan] {
+                            continue;
+                        }
+                    }
+                    for frame in 0..(output_len - frames_to_trim) {
+                        let val = buffer_out
+                            .read_sample(chan, frame + frames_to_trim)
+                            .unwrap();
+                        buffer_out.write_sample(chan, frame, &val);
+                    }
+                }
+                // update counters
+                output_len -= frames_to_trim;
+                indexing.output_offset -= frames_to_trim;
+                frames_to_trim = 0;
+            }
+        }
+        if frames_left > 0 {
+            debug!("process the last partial chunk, len {}", frames_left);
+            indexing.partial_len = Some(frames_left);
+            let (_nbr_in, nbr_out) =
+                self.process_into_buffer(buffer_in, buffer_out, Some(&indexing))?;
+            output_len += nbr_out;
+            indexing.output_offset += nbr_out;
+        }
+        indexing.partial_len = Some(0);
+        while output_len < expected_output_len {
+            debug!(
+                "output is still too short, {} < {}, pump zeros..",
+                output_len, expected_output_len
+            );
+            let (_nbr_in, nbr_out) =
+                self.process_into_buffer(buffer_in, buffer_out, Some(&indexing))?;
+            output_len += nbr_out;
+            indexing.output_offset += nbr_out;
+        }
+        Ok((input_len, expected_output_len))
+    }
+
+    /// Calculate the minimal length of the output buffer
+    /// needed to process a clip of length `input_len` using the
+    /// [process_all_into_buffer](Resampler::process_all_into_buffer) method.
+    fn process_all_needed_output_len(&mut self, input_len: usize) -> usize {
+        let delay_frames = self.output_delay();
+        let output_frames_next = self.output_frames_next();
+        let expected_output_len = (self.resample_ratio() * input_len as f64).ceil() as usize;
+        delay_frames + output_frames_next + expected_output_len
+    }
+
     /// Get the maximum possible number of input frames per channel the resampler could require.
     fn input_frames_max(&self) -> usize;
 
@@ -279,55 +381,76 @@ pub(crate) fn validate_buffers<'a, T: 'a>(
     Ok(())
 }
 
-/// Convenience method for allocating a buffer to hold a given number of channels and frames.
-/// The `filled` argument determines if the vectors should be pre-filled with zeros or not.
-/// When false, the vectors are only allocated but returned empty.
-pub fn make_buffer<T: Sample>(channels: usize, frames: usize, filled: bool) -> Vec<Vec<T>> {
-    let mut buffer = Vec::with_capacity(channels);
-    for _ in 0..channels {
-        buffer.push(Vec::with_capacity(frames));
-    }
-    if filled {
-        resize_buffer(&mut buffer, frames)
-    }
-    buffer
-}
-
-/// Convenience method for resizing a buffer to a new number of frames.
-/// If the new number of frames is no larger than the buffer capacity,
-/// no reallocation will occur.
-/// If the new length is smaller than the current, the excess elements are dropped.
-/// If it is larger, zeros are inserted for the missing elements.
-pub fn resize_buffer<T: Sample>(buffer: &mut [Vec<T>], frames: usize) {
-    buffer.iter_mut().for_each(|v| v.resize(frames, T::zero()));
-}
-
-/// Convenience method for getting the current length of a buffer in frames.
-/// Checks the [length](Vec::len) of the vector for each channel and returns the smallest.
-pub fn buffer_length<T: Sample>(buffer: &[Vec<T>]) -> usize {
-    return buffer.iter().map(|v| v.len()).min().unwrap_or_default();
-}
-
-/// Convenience method for getting the current allocated capacity of a buffer in frames.
-/// Checks the [capacity](Vec::capacity) of the vector for each channel and returns the smallest.
-pub fn buffer_capacity<T: Sample>(buffer: &[Vec<T>]) -> usize {
-    return buffer
-        .iter()
-        .map(|v| v.capacity())
-        .min()
-        .unwrap_or_default();
-}
-
 #[cfg(test)]
 pub mod tests {
     #[cfg(feature = "fft_resampler")]
     use crate::Fft;
-    use crate::{buffer_capacity, buffer_length, make_buffer, resize_buffer, Resampler};
+    use crate::Resampler;
     use crate::{
         Async, FixedAsync, SincInterpolationParameters, SincInterpolationType, WindowFunction,
-    }; //, PolynomialDegree};
+    };
     use audioadapter::direct::SequentialSliceOfVecs;
+    use audioadapter::Adapter;
     use test_log::test;
+
+    #[test]
+    fn process_all() {
+        let mut resampler = Async::<f64>::new_sinc(
+            88200 as f64 / 44100 as f64,
+            1.1,
+            SincInterpolationParameters {
+                sinc_len: 64,
+                f_cutoff: 0.95,
+                interpolation: SincInterpolationType::Cubic,
+                oversampling_factor: 16,
+                window: WindowFunction::BlackmanHarris2,
+            },
+            1024,
+            2,
+            FixedAsync::Input,
+        )
+        .unwrap();
+        let input_len = 12345;
+        let samples: Vec<f64> = (0..input_len).map(|v| v as f64 / 10.0).collect();
+        let input_data = vec![samples; 2];
+        // add a ramp to the input
+        let input = SequentialSliceOfVecs::new(&input_data, 2, input_len).unwrap();
+        let output_len = resampler.process_all_needed_output_len(input_len);
+        let mut output_data = vec![vec![0.0f64; output_len]; 2];
+        let mut output = SequentialSliceOfVecs::new_mut(&mut output_data, 2, output_len).unwrap();
+        let (nbr_in, nbr_out) = resampler
+            .process_all_into_buffer(&input, &mut output, input_len, None)
+            .unwrap();
+        assert_eq!(nbr_in, input_len);
+        // This is a simple ratio, output should be twice as long as input
+        assert_eq!(2 * nbr_in, nbr_out);
+
+        // check that the output follows the input ramp, within suitable margins
+        let increment = 0.1 / resampler.resample_ratio();
+        let delay = resampler.output_delay();
+        let margin = (delay as f64 * resampler.resample_ratio()) as usize;
+        let mut expected = margin as f64 * increment;
+        for frame in margin..(nbr_out - margin) {
+            for chan in 0..2 {
+                let val = output.read_sample(chan, frame).unwrap();
+                assert!(
+                    val - expected < 100.0 * increment,
+                    "frame: {}, value: {}, expected: {}",
+                    frame,
+                    val,
+                    expected
+                );
+                assert!(
+                    expected - val < 100.0 * increment,
+                    "frame: {}, value: {}, expected: {}",
+                    frame,
+                    val,
+                    expected
+                );
+            }
+            expected += increment;
+        }
+    }
 
     // This tests that a Resampler can be boxed.
     #[test]
@@ -487,26 +610,4 @@ pub mod tests {
             assert!(measured_ratio < 1.001 * $ratio);
         };
     }
-    /*
-    #[test]
-    fn test_buffer_helpers() {
-        let buf1 = vec![vec![0.0f64; 7], vec![0.0f64; 5], vec![0.0f64; 10]];
-        assert_eq!(buffer_length(&buf1), 5);
-        let mut buf2 = vec![Vec::<f32>::with_capacity(5), Vec::<f32>::with_capacity(15)];
-        assert_eq!(buffer_length(&buf2), 0);
-        assert_eq!(buffer_capacity(&buf2), 5);
-
-        resize_buffer(&mut buf2, 3);
-        assert_eq!(buffer_length(&buf2), 3);
-        assert_eq!(buffer_capacity(&buf2), 5);
-
-        let buf3 = make_buffer::<f32>(4, 10, false);
-        assert_eq!(buffer_length(&buf3), 0);
-        assert_eq!(buffer_capacity(&buf3), 10);
-
-        let buf4 = make_buffer::<f32>(4, 10, true);
-        assert_eq!(buffer_length(&buf4), 10);
-        assert_eq!(buffer_capacity(&buf4), 10);
-    }
-    */
 }
