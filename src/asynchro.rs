@@ -295,7 +295,7 @@ where
 
         let interpolator_len = interpolator.nbr_points();
 
-        let last_index = -(interpolator_len as f64) / 2.0;
+        let last_index = -(interpolator_len as f64 - 1.0);
         let needed_input_size = Self::calculate_input_size(
             chunk_size,
             resample_ratio,
@@ -324,7 +324,6 @@ where
         let buffer = vec![vec![T::zero(); buffer_len]; nbr_channels];
 
         let channel_mask = vec![true; nbr_channels];
-        let last_index = -((interpolator.nbr_points() / 2) as f64);
 
         let inner_resampler = InnerSinc {
             interpolator,

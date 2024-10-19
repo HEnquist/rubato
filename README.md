@@ -232,9 +232,11 @@ let mut input_frames_left = nbr_input_frames;
 let mut input_frames_next = resampler.input_frames_next();
 
 // Loop over all full chunks.
-// There will be some unprocessed input frames left after the last full chunk,
+// There will be some unprocessed input frames left after the last full chunk.
 // see the `process_f64` example for how to handle those
 // using `partial_len` of the indexing struct.
+// It is also possible to use the `process_all_into_buffer` method
+// to process the entire file (including any last partial chunk) with a single call.
 while input_frames_left >= input_frames_next {
     let (frames_read, frames_written) = resampler
         .process_into_buffer(&input_adapter, &mut output_adapter, Some(&indexing))

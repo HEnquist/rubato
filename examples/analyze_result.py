@@ -53,8 +53,8 @@ parser.add_argument("samplerate", type=int,
                     help="sample rate of file")
 parser.add_argument("format", type=str, choices=["f32", "f64", "i16"],
                     help="sample format")
-parser.add_argument("--window", type=bool, default=True, required=False,
-                    help="apply window function")
+parser.add_argument("--no-window", dest= 'window', default=True, action='store_false',
+                    help="skip applying window function")
 args = parser.parse_args()
 
 if args.format == "f64":
