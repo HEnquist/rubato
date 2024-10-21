@@ -645,9 +645,8 @@ mod tests {
     use audioadapter::direct::SequentialSliceOfVecs;
     use rand::Rng;
     use test_case::test_matrix;
-    use test_log::test;
 
-    #[test]
+    #[test_log::test]
     fn resample_unit() {
         let mut resampler = FftResampler::<f64>::new(147, 1000);
         let mut wave_in = vec![0.0; 147];
@@ -821,11 +820,11 @@ mod tests {
 
     */
 
-    #[test_matrix(
+    #[test_log::test(test_matrix(
         [512, 1024, 4096],
         [(44100, 48000), (48000, 44100), (44100, 88200), (88200, 44100), (44100, 192000), (192000, 44100), (44100, 44110)],
         [FixedSync::Input, FixedSync::Output, FixedSync::Both]
-    )]
+    ))]
     fn mtx_fft_output(chunksize: usize, rates: (usize, usize), fixed: FixedSync) {
         let (input_rate, output_rate) = rates;
         let mut resampler =
@@ -833,22 +832,22 @@ mod tests {
         check_output!(resampler, f64);
     }
 
-    #[test_matrix(
+    #[test_log::test(test_matrix(
         [512, 1024, 4096],
         [(44100, 48000), (48000, 44100), (44100, 88200), (88200, 44100), (44100, 192000), (192000, 44100), (44100, 44110)],
         [FixedSync::Input, FixedSync::Output, FixedSync::Both]
-    )]
+    ))]
     fn mtx_fft_ratio(chunksize: usize, rates: (usize, usize), fixed: FixedSync) {
         let (input_rate, output_rate) = rates;
         let mut resampler =
             Fft::<f64>::new(input_rate, output_rate, chunksize, 1, 2, fixed).unwrap();
         check_ratio!(resampler, 100000 / chunksize, 0.05, f64);
     }
-    #[test_matrix(
+    #[test_log::test(test_matrix(
         [512, 1024, 4096],
         [(44100, 48000), (48000, 44100), (44100, 88200), (88200, 44100), (44100, 192000), (192000, 44100), (44100, 44110)],
         [FixedSync::Input, FixedSync::Output, FixedSync::Both]
-    )]
+    ))]
     fn mtx_fft_len(chunksize: usize, rates: (usize, usize), fixed: FixedSync) {
         let (input_rate, output_rate) = rates;
         let resampler = Fft::<f64>::new(input_rate, output_rate, chunksize, 1, 2, fixed).unwrap();
@@ -865,11 +864,11 @@ mod tests {
         }
     }
 
-    #[test_matrix(
+    #[test_log::test(test_matrix(
         [512, 1024, 4096],
         [(44100, 48000), (48000, 44100), (44100, 88200), (88200, 44100), (44100, 192000), (192000, 44100), (44100, 44110)],
         [FixedSync::Input, FixedSync::Output, FixedSync::Both]
-    )]
+    ))]
     fn mtx_fft_reset(chunksize: usize, rates: (usize, usize), fixed: FixedSync) {
         let (input_rate, output_rate) = rates;
         let mut resampler =

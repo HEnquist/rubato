@@ -389,12 +389,10 @@ pub mod tests {
     use crate::{
         Async, FixedAsync, SincInterpolationParameters, SincInterpolationType, WindowFunction,
     };
-    use approx::assert_abs_diff_eq;
     use audioadapter::direct::SequentialSliceOfVecs;
     use audioadapter::Adapter;
-    use test_log::test;
 
-    #[test]
+    #[test_log::test]
     fn process_all() {
         let mut resampler = Async::<f64>::new_sinc(
             88200 as f64 / 44100 as f64,
@@ -454,7 +452,7 @@ pub mod tests {
     }
 
     // This tests that a Resampler can be boxed.
-    #[test]
+    #[test_log::test]
     fn boxed_resampler() {
         let mut boxed: Box<dyn Resampler<f64>> = Box::new(
             Async::<f64>::new_sinc(
