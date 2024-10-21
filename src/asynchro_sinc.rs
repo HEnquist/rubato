@@ -303,6 +303,10 @@ where
     fn nbr_points(&self) -> usize {
         self.interpolator.nbr_points()
     }
+
+    fn init_last_index(&self) -> f64 {
+        -(self.interpolator.nbr_points() as f64 - 1.0)
+    }
 }
 
 #[cfg(test)]

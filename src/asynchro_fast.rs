@@ -284,4 +284,8 @@ where
     fn nbr_points(&self) -> usize {
         self.interpolation.nbr_points()
     }
+
+    fn init_last_index(&self) -> f64 {
+        -(self.interpolation.nbr_points() as f64 / 2.0)
+    }
 }

@@ -389,6 +389,7 @@ pub mod tests {
     use crate::{
         Async, FixedAsync, SincInterpolationParameters, SincInterpolationType, WindowFunction,
     };
+    use approx::assert_abs_diff_eq;
     use audioadapter::direct::SequentialSliceOfVecs;
     use audioadapter::Adapter;
     use test_log::test;
@@ -505,90 +506,87 @@ pub mod tests {
         impl_send::<f64>();
     }
 
+    pub fn expected_output_value(idx: usize, delay: usize, ratio: f64) -> f64 {
+        if idx <= delay {
+            return 0.0;
+        }
+        (idx - delay) as f64 * 0.1 / ratio
+    }
+
     #[macro_export]
     macro_rules! check_output {
-        ($resampler:ident) => {
-            let mut val = 0.0;
+        ($resampler:ident, $fty:ty) => {
+            let mut ramp_value: $fty = 0.0;
             let max_input_len = $resampler.input_frames_max();
             let max_output_len = $resampler.output_frames_max();
-            let ratio = $resampler.resample_ratio();
-            let mut delay = $resampler.output_delay();
-            let mut prev_last = -0.1 / ratio;
-            for n in 0..50 {
-                let frames_in = $resampler.input_frames_next();
-                let frames_out = $resampler.output_frames_next();
-                // Check that lengths are within the reported max values
-                assert!(frames_in <= max_input_len);
-                assert!(frames_out <= max_output_len);
-                let mut waves = vec![vec![0.0f64; frames_in]; 2];
-                for m in 0..frames_in {
-                    for ch in 0..2 {
-                        waves[ch][m] = val;
-                    }
-                    val = val + 0.1;
-                }
-                let input = SequentialSliceOfVecs::new(&waves, 2, frames_in).unwrap();
-                let mut waves_out = vec![vec![0.0f64; frames_out]; 2];
-                let mut output =
-                    SequentialSliceOfVecs::new_mut(&mut waves_out, 2, frames_out).unwrap();
+            let ratio = $resampler.resample_ratio() as $fty;
+            let delay = $resampler.output_delay();
+            let mut output_index = 0;
 
-                let (_input_frames, output_frames) = $resampler
+            let out_incr = 0.1 / ratio;
+
+            let nbr_iterations =
+                100000 / ($resampler.output_frames_next() + $resampler.input_frames_next());
+            for _n in 0..nbr_iterations {
+                let expected_frames_in = $resampler.input_frames_next();
+                let expected_frames_out = $resampler.output_frames_next();
+                // Check that lengths are within the reported max values
+                assert!(expected_frames_in <= max_input_len);
+                assert!(expected_frames_out <= max_output_len);
+                let mut input_data = vec![vec![0.0 as $fty; expected_frames_in]; 2];
+                for m in 0..expected_frames_in {
+                    for ch in 0..2 {
+                        input_data[ch][m] = ramp_value;
+                    }
+                    ramp_value = ramp_value + 0.1;
+                }
+                let input = SequentialSliceOfVecs::new(&input_data, 2, expected_frames_in).unwrap();
+                let mut output_data = vec![vec![0.0 as $fty; expected_frames_out]; 2];
+                let mut output =
+                    SequentialSliceOfVecs::new_mut(&mut output_data, 2, expected_frames_out)
+                        .unwrap();
+
+                trace!("resample...");
+                let (input_frames, output_frames) = $resampler
                     .process_into_buffer(&input, &mut output, None)
                     .unwrap();
-
-                for ch in 0..2 {
-                    let diff = waves_out[ch][0] - prev_last;
-                    assert!(
-                        diff < 0.125 / ratio && diff > 0.075 / ratio,
-                        "Iteration {}, first value {} prev last value {}",
-                        n,
-                        waves_out[ch][0],
-                        prev_last
-                    );
-                    let expected_diff = (frames_out - delay) as f64 * 0.1 / ratio;
-                    let first = waves_out[ch][0];
-                    let last = waves_out[ch][output_frames - 1];
-                    let diff = last - first;
-                    assert!(
-                        diff < 1.1 * expected_diff && diff > 0.9 * expected_diff,
-                        "Iteration {}, last value {} first value {}, diff {}, expected {}",
-                        n,
-                        last,
-                        first,
-                        diff,
-                        expected_diff,
-                    );
-                }
-
-                prev_last = waves_out[0][output_frames - 1];
-                for m in 0..output_frames - 1 {
-                    let (upper, lower) = if m < delay {
-                        // beginning of first iteration, allow a larger range here
-                        (0.2 / ratio, -0.2 / ratio)
-                    } else {
-                        (0.125 / ratio, 0.075 / ratio)
-                    };
+                trace!("assert lengths");
+                assert_eq!(input_frames, expected_frames_in);
+                assert_eq!(output_frames, expected_frames_out);
+                trace!("check output");
+                for idx in 0..output_frames {
+                    let expected = expected_output_value(output_index + idx, delay, ratio) as $fty;
                     for ch in 0..2 {
-                        let diff = waves_out[ch][m + 1] - waves_out[ch][m];
+                        let value = output_data[ch][idx];
+                        let margin = 3.0 * out_incr;
                         assert!(
-                            diff < upper && diff > lower,
-                            "Too large diff, frame {}:{} next value {} value {}",
-                            n,
-                            m,
-                            waves_out[ch][m + 1],
-                            waves_out[ch][m]
+                            value > expected - margin,
+                            "Value at frame {} is too small, {} < {} - {}",
+                            output_index + idx,
+                            value,
+                            expected,
+                            margin
+                        );
+                        assert!(
+                            value < expected + margin,
+                            "Value at frame {} is too large, {} > {} + {}",
+                            output_index + idx,
+                            value,
+                            expected,
+                            margin
                         );
                     }
                 }
-                // set delay to zero, the value is only needed for the first process call
-                delay = 0;
+                output_index += output_frames;
             }
+            assert!(output_index > 1000, "Too few frames checked!");
         };
     }
 
     #[macro_export]
     macro_rules! check_ratio {
-        ($resampler:ident, $ratio:ident, $repetitions:literal, $fty:ty) => {
+        ($resampler:ident, $repetitions:expr, $margin:expr, $fty:ty) => {
+            let ratio = $resampler.resample_ratio();
             let max_input_len = $resampler.input_frames_max();
             let max_output_len = $resampler.output_frames_max();
             let waves_in = vec![vec![0.0 as $fty; max_input_len]; 2];
@@ -606,8 +604,114 @@ pub mod tests {
                 total_out += out.1
             }
             let measured_ratio = total_out as f64 / total_in as f64;
-            assert!(measured_ratio > 0.999 * $ratio);
-            assert!(measured_ratio < 1.001 * $ratio);
+            assert!(
+                measured_ratio / ratio > (1.0 - $margin),
+                "Measured ratio is too small, measured / expected = {}",
+                measured_ratio / ratio
+            );
+            assert!(
+                measured_ratio / ratio < (1.0 + $margin),
+                "Measured ratio is too large, measured / expected = {}",
+                measured_ratio / ratio
+            );
+        };
+    }
+
+    #[macro_export]
+    macro_rules! assert_fi_len {
+        ($resampler:ident, $chunksize:expr) => {
+            let nbr_frames_in_next = $resampler.input_frames_next();
+            let nbr_frames_in_max = $resampler.input_frames_max();
+            assert_eq!(
+                nbr_frames_in_next, $chunksize,
+                "expected {} for next input samples, got {}",
+                $chunksize, nbr_frames_in_next
+            );
+            assert_eq!(
+                nbr_frames_in_next, $chunksize,
+                "expected {} for max input samples, got {}",
+                $chunksize, nbr_frames_in_max
+            );
+        };
+    }
+
+    #[macro_export]
+    macro_rules! assert_fo_len {
+        ($resampler:ident, $chunksize:expr) => {
+            let nbr_frames_out_next = $resampler.output_frames_next();
+            let nbr_frames_out_max = $resampler.output_frames_max();
+            assert_eq!(
+                nbr_frames_out_next, $chunksize,
+                "expected {} for next output samples, got {}",
+                $chunksize, nbr_frames_out_next
+            );
+            assert_eq!(
+                nbr_frames_out_next, $chunksize,
+                "expected {} for max output samples, got {}",
+                $chunksize, nbr_frames_out_max
+            );
+        };
+    }
+
+    #[macro_export]
+    macro_rules! assert_fb_len {
+        ($resampler:ident) => {
+            let nbr_frames_out_next = $resampler.output_frames_next();
+            let nbr_frames_out_max = $resampler.output_frames_max();
+            let nbr_frames_in_next = $resampler.input_frames_next();
+            let nbr_frames_in_max = $resampler.input_frames_max();
+            let ratio = $resampler.resample_ratio();
+            assert_eq!(
+                nbr_frames_out_next, nbr_frames_out_max,
+                "next output frames, {}, is different than max, {}",
+                nbr_frames_out_next, nbr_frames_out_next
+            );
+            assert_eq!(
+                nbr_frames_in_next, nbr_frames_in_max,
+                "next input frames, {}, is different than max, {}",
+                nbr_frames_in_next, nbr_frames_in_max
+            );
+            let frames_ratio = nbr_frames_out_next as f64 / nbr_frames_in_next as f64;
+            assert_abs_diff_eq!(frames_ratio, ratio, epsilon = 0.000001);
+        };
+    }
+
+    #[macro_export]
+    macro_rules! check_reset {
+        ($resampler:ident) => {
+            let frames_in = $resampler.input_frames_next();
+
+            let mut rng = rand::thread_rng();
+            let mut input_data = vec![vec![0.0f64; frames_in]; 2];
+            input_data
+                .iter_mut()
+                .for_each(|ch| ch.iter_mut().for_each(|s| *s = rng.gen()));
+
+            let input = SequentialSliceOfVecs::new(&input_data, 2, frames_in).unwrap();
+
+            let frames_out = $resampler.output_frames_next();
+            let mut output_data_1 = vec![vec![0.0; frames_out]; 2];
+            let mut output_1 =
+                SequentialSliceOfVecs::new_mut(&mut output_data_1, 2, frames_out).unwrap();
+            $resampler
+                .process_into_buffer(&input, &mut output_1, None)
+                .unwrap();
+            $resampler.reset();
+            assert_eq!(
+                frames_in,
+                $resampler.input_frames_next(),
+                "Resampler requires different number of frames when new and after a reset."
+            );
+            let mut output_data_2 = vec![vec![0.0; frames_out]; 2];
+            let mut output_2 =
+                SequentialSliceOfVecs::new_mut(&mut output_data_2, 2, frames_out).unwrap();
+            $resampler
+                .process_into_buffer(&input, &mut output_2, None)
+                .unwrap();
+            assert_eq!(
+                output_data_1, output_data_2,
+                "Resampler gives different output when new and after a reset."
+            );
         };
     }
 }
