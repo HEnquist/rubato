@@ -674,7 +674,7 @@ mod tests {
         [(44100, 48000), (48000, 44100), (44100, 88200), (88200, 44100), (44100, 192000), (192000, 44100), (44100, 44110)],
         [FixedSync::Input, FixedSync::Output, FixedSync::Both]
     ))]
-    fn mtx_fft_output(chunksize: usize, rates: (usize, usize), fixed: FixedSync) {
+    fn fft_output(chunksize: usize, rates: (usize, usize), fixed: FixedSync) {
         let (input_rate, output_rate) = rates;
         let mut resampler =
             Fft::<f64>::new(input_rate, output_rate, chunksize, 2, 2, fixed).unwrap();
@@ -686,7 +686,7 @@ mod tests {
         [(44100, 48000), (48000, 44100), (44100, 88200), (88200, 44100), (44100, 192000), (192000, 44100), (44100, 44110)],
         [FixedSync::Input, FixedSync::Output, FixedSync::Both]
     ))]
-    fn mtx_fft_ratio(chunksize: usize, rates: (usize, usize), fixed: FixedSync) {
+    fn fft_ratio(chunksize: usize, rates: (usize, usize), fixed: FixedSync) {
         let (input_rate, output_rate) = rates;
         let mut resampler =
             Fft::<f64>::new(input_rate, output_rate, chunksize, 2, 2, fixed).unwrap();
@@ -697,7 +697,7 @@ mod tests {
         [(44100, 48000), (48000, 44100), (44100, 88200), (88200, 44100), (44100, 192000), (192000, 44100), (44100, 44110)],
         [FixedSync::Input, FixedSync::Output, FixedSync::Both]
     ))]
-    fn mtx_fft_len(chunksize: usize, rates: (usize, usize), fixed: FixedSync) {
+    fn fft_len(chunksize: usize, rates: (usize, usize), fixed: FixedSync) {
         let (input_rate, output_rate) = rates;
         let resampler = Fft::<f64>::new(input_rate, output_rate, chunksize, 2, 2, fixed).unwrap();
         match fixed {
@@ -718,7 +718,7 @@ mod tests {
         [(44100, 48000), (48000, 44100), (44100, 88200), (88200, 44100), (44100, 192000), (192000, 44100), (44100, 44110)],
         [FixedSync::Input, FixedSync::Output, FixedSync::Both]
     ))]
-    fn mtx_fft_reset(chunksize: usize, rates: (usize, usize), fixed: FixedSync) {
+    fn fft_reset(chunksize: usize, rates: (usize, usize), fixed: FixedSync) {
         let (input_rate, output_rate) = rates;
         let mut resampler =
             Fft::<f64>::new(input_rate, output_rate, chunksize, 2, 2, fixed).unwrap();
@@ -730,7 +730,7 @@ mod tests {
         [(44100, 48000), (48000, 44100), (44100, 88200), (88200, 44100), (44100, 192000), (192000, 44100), (44100, 44110)],
         [FixedSync::Input, FixedSync::Output, FixedSync::Both]
     ))]
-    fn mtx_fft_input_offset(chunksize: usize, rates: (usize, usize), fixed: FixedSync) {
+    fn fft_input_offset(chunksize: usize, rates: (usize, usize), fixed: FixedSync) {
         let (input_rate, output_rate) = rates;
         let mut resampler =
             Fft::<f64>::new(input_rate, output_rate, chunksize, 2, 2, fixed).unwrap();
@@ -742,7 +742,7 @@ mod tests {
         [(44100, 48000), (48000, 44100), (44100, 88200), (88200, 44100), (44100, 192000), (192000, 44100), (44100, 44110)],
         [FixedSync::Input, FixedSync::Output, FixedSync::Both]
     ))]
-    fn mtx_fft_output_offset(chunksize: usize, rates: (usize, usize), fixed: FixedSync) {
+    fn fft_output_offset(chunksize: usize, rates: (usize, usize), fixed: FixedSync) {
         let (input_rate, output_rate) = rates;
         let mut resampler =
             Fft::<f64>::new(input_rate, output_rate, chunksize, 2, 2, fixed).unwrap();
@@ -752,7 +752,7 @@ mod tests {
     #[test_log::test(test_matrix(
         [FixedSync::Input, FixedSync::Output, FixedSync::Both]
     ))]
-    fn mtx_fft_masked(fixed: FixedSync) {
+    fn fft_masked(fixed: FixedSync) {
         let mut resampler = Fft::<f64>::new(44100, 48000, 1024, 2, 2, fixed).unwrap();
         check_masked!(resampler);
     }

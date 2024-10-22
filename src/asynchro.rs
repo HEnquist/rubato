@@ -661,7 +661,7 @@ mod tests {
         [0.8, 1.2, 0.125, 8.0],
         [FixedAsync::Input, FixedAsync::Output]
     ))]
-    fn mtx_poly_output(chunksize: usize, ratio: f64, fixed: FixedAsync) {
+    fn poly_output(chunksize: usize, ratio: f64, fixed: FixedAsync) {
         let mut resampler =
             Async::<f64>::new_poly(ratio, 1.0, PolynomialDegree::Cubic, chunksize, 2, fixed)
                 .unwrap();
@@ -673,7 +673,7 @@ mod tests {
         [0.8, 1.2, 0.125, 8.0],
         [FixedAsync::Input, FixedAsync::Output]
     ))]
-    fn mtx_poly_ratio(chunksize: usize, ratio: f64, fixed: FixedAsync) {
+    fn poly_ratio(chunksize: usize, ratio: f64, fixed: FixedAsync) {
         let mut resampler =
             Async::<f64>::new_poly(ratio, 1.0, PolynomialDegree::Cubic, chunksize, 2, fixed)
                 .unwrap();
@@ -685,7 +685,7 @@ mod tests {
         [0.8, 1.2, 0.125, 8.0],
         [FixedAsync::Input, FixedAsync::Output]
     ))]
-    fn mtx_poly_len(chunksize: usize, ratio: f64, fixed: FixedAsync) {
+    fn poly_len(chunksize: usize, ratio: f64, fixed: FixedAsync) {
         let resampler =
             Async::<f64>::new_poly(ratio, 1.0, PolynomialDegree::Cubic, chunksize, 2, fixed)
                 .unwrap();
@@ -702,7 +702,7 @@ mod tests {
     #[test_log::test(test_matrix(
         [FixedAsync::Input, FixedAsync::Output]
     ))]
-    fn mtx_poly_masked(fixed: FixedAsync) {
+    fn poly_masked(fixed: FixedAsync) {
         let mut resampler =
             Async::<f64>::new_poly(0.75, 1.0, PolynomialDegree::Cubic, 1024, 2, fixed).unwrap();
         check_masked!(resampler);
@@ -713,7 +713,7 @@ mod tests {
         [0.8, 1.2, 0.125, 8.0],
         [FixedAsync::Input, FixedAsync::Output]
     ))]
-    fn mtx_poly_reset(chunksize: usize, ratio: f64, fixed: FixedAsync) {
+    fn poly_reset(chunksize: usize, ratio: f64, fixed: FixedAsync) {
         let mut resampler =
             Async::<f64>::new_poly(ratio, 1.0, PolynomialDegree::Cubic, chunksize, 2, fixed)
                 .unwrap();
@@ -725,7 +725,7 @@ mod tests {
         [0.8, 1.2, 0.125, 8.0],
         [FixedAsync::Input, FixedAsync::Output]
     ))]
-    fn mtx_sinc_output(chunksize: usize, ratio: f64, fixed: FixedAsync) {
+    fn sinc_output(chunksize: usize, ratio: f64, fixed: FixedAsync) {
         let params = basic_params();
         let mut resampler =
             Async::<f64>::new_sinc(ratio, 1.0, params, chunksize, 2, fixed).unwrap();
@@ -737,7 +737,7 @@ mod tests {
         [0.8, 1.2, 0.125, 8.0],
         [FixedAsync::Input, FixedAsync::Output]
     ))]
-    fn mtx_sinc_ratio(chunksize: usize, ratio: f64, fixed: FixedAsync) {
+    fn sinc_ratio(chunksize: usize, ratio: f64, fixed: FixedAsync) {
         let params = basic_params();
         let mut resampler =
             Async::<f64>::new_sinc(ratio, 1.0, params, chunksize, 2, fixed).unwrap();
@@ -749,7 +749,7 @@ mod tests {
         [0.8, 1.2, 0.125, 8.0],
         [FixedAsync::Input, FixedAsync::Output]
     ))]
-    fn mtx_sinc_len(chunksize: usize, ratio: f64, fixed: FixedAsync) {
+    fn sinc_len(chunksize: usize, ratio: f64, fixed: FixedAsync) {
         let params = basic_params();
         let resampler = Async::<f64>::new_sinc(ratio, 1.0, params, chunksize, 2, fixed).unwrap();
         match fixed {
@@ -767,7 +767,7 @@ mod tests {
         [0.8, 1.2, 0.125, 8.0],
         [FixedAsync::Input, FixedAsync::Output]
     ))]
-    fn mtx_sinc_reset(chunksize: usize, ratio: f64, fixed: FixedAsync) {
+    fn sinc_reset(chunksize: usize, ratio: f64, fixed: FixedAsync) {
         let params = basic_params();
         let mut resampler =
             Async::<f64>::new_sinc(ratio, 1.0, params, chunksize, 2, fixed).unwrap();
@@ -779,7 +779,7 @@ mod tests {
         [0.8, 1.2, 0.125, 8.0],
         [FixedAsync::Input, FixedAsync::Output]
     ))]
-    fn mtx_async_input_offset(chunksize: usize, ratio: f64, fixed: FixedAsync) {
+    fn async_input_offset(chunksize: usize, ratio: f64, fixed: FixedAsync) {
         let params = basic_params();
         let mut resampler =
             Async::<f64>::new_sinc(ratio, 1.0, params, chunksize, 2, fixed).unwrap();
@@ -791,7 +791,7 @@ mod tests {
         [0.8, 1.2, 0.125, 8.0],
         [FixedAsync::Input, FixedAsync::Output]
     ))]
-    fn mtx_async_output_offset(chunksize: usize, ratio: f64, fixed: FixedAsync) {
+    fn async_output_offset(chunksize: usize, ratio: f64, fixed: FixedAsync) {
         let params = basic_params();
         let mut resampler =
             Async::<f64>::new_sinc(ratio, 1.0, params, chunksize, 2, fixed).unwrap();
@@ -801,7 +801,7 @@ mod tests {
     #[test_log::test(test_matrix(
         [FixedAsync::Input, FixedAsync::Output]
     ))]
-    fn mtx_sinc_masked(fixed: FixedAsync) {
+    fn sinc_masked(fixed: FixedAsync) {
         let params = basic_params();
         let mut resampler = Async::<f64>::new_sinc(0.75, 1.0, params, 1024, 2, fixed).unwrap();
         check_masked!(resampler);
@@ -811,7 +811,7 @@ mod tests {
         [0.8, 1.2, 0.125, 8.0],
         [FixedAsync::Input, FixedAsync::Output]
     ))]
-    fn mtx_async_resize(ratio: f64, fixed: FixedAsync) {
+    fn async_resize(ratio: f64, fixed: FixedAsync) {
         let params = basic_params();
         let mut resampler = Async::<f64>::new_sinc(ratio, 1.0, params, 1024, 2, fixed).unwrap();
         resampler.set_chunk_size(600).unwrap();
