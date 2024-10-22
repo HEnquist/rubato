@@ -167,7 +167,8 @@ where
         indexing: Option<&Indexing>,
     ) -> ResampleResult<(usize, usize)>;
 
-    /// Convenience method for processing longer audio clips.
+    /// Convenience method for processing audio clips of arbitrary length
+    /// from and to buffers in memory.
     /// This method repeatedly calls [process_into_buffer](Resampler::process_into_buffer)
     /// until all frames of the input buffer have been processed.
     /// The processed frames are written to the output buffer,
@@ -711,5 +712,158 @@ pub mod tests {
                 "Resampler gives different output when new and after a reset."
             );
         };
+    }
+
+    #[macro_export]
+    macro_rules! check_input_offset {
+        ($resampler:ident) => {
+            let frames_in = $resampler.input_frames_next();
+
+            let mut rng = rand::thread_rng();
+            let mut input_data_1 = vec![vec![0.0f64; frames_in]; 2];
+            input_data_1
+                .iter_mut()
+                .for_each(|ch| ch.iter_mut().for_each(|s| *s = rng.gen()));
+
+            let offset = 123;
+            let mut input_data_2 = vec![vec![0.0f64; frames_in + offset]; 2];
+            for (ch, data) in input_data_2.iter_mut().enumerate() {
+                data[offset..offset + frames_in].clone_from_slice(&input_data_1[ch][..])
+            }
+
+            let input_1 = SequentialSliceOfVecs::new(&input_data_1, 2, frames_in).unwrap();
+            let input_2 = SequentialSliceOfVecs::new(&input_data_2, 2, frames_in + offset).unwrap();
+
+            let frames_out = $resampler.output_frames_next();
+            let mut output_data_1 = vec![vec![0.0; frames_out]; 2];
+            let mut output_1 =
+                SequentialSliceOfVecs::new_mut(&mut output_data_1, 2, frames_out).unwrap();
+            $resampler
+                .process_into_buffer(&input_1, &mut output_1, None)
+                .unwrap();
+            $resampler.reset();
+            assert_eq!(
+                frames_in,
+                $resampler.input_frames_next(),
+                "Resampler requires different number of frames when new and after a reset."
+            );
+            let mut output_data_2 = vec![vec![0.0; frames_out]; 2];
+            let mut output_2 =
+                SequentialSliceOfVecs::new_mut(&mut output_data_2, 2, frames_out).unwrap();
+
+            let indexing = Indexing {
+                input_offset: offset,
+                output_offset: 0,
+                active_channels_mask: None,
+                partial_len: None,
+            };
+            $resampler
+                .process_into_buffer(&input_2, &mut output_2, Some(&indexing))
+                .unwrap();
+            assert_eq!(
+                output_data_1, output_data_2,
+                "Resampler gives different output when new and after a reset."
+            );
+        };
+    }
+
+    #[macro_export]
+    macro_rules! check_output_offset {
+        ($resampler:ident) => {
+            let frames_in = $resampler.input_frames_next();
+
+            let mut rng = rand::thread_rng();
+            let mut input_data = vec![vec![0.0f64; frames_in]; 2];
+            input_data
+                .iter_mut()
+                .for_each(|ch| ch.iter_mut().for_each(|s| *s = rng.gen()));
+
+            let input = SequentialSliceOfVecs::new(&input_data, 2, frames_in).unwrap();
+
+            let frames_out = $resampler.output_frames_next();
+            let mut output_data_1 = vec![vec![0.0; frames_out]; 2];
+            let mut output_1 =
+                SequentialSliceOfVecs::new_mut(&mut output_data_1, 2, frames_out).unwrap();
+            $resampler
+                .process_into_buffer(&input, &mut output_1, None)
+                .unwrap();
+            $resampler.reset();
+            assert_eq!(
+                frames_in,
+                $resampler.input_frames_next(),
+                "Resampler requires different number of frames when new and after a reset."
+            );
+            let offset = 123;
+            let mut output_data_2 = vec![vec![0.0; frames_out + offset]; 2];
+            let mut output_2 =
+                SequentialSliceOfVecs::new_mut(&mut output_data_2, 2, frames_out + offset).unwrap();
+            let indexing = Indexing {
+                input_offset: 0,
+                output_offset: offset,
+                active_channels_mask: None,
+                partial_len: None,
+            };
+            $resampler
+                .process_into_buffer(&input, &mut output_2, Some(&indexing))
+                .unwrap();
+            assert_eq!(
+                output_data_1[0][..],
+                output_data_2[0][offset..],
+                "Resampler gives different output when new and after a reset."
+            );
+            assert_eq!(
+                output_data_1[1][..],
+                output_data_2[1][offset..],
+                "Resampler gives different output when new and after a reset."
+            );
+        };
+    }
+
+    #[macro_export]
+    macro_rules! check_masked {
+        ($resampler:ident) => {
+            let frames_in = $resampler.input_frames_next();
+
+            let mut rng = rand::thread_rng();
+            let mut input_data = vec![vec![0.0f64; frames_in]; 2];
+            input_data
+                .iter_mut()
+                .for_each(|ch| ch.iter_mut().for_each(|s| *s = rng.gen()));
+
+            let input = SequentialSliceOfVecs::new(&input_data, 2, frames_in).unwrap();
+
+            let frames_out = $resampler.output_frames_next();
+            let mut output_data = vec![vec![0.0; frames_out]; 2];
+            let mut output =
+                SequentialSliceOfVecs::new_mut(&mut output_data, 2, frames_out).unwrap();
+
+            let indexing = Indexing {
+                input_offset: 0,
+                output_offset: 0,
+                active_channels_mask: Some(vec![false, true]),
+                partial_len: None,
+            };
+            $resampler
+                .process_into_buffer(&input, &mut output, Some(&indexing))
+                .unwrap();
+
+            let non_zero_chan_0 = output_data[0].iter().filter(|&v| *v != 0.0).count();
+            let non_zero_chan_1 = output_data[1].iter().filter(|&v| *v != 0.0).count();
+            // assert channel 0 is all zero
+            assert_eq!(
+                non_zero_chan_0, 0,
+                "Some sample in the non-active channel has a non-zero value"
+            );
+            // assert channel 1 has some values
+            assert!(
+                non_zero_chan_1 > 0,
+                "No sample in the active channel has a non-zero value"
+            );
+        };
+    }
+
+    #[macro_export]
+    macro_rules! check_resize {
+        ($resampler:ident) => {};
     }
 }

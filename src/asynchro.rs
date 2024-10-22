@@ -631,12 +631,16 @@ where
 #[cfg(test)]
 mod tests {
     use crate::tests::expected_output_value;
+    use crate::Indexing;
     use crate::PolynomialDegree;
     use crate::Resampler;
     use crate::SincInterpolationParameters;
     use crate::SincInterpolationType;
     use crate::WindowFunction;
-    use crate::{assert_fi_len, assert_fo_len, check_output, check_ratio, check_reset};
+    use crate::{
+        assert_fi_len, assert_fo_len, check_input_offset, check_masked, check_output,
+        check_output_offset, check_ratio, check_reset,
+    };
     use crate::{Async, FixedAsync};
     use audioadapter::direct::SequentialSliceOfVecs;
     use rand::Rng;
@@ -693,6 +697,15 @@ mod tests {
                 assert_fo_len!(resampler, chunksize);
             }
         }
+    }
+
+    #[test_log::test(test_matrix(
+        [FixedAsync::Input, FixedAsync::Output]
+    ))]
+    fn mtx_poly_masked(fixed: FixedAsync) {
+        let mut resampler =
+            Async::<f64>::new_poly(0.75, 1.0, PolynomialDegree::Cubic, 1024, 2, fixed).unwrap();
+        check_masked!(resampler);
     }
 
     #[test_log::test(test_matrix(
@@ -761,4 +774,47 @@ mod tests {
         check_reset!(resampler);
     }
 
+    #[test_log::test(test_matrix(
+        [1, 100, 1024],
+        [0.8, 1.2, 0.125, 8.0],
+        [FixedAsync::Input, FixedAsync::Output]
+    ))]
+    fn mtx_async_input_offset(chunksize: usize, ratio: f64, fixed: FixedAsync) {
+        let params = basic_params();
+        let mut resampler =
+            Async::<f64>::new_sinc(ratio, 1.0, params, chunksize, 2, fixed).unwrap();
+        check_input_offset!(resampler);
+    }
+
+    #[test_log::test(test_matrix(
+        [1, 100, 1024],
+        [0.8, 1.2, 0.125, 8.0],
+        [FixedAsync::Input, FixedAsync::Output]
+    ))]
+    fn mtx_async_output_offset(chunksize: usize, ratio: f64, fixed: FixedAsync) {
+        let params = basic_params();
+        let mut resampler =
+            Async::<f64>::new_sinc(ratio, 1.0, params, chunksize, 2, fixed).unwrap();
+        check_output_offset!(resampler);
+    }
+
+    #[test_log::test(test_matrix(
+        [FixedAsync::Input, FixedAsync::Output]
+    ))]
+    fn mtx_sinc_masked(fixed: FixedAsync) {
+        let params = basic_params();
+        let mut resampler = Async::<f64>::new_sinc(0.75, 1.0, params, 1024, 2, fixed).unwrap();
+        check_masked!(resampler);
+    }
+
+    #[test_log::test(test_matrix(
+        [0.8, 1.2, 0.125, 8.0],
+        [FixedAsync::Input, FixedAsync::Output]
+    ))]
+    fn mtx_async_resize(ratio: f64, fixed: FixedAsync) {
+        let params = basic_params();
+        let mut resampler = Async::<f64>::new_sinc(ratio, 1.0, params, 1024, 2, fixed).unwrap();
+        resampler.set_chunk_size(600).unwrap();
+        check_output!(resampler, f64);
+    }
 }
