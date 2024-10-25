@@ -218,20 +218,8 @@ where
                     "output, {} is longer  than delay to trim, {}, trimming..",
                     output_len, frames_to_trim
                 );
-                // move useful putput data to start of output buffer
-                for chan in 0..self.nbr_channels() {
-                    if let Some(mask) = active_channels_mask {
-                        if !mask[chan] {
-                            continue;
-                        }
-                    }
-                    for frame in 0..(output_len - frames_to_trim) {
-                        let val = buffer_out
-                            .read_sample(chan, frame + frames_to_trim)
-                            .unwrap();
-                        buffer_out.write_sample(chan, frame, &val);
-                    }
-                }
+                // move useful output data to start of output buffer
+                buffer_out.copy_frames_within(frames_to_trim, 0, frames_to_trim);
                 // update counters
                 output_len -= frames_to_trim;
                 indexing.output_offset -= frames_to_trim;
