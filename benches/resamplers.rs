@@ -10,11 +10,13 @@ use rubato::sinc_interpolator::sinc_interpolator_neon::NeonInterpolator;
 #[cfg(target_arch = "x86_64")]
 use rubato::sinc_interpolator::sinc_interpolator_sse::SseInterpolator;
 
+#[cfg(feature = "fft_resampler")]
+use rubato::FftFixedIn;
 use rubato::{
-    FastFixedIn, FftFixedIn, PolynomialDegree, Resampler, SincFixedIn, SincInterpolationType,
-    WindowFunction,
+    FastFixedIn, PolynomialDegree, Resampler, SincFixedIn, SincInterpolationType, WindowFunction,
 };
 
+#[cfg(feature = "fft_resampler")]
 fn bench_fftfixedin(c: &mut Criterion) {
     let chunksize = 1024;
     let mut resampler = FftFixedIn::<f64>::new(44100, 192000, 1024, 2, 1).unwrap();
@@ -24,6 +26,7 @@ fn bench_fftfixedin(c: &mut Criterion) {
     });
 }
 
+#[cfg(feature = "fft_resampler")]
 fn bench_fftfixedin_32(c: &mut Criterion) {
     let chunksize = 1024;
     let mut resampler = FftFixedIn::<f32>::new(44100, 192000, 1024, 2, 1).unwrap();
@@ -350,11 +353,12 @@ bench_fast_async_resampler!(
     "fast async nearest 64"
 );
 
+#[cfg(feature = "fft_resampler")]
+criterion_group!(fft_benches, bench_fftfixedin, bench_fftfixedin_32,);
+
 #[cfg(target_arch = "x86_64")]
 criterion_group!(
     benches,
-    bench_fftfixedin,
-    bench_fftfixedin_32,
     bench_fast_async_septic_32,
     bench_fast_async_quintic_32,
     bench_fast_async_cubic_32,
@@ -388,8 +392,6 @@ criterion_group!(
 #[cfg(target_arch = "aarch64")]
 criterion_group!(
     benches,
-    bench_fftfixedin,
-    bench_fftfixedin_32,
     bench_fast_async_septic_32,
     bench_fast_async_quintic_32,
     bench_fast_async_cubic_32,
@@ -414,4 +416,7 @@ criterion_group!(
     bench_neon_async_nearest_64,
 );
 
+#[cfg(feature = "fft_resampler")]
+criterion_main!(benches, fft_benches);
+#[cfg(not(feature = "fft_resampler"))]
 criterion_main!(benches);
