@@ -13,11 +13,14 @@ use rubato::sinc_interpolator::sinc_interpolator_sse::SseInterpolator;
 
 use audioadapter::owned::InterleavedOwned;
 
+#[cfg(feature = "fft_resampler")]
+use rubato::Fft;
 use rubato::{
-    Async, Fft, FixedAsync, FixedSync, PolynomialDegree, Resampler, SincInterpolationType,
+    Async, FixedAsync, FixedSync, PolynomialDegree, Resampler, SincInterpolationType,
     WindowFunction,
 };
 
+#[cfg(feature = "fft_resampler")]
 fn bench_fft_64(c: &mut Criterion) {
     let chunksize = 1024;
     let mut resampler = Fft::<f64>::new(44100, 192000, 1024, 2, 1, FixedSync::Input).unwrap();
@@ -32,6 +35,7 @@ fn bench_fft_64(c: &mut Criterion) {
     });
 }
 
+#[cfg(feature = "fft_resampler")]
 fn bench_fft_32(c: &mut Criterion) {
     let chunksize = 1024;
     let mut resampler = Fft::<f32>::new(44100, 192000, 1024, 2, 1, FixedSync::Input).unwrap();
@@ -376,11 +380,12 @@ bench_poly_async_resampler!(
     "poly async nearest f64"
 );
 
+#[cfg(feature = "fft_resampler")]
+criterion_group!(fft_benches, bench_fft_64, bench_fft_32,);
+
 #[cfg(target_arch = "x86_64")]
 criterion_group!(
     benches,
-    bench_fft_64,
-    bench_fft_32,
     bench_poly_async_septic_32,
     bench_poly_async_quintic_32,
     bench_poly_async_cubic_32,
@@ -414,8 +419,6 @@ criterion_group!(
 #[cfg(target_arch = "aarch64")]
 criterion_group!(
     benches,
-    bench_fft_64,
-    bench_fft_32,
     bench_poly_async_septic_32,
     bench_poly_async_quintic_32,
     bench_poly_async_cubic_32,
@@ -440,4 +443,7 @@ criterion_group!(
     bench_sinc_async_neon_nearest_64,
 );
 
+#[cfg(feature = "fft_resampler")]
+criterion_main!(benches, fft_benches);
+#[cfg(not(feature = "fft_resampler"))]
 criterion_main!(benches);
