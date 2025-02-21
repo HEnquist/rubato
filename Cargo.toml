@@ -26,6 +26,7 @@ num-integer = "0.1.45"
 num-traits = "0.2"
 #audioadapter = {path = "../audioadapter-rs"}
 audioadapter = "0.2.0"
+windowfunctions = "0.1.1"
 
 [dev-dependencies] 
 env_logger = "0.10.0"
