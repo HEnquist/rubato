@@ -25,7 +25,7 @@ num-complex = { version = "0.4", optional = true }
 num-integer = "0.1.45"
 num-traits = "0.2"
 #audioadapter = {path = "../audioadapter-rs"}
-audioadapter = "0.2.0"
+audioadapter = "0.3.0"
 windowfunctions = "0.1.1"
 
 [dev-dependencies] 
