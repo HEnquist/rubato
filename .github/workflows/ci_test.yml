@@ -75,11 +75,8 @@ jobs:
         with:
           targets: wasm32-wasip1
 
-      - name: Install cargo-wasi
-        run: cargo install cargo-wasi
-
       - name: Run cargo check on wasm32
-        run: cargo wasi check
+        run: cargo check --target=wasm32-wasip1
 
   test_32bit:
     name: Test 32-bit
