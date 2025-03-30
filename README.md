@@ -233,7 +233,10 @@ Many audio editors, for example Audacity, are also able to directly import and e
 The `rubato` crate requires rustc version 1.61 or newer.
 
 ## Changelog
-
+- v0.16.2
+  - Fix issues when using on 32-bit systems.
+- v0.16.1
+  - Fix issue in test suite when building without FFT resamplers.
 - v0.16.0
   - Add support for changing the fixed input or output size of the asynchronous resamplers.
 - v0.15.0
