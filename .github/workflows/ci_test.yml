@@ -63,7 +63,7 @@ jobs:
       - name: Run cargo test on arm
         run: cross test --target aarch64-unknown-linux-gnu
 
-  check_test_wasm32:
+  check_wasm32:
     name: Check wasm32
     runs-on: ubuntu-latest
     steps:
@@ -73,12 +73,22 @@ jobs:
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: wasm32-wasi
-
-      - name: Install cargo-wasi
-        run: cargo install cargo-wasi
+          targets: wasm32-wasip1
 
       - name: Run cargo check on wasm32
-        run: cargo wasi check
+        run: cargo check --target=wasm32-wasip1
 
+  test_32bit:
+    name: Test 32-bit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
 
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: i686-unknown-linux-gnu
+
+      - name: Run cargo test on 32-bit
+        run: cargo test target=i686-unknown-linux-gnu

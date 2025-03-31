@@ -550,17 +550,17 @@ pub fn resize_buffer<T: Sample>(buffer: &mut [Vec<T>], frames: usize) {
 /// Convenience method for getting the current length of a buffer in frames.
 /// Checks the [length](Vec::len) of the vector for each channel and returns the smallest.
 pub fn buffer_length<T: Sample>(buffer: &[Vec<T>]) -> usize {
-    return buffer.iter().map(|v| v.len()).min().unwrap_or_default();
+    buffer.iter().map(|v| v.len()).min().unwrap_or_default()
 }
 
 /// Convenience method for getting the current allocated capacity of a buffer in frames.
 /// Checks the [capacity](Vec::capacity) of the vector for each channel and returns the smallest.
 pub fn buffer_capacity<T: Sample>(buffer: &[Vec<T>]) -> usize {
-    return buffer
+    buffer
         .iter()
         .map(|v| v.capacity())
         .min()
-        .unwrap_or_default();
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

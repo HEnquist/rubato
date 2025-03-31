@@ -416,6 +416,27 @@ criterion_group!(
     bench_neon_async_nearest_64,
 );
 
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+criterion_group!(
+    benches,
+    bench_fast_async_septic_32,
+    bench_fast_async_quintic_32,
+    bench_fast_async_cubic_32,
+    bench_fast_async_linear_32,
+    bench_fast_async_nearest_32,
+    bench_fast_async_septic_64,
+    bench_fast_async_quintic_64,
+    bench_fast_async_cubic_64,
+    bench_fast_async_linear_64,
+    bench_fast_async_nearest_64,
+    bench_scalar_async_cubic_32,
+    bench_scalar_async_linear_32,
+    bench_scalar_async_nearest_32,
+    bench_scalar_async_cubic_64,
+    bench_scalar_async_linear_64,
+    bench_scalar_async_nearest_64,
+);
+
 #[cfg(feature = "fft_resampler")]
 criterion_main!(benches, fft_benches);
 #[cfg(not(feature = "fft_resampler"))]

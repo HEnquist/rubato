@@ -141,9 +141,10 @@ where
         ),
     };
     let one = T::one();
-    one / (k1 / T::coerce(npoints)
-        + k2 / T::coerce(npoints.pow(2))
-        + k3 / T::coerce(npoints.pow(3))
+    let npoints_t = T::coerce(npoints);
+    one / (k1 / npoints_t
+        + k2 / (npoints_t * npoints_t)
+        + k3 / (npoints_t * npoints_t * npoints_t)
         + one)
 }
 
