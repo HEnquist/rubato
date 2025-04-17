@@ -1,10 +1,11 @@
 # Rubato
 
-**Preview of v1.0.0**
-
-This is a preview of the upcoming version 1.0, to gather feedback on the new api.
-There are many changes to the api, but the most important one is that
-the inputs and outputs are now using the [audioadapter](https://crates.io/crates/audioadapter] crate.
+>**Preview of v1.0.0**
+>
+>This is a preview of the upcoming version 1.0, to gather feedback on the new api.
+>There are many changes to the api, but the most important one is that
+>the inputs and outputs are now using the [audioadapter](https://crates.io/crates/audioadapter] crate.
+>If something is missing or not working, please open an issue so it can be fixed before the release.
 
 An audio sample rate conversion library for Rust.
 
