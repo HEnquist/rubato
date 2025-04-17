@@ -92,5 +92,3 @@ jobs:
 
       - name: Run cargo test on 32-bit
         run: cargo test target=i686-unknown-linux-gnu
-
-

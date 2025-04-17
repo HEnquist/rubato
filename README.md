@@ -293,12 +293,15 @@ Many audio editors, for example Audacity, are also able to directly import and e
 The `rubato` crate requires rustc version 1.61 or newer.
 
 ## Changelog
-
 - v1.0.0-preview.0
   - New API using the AudioAdapter crate to handle different buffer layouts and sample formats.
   - Merged the FixedIn, FixedOut and FixedInOut resamplers into single types that supports all modes.
   - Merged the sinc and polynomial asynchronous resamplers into
     one type that supports both interpolation modes.
+- v0.16.2
+  - Fix issues when using on 32-bit systems.
+- v0.16.1
+  - Fix issue in test suite when building without FFT resamplers.
 - v0.16.0
   - Add support for changing the fixed input or output size of the asynchronous resamplers.
 - v0.15.0
