@@ -44,24 +44,19 @@ jobs:
 
   check_test_aarch64:
     name: Check and test Linux arm 64bit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
 
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-unknown-linux-gnu
-
-      - name: Install cross
-        run: cargo install cross --git https://github.com/cross-rs/cross
 
       - name: Run cargo check on arm
-        run: cross check --target aarch64-unknown-linux-gnu
+        run: cargo check
 
       - name: Run cargo test on arm
-        run: cross test --target aarch64-unknown-linux-gnu
+        run: cargo test
 
   check_wasm32:
     name: Check wasm32
