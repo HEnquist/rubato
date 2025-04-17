@@ -1,5 +1,11 @@
 # Rubato
 
+**Preview of v1.0.0**
+
+This is a preview of the upcoming version 1.0, to gather feedback on the new api.
+There are many changes to the api, but the most important one is that
+the inputs and outputs are now using the [audioadapter](https://crates.io/crates/audioadapter] crate.
+
 An audio sample rate conversion library for Rust.
 
 This library provides resamplers to process audio in chunks.
@@ -17,13 +23,20 @@ for realtime use (it is disabled by default).
 
 ## Input and output data format
 
-Input and output data are stored in a non-interleaved format.
+Input and output data is handled via
+[`Adapter`](https://docs.rs/audioadapter/0.5.0/audioadapter/trait.Adapter.html) and [`AdapterMut`](https://docs.rs/audioadapter/0.5.0/audioadapter/trait.AdapterMut.html) objects from the
+[audioadapter](https://crates.io/crates/audioadapter) crate.
+By using a suitable adapter, any sample layout and format can be used.
 
-Input and output data are stored as slices of references, `&[AsRef<[f32]>]` or `&[AsRef<[f64]>]`.
-The inner references (`AsRef<[f32]>` or `AsRef<[f64]>`) hold the sample values for one channel each.
+The `audioadapter` crate comes with a selection of adapters for common data structures,
+and the traits are kept simple in order to make it easy to implement them
+for new structures if needed.
 
-Since normal vectors implement the `AsRef` trait,
-`Vec<Vec<f32>>` and `Vec<Vec<f64>>` can be used for both input and output.
+For projects migrating from a previous version of `rubato`,
+the [`SequentialSliceOfVecs`](https://docs.rs/audioadapter/0.5.0/audioadapter/direct/struct.SequentialSliceOfVecs.html)
+adapter is a good starting point, since it wraps the vector of vectors
+commonly used with rubato v0.16 and earlier.
+
 
 ## Asynchronous resampling
 
@@ -56,7 +69,12 @@ operations that may block the thread.
 
 ### Resampling a given audio clip
 A suggested simple process for resampling an audio clip of known length to a new sample rate is as follows.
-Here it is assumed that the source data is stored in a vec,
+Note that the resampler trait provides the `Resampler::process_all_into_buffer()` method for doing this in one step.
+When using `Resampler::process_all_into_buffer()`, only the preparations explained below are required,
+the rest are taken care of by single `process_all_into_buffer()` call.
+The following description lists all the the individual steps and is meant to explain the process.
+
+It is assumed that the source data is stored in a vec,
 or some other structure that supports reading arbitrary number of frames at a time.
 For simplicity, the output is stored in a temporary buffer during resampling,
 and copied to the destination afterwards.
@@ -99,7 +117,7 @@ Skip the first `delay` frames, and copy `new_length` frames.
 If there is more than one clip to resample from and to the same sample rates,
 the same resampler should be reused.
 Creating a new resampler is an expensive task and should be avoided if possible.
-Start the procedire from the start, but instead of creating a new resampler,
+Start the procedure from the start, but instead of creating a new resampler,
 call `Resampler::reset()` on the existing one to prepare it for a new job.
 
 ### Resampling a stream
@@ -276,7 +294,7 @@ The `rubato` crate requires rustc version 1.61 or newer.
 
 ## Changelog
 
-- v0.17.0
+- v1.0.0-preview.0
   - New API using the AudioAdapter crate to handle different buffer layouts and sample formats.
   - Merged the FixedIn, FixedOut and FixedInOut resamplers into single types that supports all modes.
   - Merged the sinc and polynomial asynchronous resamplers into
