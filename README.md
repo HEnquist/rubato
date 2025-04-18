@@ -4,7 +4,7 @@
 >
 >This is a preview of the upcoming version 1.0, to gather feedback on the new api.
 >There are many changes to the api, but the most important one is that
->the inputs and outputs are now using the [audioadapter](https://crates.io/crates/audioadapter] crate.
+>the inputs and outputs are now using the [audioadapter](https://crates.io/crates/audioadapter) crate.
 >If something is missing or not working, please open an issue so it can be fixed before the release.
 
 An audio sample rate conversion library for Rust.
@@ -15,12 +15,8 @@ The ratio between input and output sample rates is completely free.
 Implementations are available that accept a fixed length input
 while returning a variable length output, and vice versa.
 
-Rubato can be used in realtime applications without any allocation during
-processing by preallocating a [Resampler] and using its
-[process_into_buffer](Resampler::process_into_buffer) and
-method to process into apre-allocated output buffer.
-The [log feature](#log-enable-logging) feature should be disabled
-for realtime use (it is disabled by default).
+Rubato can be used in real-time applications,
+see [Real-time considerations](#real-time-considerations) for more details.
 
 ## Input and output data format
 
@@ -63,10 +59,15 @@ The optimal chunk size is determined by the application,
 but will likely end up somwhere between a few hundred to a few thousand frames.
 This gives a good compromize between efficiency and memory usage.
 
-### Real time considerations
+### Real-time considerations
 Rubato is suitable for real-time applications when using the `Resampler::process_into_buffer()` method.
 This stores the output in a pre-allocated output buffer, and performs no allocations or other
 operations that may block the thread.
+Ensure that the resampler instance and any needed input and output buffers are created
+before entering time-sensitive parts of the application.
+
+The [log feature](#log-enable-logging) feature is disabled by default,
+and should not be enabled for real-time use.
 
 ### Resampling a given audio clip
 A suggested simple process for resampling an audio clip of known length to a new sample rate is as follows.
@@ -190,7 +191,8 @@ to save compile time and reduce the resulting binary size.
 ### `log`: Enable logging
 
 This feature enables logging via the `log` crate. This is intended for debugging purposes.
-Note that outputting logs allocates a [std::string::String] and most logging implementations involve various other system calls.
+Note that outputting a log message allocates a [std::string::String],
+and most logging implementations involve various other system calls.
 These calls may take some (unpredictable) time to return, during which the application is blocked.
 This means that logging should be avoided if using this library in a realtime application.
 
