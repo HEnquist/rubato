@@ -6,6 +6,7 @@
 >There are many changes to the api, but the most important one is that
 >the inputs and outputs are now using the [audioadapter](https://crates.io/crates/audioadapter) crate.
 >If something is missing or not working, please open an issue so it can be fixed before the release.
+>Note that there may be breaking changes between preview versions.
 
 An audio sample rate conversion library for Rust.
 
@@ -32,7 +33,7 @@ for new structures if needed.
 For projects migrating from a previous version of `rubato`,
 the [`SequentialSliceOfVecs`](https://docs.rs/audioadapter/0.5.0/audioadapter/direct/struct.SequentialSliceOfVecs.html)
 adapter is a good starting point, since it wraps the vector of vectors
-commonly used with rubato v0.16 and earlier.
+commonly used with `rubato` v0.16 and earlier.
 
 
 ## Asynchronous resampling
@@ -58,6 +59,26 @@ The resamplers provided by this library are intended to process audio in chunks.
 The optimal chunk size is determined by the application,
 but will likely end up somwhere between a few hundred to a few thousand frames.
 This gives a good compromize between efficiency and memory usage.
+
+### Resampling quality
+The synchronous resampler has no quality settings, it always delivers the best quality.
+
+When using cubic sinc interpolation, the quality of the asynchronous resampler
+is equivalent to the synchronous resampler.
+This mode is however computationally heavy, and therefore there are some settings
+that can be used when a different balance between speed and quality is required.
+
+When using sinc interpolation, the length of the sinc function can be reduced.
+Each halving of the sinc function length nearly doubles the speed,
+at the cost of increased roll-off at high frequencies.
+It is also posible to lower the polynomial degree to quadratic or linear,
+which also increases the speed while producing higher amounts of distortion.
+
+The fastest option is to use plain polynomial interpolation.
+This is significantly faster as it avoids the expensive sinc interpolation,
+but does not provide any anti-alias filtering.
+The effect of this is often subtle, and many applications can use this mode
+to save a significant amount of CPU time with little or no percieved quality loss.
 
 ### Real-time considerations
 Rubato is suitable for real-time applications when using the `Resampler::process_into_buffer()` method.
@@ -190,7 +211,11 @@ to save compile time and reduce the resulting binary size.
 
 ### `log`: Enable logging
 
-This feature enables logging via the `log` crate. This is intended for debugging purposes.
+This feature enables logging via the `log` crate.
+This is intended for debugging purposes, when working on `rubato` itself or investigating issues.
+Applications using this library should normally keep this feature disabled to avoid
+cluttering logs with unnecessary messages.
+
 Note that outputting a log message allocates a [std::string::String],
 and most logging implementations involve various other system calls.
 These calls may take some (unpredictable) time to return, during which the application is blocked.
@@ -293,7 +318,7 @@ Many audio editors, for example Audacity, are also able to directly import and e
 
 ## Compatibility
 
-The `rubato` crate requires rustc version 1.61 or newer.
+The `rubato` crate requires rustc version 1.74 or newer.
 
 ## Changelog
 - v1.0.0-preview.0
