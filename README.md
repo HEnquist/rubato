@@ -235,7 +235,7 @@ Resample a dummy audio file from 44100 to 48000 Hz.
 See also the "process_f64" example that can be used to process a file from disk.
 ```rust
 use rubato::{Resampler, Async, FixedAsync, Indexing, SincInterpolationType, SincInterpolationParameters, WindowFunction};
-use audioadapter::direct::InterleavedSlice;
+use audioadapter_buffers::direct::InterleavedSlice;
 
 let params = SincInterpolationParameters {
     sinc_len: 256,

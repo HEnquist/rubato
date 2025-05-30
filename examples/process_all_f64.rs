@@ -1,5 +1,5 @@
 extern crate rubato;
-use audioadapter::direct::InterleavedSlice;
+use audioadapter_buffers::direct::InterleavedSlice;
 use rubato::{
     calculate_cutoff, Async, FixedAsync, PolynomialDegree, Resampler, SincInterpolationParameters,
     SincInterpolationType, WindowFunction,

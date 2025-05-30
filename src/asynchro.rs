@@ -642,7 +642,7 @@ mod tests {
         check_output_offset, check_ratio, check_reset,
     };
     use crate::{Async, FixedAsync};
-    use audioadapter::direct::SequentialSliceOfVecs;
+    use audioadapter_buffers::direct::SequentialSliceOfVecs;
     use rand::Rng;
     use test_case::test_matrix;
 

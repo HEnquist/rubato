@@ -2,8 +2,8 @@
 
 #[cfg(feature = "log")]
 extern crate log;
-use audioadapter::owned::InterleavedOwned;
 use audioadapter::{Adapter, AdapterMut};
+use audioadapter_buffers::owned::InterleavedOwned;
 
 // Logging wrapper macros to avoid cluttering the code with conditionals.
 #[allow(unused)]
@@ -378,8 +378,8 @@ pub mod tests {
     use crate::{
         Async, FixedAsync, SincInterpolationParameters, SincInterpolationType, WindowFunction,
     };
-    use audioadapter::direct::SequentialSliceOfVecs;
     use audioadapter::Adapter;
+    use audioadapter_buffers::direct::SequentialSliceOfVecs;
 
     #[test_log::test]
     fn process_all() {

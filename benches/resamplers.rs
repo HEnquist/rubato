@@ -11,7 +11,7 @@ use rubato::sinc_interpolator::sinc_interpolator_neon::NeonInterpolator;
 #[cfg(target_arch = "x86_64")]
 use rubato::sinc_interpolator::sinc_interpolator_sse::SseInterpolator;
 
-use audioadapter::owned::InterleavedOwned;
+use audioadapter_buffers::owned::InterleavedOwned;
 
 #[cfg(feature = "fft_resampler")]
 use rubato::Fft;

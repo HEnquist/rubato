@@ -1,6 +1,6 @@
 extern crate rubato;
-use audioadapter::number_to_float::InterleavedNumbers;
-use audioadapter::sample::I16LE;
+use audioadapter_buffers::number_to_float::InterleavedNumbers;
+use audioadapter_sample::sample::I16LE;
 
 use rubato::{
     calculate_cutoff, Async, FixedAsync, Indexing, Resampler, SincInterpolationParameters,
