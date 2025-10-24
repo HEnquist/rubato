@@ -1,6 +1,6 @@
 [package]
 name = "rubato"
-version = "1.0.0-preview.0"
+version = "1.0.0-preview.2"
 rust-version = "1.71"
 authors = ["HEnquist <henrik.enquist@gmail.com>"]
 description = "Asynchronous resampling library intended for audio data"
@@ -24,8 +24,8 @@ realfft = { version = "3.3.0", optional = true }
 num-complex = { version = "0.4", optional = true }
 num-integer = "0.1.45"
 num-traits = "0.2"
-audioadapter = {version = "1.0.0", path = "../audioadapter-rs"}
-audioadapter-buffers = {version = "1.0.0", path = "../audioadapter-buffers-rs"}
+audioadapter = {version = "1.0.0", path = "../audioadapter-rs/audioadapter"}
+audioadapter-buffers = {version = "1.0.0", path = "../audioadapter-rs/audioadapter-buffers"}
 
 windowfunctions = "0.1.1"
 
@@ -38,7 +38,7 @@ log = "0.4.18"
 approx = "0.5.1"
 test-log = "0.2.16"
 test-case = "3"
-audioadapter-sample = {version = "1.0.0", path = "../audioadapter-sample-rs"}
+audioadapter-sample = {version = "1.0.0", path = "../audioadapter-rs/audioadapter-sample"}
 
 [[bench]]
 name = "resamplers"

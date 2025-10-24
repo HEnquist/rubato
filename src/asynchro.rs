@@ -495,7 +495,7 @@ where
             if *active {
                 let slice = &mut self.buffer[chan]
                     [2 * interpolator_len..2 * interpolator_len + frames_to_read];
-                buffer_in.write_from_channel_to_slice(chan, input_offset, slice);
+                buffer_in.copy_from_channel_to_slice(chan, input_offset, slice);
                 // partial, write zeros to internal buffer
                 if frames_to_read < self.needed_input_size {
                     for value in self.buffer[chan][2 * interpolator_len + frames_to_read
