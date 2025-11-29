@@ -34,7 +34,7 @@ interpolation filters. The sinc interpolation upsamples by an adjustable factor,
 and then the new sample points are calculated by interpolating between these points.
 The resampling ratio can be updated at any time.
 
-Resampling without anti-aliasing omits the cpu-heavy sinc interpolation.
+Resampling without anti-aliasing omits the CPU-heavy sinc interpolation.
 This runs much faster but produces a lower quality result.
 
 ## Synchronous resampling
@@ -46,8 +46,8 @@ This type of resampler is considerably faster but doesn't support changing the r
 ## Usage
 The resamplers provided by this library are intended to process audio in chunks.
 The optimal chunk size is determined by the application,
-but will likely end up somwhere between a few hundred to a few thousand frames.
-This gives a good compromize between efficiency and memory usage.
+but will likely end up somewhere between a few hundred to a few thousand frames.
+This gives a good compromise between efficiency and memory usage.
 
 ### Real time considerations
 Rubato is suitable for real-time applications when using the `Resampler::process_into_buffer()` method.
@@ -56,7 +56,7 @@ operations that may block the thread.
 
 ### Resampling a given audio clip
 A suggested simple process for resampling an audio clip of known length to a new sample rate is as follows.
-Here it is assumed that the source data is stored in a vec,
+Here it is assumed that the source data is stored in a `Vec`,
 or some other structure that supports reading arbitrary number of frames at a time.
 For simplicity, the output is stored in a temporary buffer during resampling,
 and copied to the destination afterwards.
@@ -71,7 +71,7 @@ Preparations:
    Store the number as `delay`.
 5. Calculate the new clip length as `new_length = original_length * new_rate / original_rate`.
 
-Now it's time to process the bulk of the clip by repeated procesing calls. Loop:
+Now it's time to process the bulk of the clip by repeated processing calls. Loop:
 1. Call `Resampler::input_frames_next()` to learn how many frames the resampler needs.
 2. Check the number of available frames in the source. If it is less than the needed input size, break the loop.
 3. Read the required number of frames from the source, convert the sample values to float, and copy them to the input buffer.
@@ -79,7 +79,7 @@ Now it's time to process the bulk of the clip by repeated procesing calls. Loop:
 5. Append the output frames to the temporary output buffer.
 
 The next step is to process the last remaining frames.
-1. Read the available frames fom the source, convert the sample values to float, and copy them to the input buffer.
+1. Read the available frames from the source, convert the sample values to float, and copy them to the input buffer.
 2. Call `Resampler::process_partial()` or `Resampler::process_partial_into_buffer()`.
 3. Append the output frames to the temporary buffer.
 
@@ -99,11 +99,11 @@ Skip the first `delay` frames, and copy `new_length` frames.
 If there is more than one clip to resample from and to the same sample rates,
 the same resampler should be reused.
 Creating a new resampler is an expensive task and should be avoided if possible.
-Start the procedire from the start, but instead of creating a new resampler,
+Start the procedure from the start, but instead of creating a new resampler,
 call `Resampler::reset()` on the existing one to prepare it for a new job.
 
 ### Resampling a stream
-When resamping a stream, the process is normally performed in real time,
+When resampling a stream, the process is normally performed in real time,
 and either the input of output is some API that provides or consumes frames at a given rate.
 
 #### Example, record to file from an audio API
