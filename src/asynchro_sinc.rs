@@ -11,7 +11,7 @@ use crate::windows::WindowFunction;
 use crate::{update_mask_from_buffers, validate_buffers, Resampler, Sample};
 
 /// A struct holding the parameters for sinc interpolation.
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct SincInterpolationParameters {
     /// Length of the windowed sinc interpolation filter.
     /// Higher values can allow a higher cut-off frequency leading to less high frequency roll-off
@@ -41,7 +41,7 @@ pub struct SincInterpolationParameters {
 /// It's more efficient to combine the sinc filters with some other interpolation technique.
 /// Then, sinc filters are used to provide a fixed number of interpolated points between input samples,
 /// and then, the new value is calculated by interpolation between those points.
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum SincInterpolationType {
     /// For cubic interpolation, the four nearest intermediate points are calculated
     /// using sinc interpolation.
