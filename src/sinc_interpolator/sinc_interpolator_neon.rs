@@ -9,7 +9,7 @@ use core::arch::aarch64::{
 };
 use core::arch::aarch64::{vaddq_f64, vfmaq_f64, vld1q_f64, vmovq_n_f64, vst1q_f64};
 
-/// Collection of cpu features required for this interpolator.
+/// Collection of CPU features required for this interpolator.
 static FEATURES: &[CpuFeature] = &[CpuFeature::Neon];
 
 /// Trait governing what can be done with an NeonSample.
@@ -143,7 +143,8 @@ impl NeonSample for f64 {
 }
 
 /// A SSE accelerated interpolator.
-pub struct NeonInterpolator<T>
+#[cfg_attr(feature = "bench_asyncro", visibility::make(pub))]
+pub(crate) struct NeonInterpolator<T>
 where
     T: NeonSample,
 {

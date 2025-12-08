@@ -1,5 +1,5 @@
 extern crate rubato;
-use audioadapter::direct::InterleavedSlice;
+use audioadapter_buffers::direct::InterleavedSlice;
 use rubato::{
     calculate_cutoff, Async, FixedAsync, Indexing, Resampler, SincInterpolationParameters,
     SincInterpolationType, WindowFunction,
@@ -127,7 +127,7 @@ fn main() {
     let mut resampler = Async::<f64>::new_sinc(
         f_ratio,
         target_ratio,
-        params,
+        &params,
         chunksize,
         channels,
         FixedAsync::Output,

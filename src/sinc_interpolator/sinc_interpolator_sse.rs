@@ -11,7 +11,7 @@ use core::arch::x86_64::{
     _mm_add_ps, _mm_hadd_ps, _mm_loadu_ps, _mm_mul_ps, _mm_setzero_ps, _mm_store_ss,
 };
 
-/// Collection of cpu features required for this interpolator.
+/// Collection of CPU features required for this interpolator.
 static FEATURES: &[CpuFeature] = &[CpuFeature::Sse3];
 
 /// Trait governing what can be done with an SseSample.
@@ -151,7 +151,8 @@ impl SseSample for f64 {
 }
 
 /// A SSE accelerated interpolator.
-pub struct SseInterpolator<T>
+#[cfg_attr(feature = "bench_asyncro", visibility::make(pub))]
+pub(crate) struct SseInterpolator<T>
 where
     T: SseSample,
 {

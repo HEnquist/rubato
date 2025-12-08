@@ -1,19 +1,19 @@
 use std::error;
 use std::fmt;
 
-/// An identifier for a cpu feature.
+/// An identifier for a CPU feature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CpuFeature {
-    /// x86 sse3 cpu feature.
+    /// x86 sse3 CPU feature.
     #[cfg(target_arch = "x86_64")]
     Sse3,
-    /// x86_64 avx cpu feature.
+    /// x86_64 avx CPU feature.
     #[cfg(target_arch = "x86_64")]
     Avx,
-    /// the fma cpu feature.
+    /// the fma CPU feature.
     #[cfg(target_arch = "x86_64")]
     Fma,
-    /// aarc64 neon cpu feature.
+    /// aarc64 neon SPU feature.
     #[cfg(target_arch = "aarch64")]
     Neon,
 }

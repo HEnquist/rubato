@@ -441,7 +441,7 @@ where
                 // Copy new samples to internal buffer.
                 for (chan, active) in self.channel_mask.iter().enumerate() {
                     if *active {
-                        buffer_in.write_from_channel_to_slice(
+                        buffer_in.copy_from_channel_to_slice(
                             chan,
                             input_offset,
                             &mut self.input_scratch[chan]
@@ -465,7 +465,7 @@ where
                 trace!("Read {} input frames", frames_to_read);
                 for (chan, active) in self.channel_mask.iter().enumerate() {
                     if *active {
-                        buffer_in.write_from_channel_to_slice(
+                        buffer_in.copy_from_channel_to_slice(
                             chan,
                             input_offset,
                             &mut self.input_scratch[chan][..frames_to_read],
@@ -512,7 +512,7 @@ where
         // Write to output
         for (chan, active) in self.channel_mask.iter().enumerate() {
             if *active {
-                buffer_out.write_from_slice_to_channel(
+                buffer_out.copy_from_slice_to_channel(
                     chan,
                     output_offset,
                     &self.output_scratch[chan][..self.chunk_size_out],
@@ -644,7 +644,7 @@ mod tests {
         check_output, check_output_offset, check_ratio, check_reset,
     };
     use approx::assert_abs_diff_eq;
-    use audioadapter::direct::SequentialSliceOfVecs;
+    use audioadapter_buffers::direct::SequentialSliceOfVecs;
     use rand::Rng;
     use test_case::test_matrix;
 

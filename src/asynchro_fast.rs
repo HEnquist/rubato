@@ -12,7 +12,7 @@ macro_rules! t {
 
 /// Degree of the polynomial used for interpolation.
 /// A higher degree gives a higher quality result, while taking longer to compute.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum PolynomialDegree {
     /// Septic polynomial, fitted using 8 sample points.
     Septic,
@@ -136,7 +136,7 @@ where
     yvals[0] + x * (yvals[1] - yvals[0])
 }
 
-pub struct InnerPoly<T> {
+pub(crate) struct InnerPoly<T> {
     pub _phantom: PhantomData<T>,
     pub interpolation: PolynomialDegree,
 }

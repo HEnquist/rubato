@@ -2,8 +2,8 @@
 
 #[cfg(feature = "log")]
 extern crate log;
-use audioadapter::owned::InterleavedOwned;
 use audioadapter::{Adapter, AdapterMut};
+use audioadapter_buffers::owned::InterleavedOwned;
 
 // Logging wrapper macros to avoid cluttering the code with conditionals.
 #[allow(unused)]
@@ -63,7 +63,7 @@ pub use crate::windows::{calculate_cutoff, WindowFunction};
 
 /// A struct for providing optional parameters when calling
 /// [process_into_buffer](Resampler::process_into_buffer).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Indexing {
     pub input_offset: usize,
     pub output_offset: usize,
@@ -378,15 +378,15 @@ pub mod tests {
     use crate::{
         Async, FixedAsync, SincInterpolationParameters, SincInterpolationType, WindowFunction,
     };
-    use audioadapter::direct::SequentialSliceOfVecs;
     use audioadapter::Adapter;
+    use audioadapter_buffers::direct::SequentialSliceOfVecs;
 
     #[test_log::test]
     fn process_all() {
         let mut resampler = Async::<f64>::new_sinc(
             88200 as f64 / 44100 as f64,
             1.1,
-            SincInterpolationParameters {
+            &SincInterpolationParameters {
                 sinc_len: 64,
                 f_cutoff: 0.95,
                 interpolation: SincInterpolationType::Cubic,
@@ -447,7 +447,7 @@ pub mod tests {
             Async::<f64>::new_sinc(
                 88200 as f64 / 44100 as f64,
                 1.1,
-                SincInterpolationParameters {
+                &SincInterpolationParameters {
                     sinc_len: 64,
                     f_cutoff: 0.95,
                     interpolation: SincInterpolationType::Cubic,
