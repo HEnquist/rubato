@@ -119,7 +119,7 @@ fn main() {
                 oversampling_factor,
                 window,
             };
-            Box::new(Async::<f64>::new_sinc(f_ratio, 1.1, params, 1024, channels, FixedAsync::Input).unwrap())
+            Box::new(Async::<f64>::new_sinc(f_ratio, 1.1, &params, 1024, channels, FixedAsync::Input).unwrap())
         }
         "SincFixedOutput" => {
             let sinc_len = 128;
@@ -135,7 +135,7 @@ fn main() {
                 oversampling_factor,
                 window,
             };
-            Box::new(Async::<f64>::new_sinc(f_ratio, 1.1, params, 1024, channels, FixedAsync::Output).unwrap())
+            Box::new(Async::<f64>::new_sinc(f_ratio, 1.1, &params, 1024, channels, FixedAsync::Output).unwrap())
         }
         "PolyFixedInput" => {
             Box::new(Async::<f64>::new_poly(f_ratio, 1.1, PolynomialDegree::Septic, 1024, channels, FixedAsync::Input).unwrap())

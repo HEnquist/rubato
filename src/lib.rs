@@ -386,7 +386,7 @@ pub mod tests {
         let mut resampler = Async::<f64>::new_sinc(
             88200 as f64 / 44100 as f64,
             1.1,
-            SincInterpolationParameters {
+            &SincInterpolationParameters {
                 sinc_len: 64,
                 f_cutoff: 0.95,
                 interpolation: SincInterpolationType::Cubic,
@@ -447,7 +447,7 @@ pub mod tests {
             Async::<f64>::new_sinc(
                 88200 as f64 / 44100 as f64,
                 1.1,
-                SincInterpolationParameters {
+                &SincInterpolationParameters {
                     sinc_len: 64,
                     f_cutoff: 0.95,
                     interpolation: SincInterpolationType::Cubic,

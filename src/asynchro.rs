@@ -242,7 +242,7 @@ where
     pub fn new_sinc(
         resample_ratio: f64,
         max_resample_ratio_relative: f64,
-        parameters: SincInterpolationParameters,
+        parameters: &SincInterpolationParameters,
         chunk_size: usize,
         nbr_channels: usize,
         fixed: FixedAsync,
@@ -726,7 +726,7 @@ mod tests {
     fn sinc_output(chunksize: usize, ratio: f64, fixed: FixedAsync) {
         let params = basic_params();
         let mut resampler =
-            Async::<f64>::new_sinc(ratio, 1.0, params, chunksize, 2, fixed).unwrap();
+            Async::<f64>::new_sinc(ratio, 1.0, &params, chunksize, 2, fixed).unwrap();
         check_output!(resampler, f64);
     }
 
@@ -738,7 +738,7 @@ mod tests {
     fn sinc_ratio(chunksize: usize, ratio: f64, fixed: FixedAsync) {
         let params = basic_params();
         let mut resampler =
-            Async::<f64>::new_sinc(ratio, 1.0, params, chunksize, 2, fixed).unwrap();
+            Async::<f64>::new_sinc(ratio, 1.0, &params, chunksize, 2, fixed).unwrap();
         check_ratio!(resampler, 100000 / chunksize, 0.001, f64);
     }
 
@@ -749,7 +749,7 @@ mod tests {
     ))]
     fn sinc_len(chunksize: usize, ratio: f64, fixed: FixedAsync) {
         let params = basic_params();
-        let resampler = Async::<f64>::new_sinc(ratio, 1.0, params, chunksize, 2, fixed).unwrap();
+        let resampler = Async::<f64>::new_sinc(ratio, 1.0, &params, chunksize, 2, fixed).unwrap();
         match fixed {
             FixedAsync::Input => {
                 assert_fi_len!(resampler, chunksize);
@@ -768,7 +768,7 @@ mod tests {
     fn sinc_reset(chunksize: usize, ratio: f64, fixed: FixedAsync) {
         let params = basic_params();
         let mut resampler =
-            Async::<f64>::new_sinc(ratio, 1.0, params, chunksize, 2, fixed).unwrap();
+            Async::<f64>::new_sinc(ratio, 1.0, &params, chunksize, 2, fixed).unwrap();
         check_reset!(resampler);
     }
 
@@ -780,7 +780,7 @@ mod tests {
     fn async_input_offset(chunksize: usize, ratio: f64, fixed: FixedAsync) {
         let params = basic_params();
         let mut resampler =
-            Async::<f64>::new_sinc(ratio, 1.0, params, chunksize, 2, fixed).unwrap();
+            Async::<f64>::new_sinc(ratio, 1.0, &params, chunksize, 2, fixed).unwrap();
         check_input_offset!(resampler);
     }
 
@@ -792,7 +792,7 @@ mod tests {
     fn async_output_offset(chunksize: usize, ratio: f64, fixed: FixedAsync) {
         let params = basic_params();
         let mut resampler =
-            Async::<f64>::new_sinc(ratio, 1.0, params, chunksize, 2, fixed).unwrap();
+            Async::<f64>::new_sinc(ratio, 1.0, &params, chunksize, 2, fixed).unwrap();
         check_output_offset!(resampler);
     }
 
@@ -801,7 +801,7 @@ mod tests {
     ))]
     fn sinc_masked(fixed: FixedAsync) {
         let params = basic_params();
-        let mut resampler = Async::<f64>::new_sinc(0.75, 1.0, params, 1024, 2, fixed).unwrap();
+        let mut resampler = Async::<f64>::new_sinc(0.75, 1.0, &params, 1024, 2, fixed).unwrap();
         check_masked!(resampler);
     }
 
@@ -811,7 +811,7 @@ mod tests {
     ))]
     fn async_resize(ratio: f64, fixed: FixedAsync) {
         let params = basic_params();
-        let mut resampler = Async::<f64>::new_sinc(ratio, 1.0, params, 1024, 2, fixed).unwrap();
+        let mut resampler = Async::<f64>::new_sinc(ratio, 1.0, &params, 1024, 2, fixed).unwrap();
         resampler.set_chunk_size(600).unwrap();
         check_output!(resampler, f64);
     }

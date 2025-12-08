@@ -97,7 +97,7 @@ fn main() {
         window,
     };
     let mut resampler =
-        Async::<f32>::new_sinc(f_ratio, 1.1, params, 1024, channels, FixedAsync::Input).unwrap();
+        Async::<f32>::new_sinc(f_ratio, 1.1, &params, 1024, channels, FixedAsync::Input).unwrap();
 
     // Prepare
     let mut input_frames_next = resampler.input_frames_next();

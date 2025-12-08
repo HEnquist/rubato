@@ -247,7 +247,7 @@ let params = SincInterpolationParameters {
 let mut resampler = Async::<f64>::new_sinc(
     48000 as f64 / 44100 as f64,
     2.0,
-    params,
+    &params,
     1024,
     2,
     FixedAsync::Input,
