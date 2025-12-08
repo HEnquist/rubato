@@ -45,7 +45,7 @@ interpolation filters. The sinc interpolation upsamples by an adjustable factor,
 and then the new sample points are calculated by interpolating between these points.
 The resampling ratio can be updated at any time.
 
-Resampling without anti-aliasing omits the cpu-heavy sinc interpolation.
+Resampling without anti-aliasing omits the CPU-heavy sinc interpolation.
 This runs much faster but produces a lower quality result.
 
 ## Synchronous resampling
@@ -57,8 +57,8 @@ This type of resampler is considerably faster but doesn't support changing the r
 ## Usage
 The resamplers provided by this library are intended to process audio in chunks.
 The optimal chunk size is determined by the application,
-but will likely end up somwhere between a few hundred to a few thousand frames.
-This gives a good compromize between efficiency and memory usage.
+but will likely end up somewhere between a few hundred to a few thousand frames.
+This gives a good compromise between efficiency and memory usage.
 
 ### Resampling quality
 The synchronous resampler has no quality settings, it always delivers the best quality.
@@ -91,51 +91,12 @@ The [log feature](#log-enable-logging) feature is disabled by default,
 and should not be enabled for real-time use.
 
 ### Resampling a given audio clip
-A suggested simple process for resampling an audio clip of known length to a new sample rate is as follows.
-Note that the resampler trait provides the `Resampler::process_all_into_buffer()` method for doing this in one step.
-When using `Resampler::process_all_into_buffer()`, only the preparations explained below are required,
-the rest are taken care of by single `process_all_into_buffer()` call.
-The following description lists all the the individual steps and is meant to explain the process.
-
-It is assumed that the source data is stored in a vec,
-or some other structure that supports reading arbitrary number of frames at a time.
-For simplicity, the output is stored in a temporary buffer during resampling,
-and copied to the destination afterwards.
-
-Preparations:
-1. Create a resampler of suitable type, for example `Fft` which is fast and gives good quality.
-   Since neither input or output has any restrictions for the number of frames that can be read or written at a time,
-   the chunk size can be chosen arbitrarily. Start with a chunk size of for example 1024.
-2. Create an input buffer.
-3. Create a temporary buffer for collecting the resampled output data.
-4. Call `Resampler::output_delay()` to know how many frames of delay the resampler gives.
-   Store the number as `delay`.
-5. Calculate the new clip length as `new_length = original_length * new_rate / original_rate`.
-
-Now it's time to process the bulk of the clip by repeated procesing calls. Loop:
-1. Call `Resampler::input_frames_next()` to learn how many frames the resampler needs.
-2. Check the number of available frames in the source. If it is less than the needed input size, break the loop.
-3. Read the required number of frames from the source, convert the sample values to float, and copy them to the input buffer.
-4. Call `Resampler::process()` or `Resampler::process_into_buffer()`.
-5. Append the output frames to the temporary output buffer.
-
-The next step is to process the last remaining frames.
-1. Read the available frames fom the source, convert the sample values to float, and copy them to the input buffer.
-2. Call `Resampler::process_partial()` or `Resampler::process_partial_into_buffer()`.
-3. Append the output frames to the temporary buffer.
-
-At this point, all frames have been sent to the resampler,
-but because of the delay through the resampler,
-it may still have some frames in its internal buffers.
-When all wanted frames have been generated, the length of the temporary
-output buffer should be at least `new_length + delay`.
-If this is not the case, call `Resampler::process_partial()`
-or `Resampler::process_partial_into_buffer()` with `None` as input,
-and append the output to the temporary output buffer.
-If needed, repeat until the length is sufficient.
-
-Finally, copy the data from the temporary output buffer to the desired destination.
-Skip the first `delay` frames, and copy `new_length` frames.
+The resampler trait provides the `Resampler::process_all_into_buffer()` method
+for resampling a full audio clip of arbitrary length.
+To use this, create a resampler of suitable type, for example `Fft` which is fast and gives good quality.
+The chunk size can be chosen arbitrarily. Start with a chunk size of for example 1024.
+Then call `Resampler::process_all_needed_output_len()` to find out the length of the result.
+Create an output buffer, and call `Resampler::process_all_into_buffer()`.
 
 If there is more than one clip to resample from and to the same sample rates,
 the same resampler should be reused.
@@ -144,8 +105,8 @@ Start the procedure from the start, but instead of creating a new resampler,
 call `Resampler::reset()` on the existing one to prepare it for a new job.
 
 ### Resampling a stream
-When resamping a stream, the process is normally performed in real time,
-and either the input of output is some API that provides or consumes frames at a given rate.
+When resampling a stream, the process is normally performed in real time,
+and either the input or output is some API that provides or consumes frames at a given rate.
 
 #### Example, record to file from an audio API
 Audio APIs such as [CoreAudio](https://crates.io/crates/coreaudio-rs) on MacOS,
@@ -174,14 +135,10 @@ A good starting point for the resampler chunk size is to use an "easy" value
 near the average chunk size of the audio API.
 Make sure that the shared buffer is large enough to not get full
 in case for the loop gets blocked waiting for example for disk access.
-
-The loop should follow a process similar to [resampling a clip](#resampling-a-given-audio-clip),
-but the input is now the shared buffer.
-The loop needs to wait for the needed number of frames to become available in the buffer,
+The resampler loop needs to wait for the needed number of frames to become available in the buffer,
 before reading and passing them to the resampler.
 
-It would also be appropriate to omit the temporary output buffer,
-and write the output directly to the destination.
+The output of the resampler is then written directly to a file.
 The [hound](https://crates.io/crates/hound) crate is a popular choice
 for reading and writing uncompressed audio formats.
 

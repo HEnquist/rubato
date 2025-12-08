@@ -23,7 +23,7 @@ macro_rules! t {
 pub struct SincInterpolationParameters {
     /// Length of the windowed sinc interpolation filter.
     /// Higher values can allow a higher cut-off frequency leading to less high frequency roll-off
-    /// at the expense of higher cpu usage. 256 is a good starting point.
+    /// at the expense of higher CPU usage. 256 is a good starting point.
     /// The value will be rounded up to the nearest multiple of 8.
     pub sinc_len: usize,
     /// Relative cutoff frequency of the sinc interpolation filter
@@ -32,8 +32,8 @@ pub struct SincInterpolationParameters {
     /// The number of intermediate points to use for interpolation.
     /// Higher values use more memory for storing the sinc filters.
     /// Only the points actually needed are calculated during processing
-    /// so a larger number does not directly lead to higher cpu usage.
-    /// A lower value helps in keeping the sincs in the cpu cache. Start at 128.
+    /// so a larger number does not directly lead to higher CPU usage.
+    /// A lower value helps in keeping the sincs in the CPU cache. Start at 128.
     pub oversampling_factor: usize,
     /// Interpolation type, see `SincInterpolationType`
     pub interpolation: SincInterpolationType,
@@ -45,7 +45,7 @@ pub struct SincInterpolationParameters {
 /// ratio between input and output sample rates can be any number, it's not possible to
 /// pre-calculate all the needed interpolation filters.
 /// Instead they have to be computed as needed, which becomes impractical since the
-/// sincs are very expensive to generate in terms of cpu time.
+/// sincs are very expensive to generate in terms of CPU time.
 /// It's more efficient to combine the sinc filters with some other interpolation technique.
 /// Then, sinc filters are used to provide a fixed number of interpolated points between input samples,
 /// and then, the new value is calculated by interpolation between those points.

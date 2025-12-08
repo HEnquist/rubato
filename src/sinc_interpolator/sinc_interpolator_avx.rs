@@ -15,7 +15,7 @@ use core::arch::x86_64::{
     _mm256_fmadd_ps, _mm256_loadu_ps, _mm256_setzero_ps, _mm_add_ps, _mm_hadd_ps, _mm_store_ss,
 };
 
-/// Collection of cpu features required for this interpolator.
+/// Collection of CPU features required for this interpolator.
 static FEATURES: &[CpuFeature] = &[CpuFeature::Avx, CpuFeature::Fma];
 
 /// Trait governing what can be done with an AvxSample.
