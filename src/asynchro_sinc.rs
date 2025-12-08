@@ -19,7 +19,7 @@ macro_rules! t {
 }
 
 /// A struct holding the parameters for sinc interpolation.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct SincInterpolationParameters {
     /// Length of the windowed sinc interpolation filter.
     /// Higher values can allow a higher cut-off frequency leading to less high frequency roll-off
@@ -49,7 +49,7 @@ pub struct SincInterpolationParameters {
 /// It's more efficient to combine the sinc filters with some other interpolation technique.
 /// Then, sinc filters are used to provide a fixed number of interpolated points between input samples,
 /// and then, the new value is calculated by interpolation between those points.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum SincInterpolationType {
     /// For cubic interpolation, the four nearest intermediate points are calculated
     /// using sinc interpolation.
@@ -161,7 +161,7 @@ where
     yvals[0] + x * (yvals[1] - yvals[0])
 }
 
-pub struct InnerSinc<T> {
+pub(crate) struct InnerSinc<T> {
     pub interpolator: Box<dyn SincInterpolator<T>>,
     pub interpolation: SincInterpolationType,
 }

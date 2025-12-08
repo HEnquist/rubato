@@ -63,7 +63,7 @@ pub use crate::windows::{calculate_cutoff, WindowFunction};
 
 /// A struct for providing optional parameters when calling
 /// [process_into_buffer](Resampler::process_into_buffer).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Indexing {
     pub input_offset: usize,
     pub output_offset: usize,

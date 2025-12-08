@@ -17,6 +17,7 @@ edition = "2021"
 default = ["fft_resampler"]
 fft_resampler = ["realfft", "num-complex"]
 log = ["dep:log"]
+bench_asyncro = []
 
 [dependencies]
 log = { version = "0.4.18", optional = true }
@@ -26,19 +27,19 @@ num-integer = "0.1.45"
 num-traits = "0.2"
 audioadapter = {version = "2.0.0", path = "../audioadapter-rs/audioadapter"}
 audioadapter-buffers = {version = "2.0.0", path = "../audioadapter-rs/audioadapter-buffers"}
-
+visibility = "0.1.1"
 windowfunctions = "0.1.1"
 
 [dev-dependencies] 
 env_logger = "0.10.0"
-criterion = "0.5.1"
+criterion = "0.8"
 rand = "0.8.5"
 num-traits = "0.2.15"
 log = "0.4.18"
 approx = "0.5.1"
 test-log = "0.2.16"
 test-case = "3"
-audioadapter-sample = {version = "1.0.0", path = "../audioadapter-rs/audioadapter-sample"}
+audioadapter-sample = {version = "2.0.0", path = "../audioadapter-rs/audioadapter-sample"}
 
 [[bench]]
 name = "resamplers"

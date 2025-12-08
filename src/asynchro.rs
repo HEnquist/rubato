@@ -280,7 +280,8 @@ where
     /// - `interpolator`: The interpolator to use.
     /// - `chunk_size`: Size of output data in frames.
     /// - `nbr_channels`: Number of channels in input/output.
-    pub fn new_with_sinc_interpolator(
+    #[cfg_attr(feature = "bench_asyncro", visibility::make(pub))]
+    fn new_with_sinc_interpolator(
         resample_ratio: f64,
         max_resample_ratio_relative: f64,
         interpolation_type: SincInterpolationType,
@@ -332,8 +333,6 @@ where
 
         let channel_mask = vec![true; nbr_channels];
 
-        //let temp_output = Vec::with_capacity(nbr_channels);
-
         Ok(Async {
             nbr_channels,
             chunk_size,
@@ -350,7 +349,6 @@ where
             buffer,
             channel_mask,
             fixed,
-            //temp_output,
         })
     }
 

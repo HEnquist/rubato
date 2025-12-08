@@ -49,7 +49,8 @@ interpolator! {
 }
 
 /// Functions for making the scalar product with a sinc.
-pub trait SincInterpolator<T>: Send {
+#[cfg_attr(feature = "bench_asyncro", visibility::make(pub))]
+pub(crate) trait SincInterpolator<T>: Send {
     /// Make the scalar product between the waveform starting at `index` and the sinc of `subindex`.
     fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T;
 
@@ -61,7 +62,8 @@ pub trait SincInterpolator<T>: Send {
 }
 
 /// A plain scalar interpolator.
-pub struct ScalarInterpolator<T> {
+#[cfg_attr(feature = "bench_asyncro", visibility::make(pub))]
+pub(crate) struct ScalarInterpolator<T> {
     sincs: Vec<Vec<T>>,
     length: usize,
     nbr_sincs: usize,

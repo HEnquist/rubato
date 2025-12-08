@@ -139,7 +139,8 @@ impl AvxSample for f64 {
 }
 
 /// An AVX accelerated interpolator.
-pub struct AvxInterpolator<T>
+#[cfg_attr(feature = "bench_asyncro", visibility::make(pub))]
+pub(crate) struct AvxInterpolator<T>
 where
     T: AvxSample,
 {

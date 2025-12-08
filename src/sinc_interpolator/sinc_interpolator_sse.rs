@@ -151,7 +151,8 @@ impl SseSample for f64 {
 }
 
 /// A SSE accelerated interpolator.
-pub struct SseInterpolator<T>
+#[cfg_attr(feature = "bench_asyncro", visibility::make(pub))]
+pub(crate) struct SseInterpolator<T>
 where
     T: SseSample,
 {

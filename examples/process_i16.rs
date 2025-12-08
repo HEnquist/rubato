@@ -1,6 +1,6 @@
 extern crate rubato;
 use audioadapter_buffers::number_to_float::InterleavedNumbers;
-use audioadapter_sample::sample::I16LE;
+use audioadapter_sample::sample::I16_LE;
 
 use rubato::{
     calculate_cutoff, Async, FixedAsync, Indexing, Resampler, SincInterpolationParameters,
@@ -104,10 +104,10 @@ fn main() {
     let resampler_delay = resampler.output_delay();
 
     let input_adapter =
-        InterleavedNumbers::<&[I16LE], f32>::new_from_bytes(&indata, channels, nbr_input_frames)
+        InterleavedNumbers::<&[I16_LE], f32>::new_from_bytes(&indata, channels, nbr_input_frames)
             .unwrap();
     let outdata_capacity = outdata.len() / (channels * BYTE_PER_SAMPLE);
-    let mut output_adapter = InterleavedNumbers::<&mut [I16LE], f32>::new_from_bytes_mut(
+    let mut output_adapter = InterleavedNumbers::<&mut [I16_LE], f32>::new_from_bytes_mut(
         &mut outdata,
         channels,
         outdata_capacity,
