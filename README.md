@@ -22,16 +22,17 @@ see [Real-time considerations](#real-time-considerations) for more details.
 ## Input and output data format
 
 Input and output data is handled via
-[`Adapter`](https://docs.rs/audioadapter/0.5.0/audioadapter/trait.Adapter.html) and [`AdapterMut`](https://docs.rs/audioadapter/0.5.0/audioadapter/trait.AdapterMut.html) objects from the
-[audioadapter](https://crates.io/crates/audioadapter) crate.
+[`Adapter`](https://docs.rs/audioadapter/2.0.0/audioadapter/trait.Adapter.html)
+and [`AdapterMut`](https://docs.rs/audioadapter/2.0.0/audioadapter/trait.AdapterMut.html)
+objects from the [audioadapter](https://crates.io/crates/audioadapter) crate.
 By using a suitable adapter, any sample layout and format can be used.
 
-The `audioadapter` crate comes with a selection of adapters for common data structures,
-and the traits are kept simple in order to make it easy to implement them
+The [audioadapter-buffers](https://crates.io/crates/audioadapter-buffers) crate provides a selection of adapters for common data structures,
+and the `audioadapter` traits are kept simple in order to make it easy to implement them
 for new structures if needed.
 
-For projects migrating from a previous version of `rubato`,
-the [`SequentialSliceOfVecs`](https://docs.rs/audioadapter/0.5.0/audioadapter/direct/struct.SequentialSliceOfVecs.html)
+For projects migrating from a previous version of `rubato`, the
+[`SequentialSliceOfVecs`](https://docs.rs/audioadapter-buffers/2.0.0/audioadapter_buffers/direct/struct.SequentialSliceOfVecs.html)
 adapter is a good starting point, since it wraps the vector of vectors
 commonly used with `rubato` v0.16 and earlier.
 
@@ -114,7 +115,8 @@ or the cross platform [cpal](https://crates.io/crates/cpal) crate,
 often use callback functions for data exchange.
 
 When capturing audio from these, the application passes a function to the audio API.
-The API then calls this function periodically, with a pointer to a data buffer containing new audio frames.
+The API then calls this function periodically,
+with a pointer to a data buffer containing new audio frames.
 The data buffer size is usually the same on every call, but that varies between APIs.
 It is important that the function does not block,
 since this would block some internal loop of the API and cause loss of some audio data.
@@ -130,12 +132,14 @@ A separate loop, running either in the main or a separate thread,
 should then read from that buffer, resample, and save to file.
 If the Audio API provides a fixed buffer size,
 then this number of frames is a good choice for the resampler chunk size.
-If the size varies, the shared buffer can be used to adapt the chunk sizes of the audio API and the resampler.
+If the size varies, the shared buffer can be used to adapt
+the chunk sizes of the audio API and the resampler.
 A good starting point for the resampler chunk size is to use an "easy" value
 near the average chunk size of the audio API.
 Make sure that the shared buffer is large enough to not get full
 in case for the loop gets blocked waiting for example for disk access.
-The resampler loop needs to wait for the needed number of frames to become available in the buffer,
+The resampler loop needs to wait for the needed number
+of frames to become available in the buffer,
 before reading and passing them to the resampler.
 
 The output of the resampler is then written directly to a file.
@@ -147,13 +151,13 @@ for reading and writing uncompressed audio formats.
 
 ### Asynchronous resampling with anti-aliasing
 
-The asynchronous sinc resampler supports SIMD on x86_64 and on aarch64.
+The asynchronous sinc resampler supports SIMD on x86_64 and on aarch64 (64-bit Arm).
 The SIMD capabilities of the CPU are determined at runtime.
 If no supported SIMD instruction set is available, it falls back to a scalar implementation.
 
 On x86_64, it will try to use AVX. If AVX isn't available, it will instead try SSE3.
 
-On aarch64 (64-bit Arm), it will use Neon if available.
+On aarch64, it will use Neon if available.
 
 ### Synchronous resampling
 
@@ -191,7 +195,11 @@ RUST_LOG=trace cargo test --features log
 Resample a dummy audio file from 44100 to 48000 Hz.
 See also the "process_f64" example that can be used to process a file from disk.
 ```rust
-use rubato::{Resampler, Async, FixedAsync, Indexing, SincInterpolationType, SincInterpolationParameters, WindowFunction};
+use rubato::{
+    Resampler, Async, FixedAsync, Indexing,
+    SincInterpolationType, SincInterpolationParameters,
+    WindowFunction
+};
 use audioadapter_buffers::direct::InterleavedSlice;
 
 let params = SincInterpolationParameters {
@@ -265,8 +273,8 @@ sox some_file.wav -e floating-point -b 64 some_file_f64.raw
 ```
 
 After processing with for instance the `process_f64` example,
-the result can be converted back to new .wav.
-This converts the 64-bit floats to 16-bits at 44.1 kHz:
+the result can be converted back to a new .wav.
+This command converts the 64-bit floats to 16-bits at 44.1 kHz:
 ```sh
 sox -e floating-point -b 64 -r 44100 -c 2 resampler_output.raw -e signed-integer -b 16 some_file_resampled.wav
 ```
@@ -278,7 +286,7 @@ Many audio editors, for example Audacity, are also able to directly import and e
 The `rubato` crate requires rustc version 1.74 or newer.
 
 ## Changelog
-- v1.0.0-preview.0
+- v1.0.0
   - New API using the AudioAdapter crate to handle different buffer layouts and sample formats.
   - Merged the FixedIn, FixedOut and FixedInOut resamplers into single types that supports all modes.
   - Merged the sinc and polynomial asynchronous resamplers into
