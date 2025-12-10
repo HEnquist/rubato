@@ -101,7 +101,7 @@ Create an output buffer, and call `Resampler::process_all_into_buffer()`.
 
 If there is more than one clip to resample from and to the same sample rates,
 the same resampler should be reused.
-Creating a new resampler is an expensive task and should be avoided if possible.
+Creating a new resampler is an expensive task and should be avoided when possible.
 Start the procedure from the start, but instead of creating a new resampler,
 call `Resampler::reset()` on the existing one to prepare it for a new job.
 
@@ -109,43 +109,45 @@ call `Resampler::reset()` on the existing one to prepare it for a new job.
 When resampling a stream, the process is normally performed in real time,
 and either the input or output is some API that provides or consumes frames at a given rate.
 
-#### Example, record to file from an audio API
+#### Use case example, record from an audio API and save to a file
 Audio APIs such as [CoreAudio](https://crates.io/crates/coreaudio-rs) on MacOS,
 or the cross platform [cpal](https://crates.io/crates/cpal) crate,
 often use callback functions for data exchange.
 
+##### Callback function
 When capturing audio from these, the application passes a function to the audio API.
 The API then calls this function periodically,
 with a pointer to a data buffer containing new audio frames.
 The data buffer size is usually the same on every call, but that varies between APIs.
 It is important that the function does not block,
 since this would block some internal loop of the API and cause loss of some audio data.
-It is recommended to keep the callback function light.
+It is also recommended to keep the callback function light.
+**No heavy processing such as resampling should be performed here.**
 Ideally it should read the provided audio data from the buffer provided by the API,
 and optionally perform some light processing such as sample format conversion.
-No heavy processing such as resampling should be performed here.
 It should then store the audio data to a shared buffer.
 The buffer may be a `Arc<Mutex<VecDeque<T>>>`,
 or something more advanced such as [ringbuf](https://crates.io/crates/ringbuf).
 
+##### Processing loop
 A separate loop, running either in the main or a separate thread,
 should then read from that buffer, resample, and save to file.
-If the Audio API provides a fixed buffer size,
-then this number of frames is a good choice for the resampler chunk size.
-If the size varies, the shared buffer can be used to adapt
-the chunk sizes of the audio API and the resampler.
-A good starting point for the resampler chunk size is to use an "easy" value
-near the average chunk size of the audio API.
-Make sure that the shared buffer is large enough to not get full
-in case for the loop gets blocked waiting for example for disk access.
 The resampler loop needs to wait for the needed number
 of frames to become available in the buffer,
 before reading and passing them to the resampler.
 
-The output of the resampler is then written directly to a file.
+If the Audio API provides a fixed buffer size,
+then this number of frames is a good choice for the resampler input chunk size.
+If the size varies, the shared buffer can be used to adapt
+the chunk sizes of the audio API and the resampler.
+A good starting point for the resampler chunk size is to use an "easy" value,
+for example a power of two, near the average chunk size of the audio API.
+Make sure that the shared buffer is large enough to not get full
+in case for the loop gets blocked waiting for example for disk access.
+
+The output of the resampler is then written to a file.
 The [hound](https://crates.io/crates/hound) crate is a popular choice
 for reading and writing uncompressed audio formats.
-
 
 ## SIMD acceleration
 
