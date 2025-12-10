@@ -283,7 +283,8 @@ where
     ///
     /// For asynchronous resamplers, the ratio must be within
     /// `original / maximum` to `original * maximum`, where the original and maximum are the
-    /// resampling ratios that were provided to the constructor. Trying to set the ratio
+    /// resampling ratios that were provided to the constructor.
+    /// Trying to set the ratio
     /// outside these bounds will return [ResampleError::RatioOutOfBounds].
     ///
     /// For synchronous resamplers, this will always return [ResampleError::SyncNotAdjustable].
@@ -300,8 +301,9 @@ where
     ///
     /// For asynchronous resamplers, the relative ratio must be within
     /// `1 / maximum` to `maximum`, where `maximum` is the maximum
-    /// resampling ratio that was provided to the constructor. Trying to set the ratio
-    /// outside these bounds will return [ResampleError::RatioOutOfBounds].
+    /// resampling ratio that was provided to the constructor.
+    /// Trying to set the ratio outside these bounds
+    /// will return [ResampleError::RatioOutOfBounds].
     ///
     /// Ratios above 1.0 slow down the output and lower the pitch, while ratios
     /// below 1.0 speed up the output and raise the pitch.
@@ -314,7 +316,7 @@ where
 
     /// Change the chunk size for the resampler.
     /// This is not supported by all resampler types.
-    /// The value must be equal to or smaller than the chunk size the value
+    /// The value must be equal to or smaller than the chunk size value
     /// that the resampler was created with.
     /// [ResampleError::InvalidChunkSize] is returned if the value is zero or too large.
     ///

@@ -1,23 +1,19 @@
 # Rubato
 
-**Preview of v1.0.0**
+Rubato is a flexible audio sample rate conversion library for Rust,
+providing a choice of resamplers that can be optimized for either high quality or high speed.
+It processes audio in chunks, making it suitable for everything
+from real-time audio streams to offline batch processing.
 
-- This is a preview of the upcoming version 1.0, to gather feedback on the new api.
-  There are many changes to the api, but the most important one is that
-  the inputs and outputs are now using the [audioadapter](https://crates.io/crates/audioadapter) crate.
-  If something is missing or not working, please open an issue so it can be fixed before the release.
-  Note that there may be breaking changes between preview versions.
+The library allows for completely free selection of resampling ratios,
+which can even be updated on the fly.
+It features several resampler implementations,
+including high-quality asynchronous sinc resamplers
+and fast synchronous FFT-based resamplers.
 
-An audio sample rate conversion library for Rust.
-
-This library provides resamplers to process audio in chunks.
-
-The ratio between input and output sample rates is completely free.
-Implementations are available that accept a fixed length input
-while returning a variable length output, and vice versa.
-
-Rubato can be used in real-time applications,
-see [Real-time considerations](#real-time-considerations) for more details.
+Rubato is designed with real-time safety in mind,
+avoiding allocations during processing to ensure smooth and predictable performance.
+See [Real-time considerations](#real-time-considerations) for more details.
 
 ## Input and output data format
 
