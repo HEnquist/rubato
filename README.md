@@ -81,19 +81,19 @@ the number of frames in the input or output chunk, or both.
 The resamplers allow specifying which side should have a fixed size.
 
 *   **Fixed input**: The input chunk size is fixed to the given value.
-The output chunk size will vary depending on how many samples can be calculated using the available input data.
-This is convenient to use for resampling data from a source that delivers data in fixed size chunks.
+    The output chunk size will vary depending on how many samples can be calculated using the available input data.
+    This is convenient to use for resampling data from a source that delivers data in fixed size chunks.
 *   **Fixed output**: The output chunk size is fixed to the given value.
-The input chunk size will vary depending on how many new samples the resampler needs to calculate the output.
-This is meant to be used for resampling data that will be sent to some target that requires fixed size chunks.
+    The input chunk size will vary depending on how many new samples the resampler needs to calculate the output.
+    This is meant to be used for resampling data that will be sent to some target that requires fixed size chunks.
 *   **Both input and output fixed**: Both input and output chunk sizes are fixed.
-This is only available for the synchronous resampler.
-In this mode, the chunk size parameter is used as a hint,
-and the actual chunk sizes are calculated to fit the resampling ratio exactly.
-For example, a 44.1 kHz to 48 kHz resampler must use an input chunk size that is a multiple of 147,
-and an output chunk size that is a multiple of 160, in order to maintain the correct resampling ratio.
-For asynchronous resamplers, fixing both input and output chunk sizes is not possible
-since the resampling ratio can change, requiring at least one side to be variable.
+    This is only available for the synchronous resampler.
+    In this mode, the chunk size parameter is used as a hint,
+    and the actual chunk sizes are calculated to fit the resampling ratio exactly.
+    For example, a 44.1 kHz to 48 kHz resampler must use an input chunk size that is a multiple of 147,
+    and an output chunk size that is a multiple of 160, in order to maintain the correct resampling ratio.
+    For asynchronous resamplers, fixing both input and output chunk sizes is not possible
+    since the resampling ratio can change, requiring at least one side to be variable.
 
 ### Resampling quality
 The synchronous resampler has no quality settings, it always delivers the best quality.
