@@ -23,7 +23,8 @@ and [`AdapterMut`](https://docs.rs/audioadapter/2.0.0/audioadapter/trait.Adapter
 objects from the [audioadapter](https://crates.io/crates/audioadapter) crate.
 By using a suitable adapter, any sample layout and format can be used.
 
-The [audioadapter-buffers](https://crates.io/crates/audioadapter-buffers) crate provides a selection of adapters for common data structures,
+The [audioadapter-buffers](https://crates.io/crates/audioadapter-buffers) crate
+provides a selection of adapters for common data structures,
 and the `audioadapter` traits are kept simple in order to make it easy to implement them
 for new structures if needed.
 
@@ -34,6 +35,12 @@ commonly used with `rubato` v0.16 and earlier.
 
 
 ## Asynchronous resampling
+
+Asynchronous resampling is when the input and output sample rates are not locked,
+and the ratio may vary slightly over time.
+This is common in real-time audio streams where the input and output devices
+have different clocks that may drift relative to each other.
+It allows for changing the resampling ratio at any time to compensate for this drift.
 
 The asynchronous resamplers are available with and without anti-aliasing filters.
 
@@ -47,15 +54,46 @@ This runs much faster but produces a lower quality result.
 
 ## Synchronous resampling
 
+Synchronous resampling is the case when the input and output sample rates
+are fixed and locked to each other.
+For example, converting a file from 44.1 kHz to 48 kHz.
+The ratio, 48 kHz / 44.1 kHz (equivalent to 160 / 147),
+is fixed and constant throughout the process.
+
 Synchronous resampling is implemented via FFT. The data is FFT:ed, the spectrum modified,
 and then inverse FFT:ed to get the resampled data.
 This type of resampler is considerably faster but doesn't support changing the resampling ratio.
 
 ## Usage
-The resamplers provided by this library are intended to process audio in chunks.
+The resamplers provided by this library are intended to support processing streams of audio.
+To enable this, they process audio in chunks.
 The optimal chunk size is determined by the application,
 but will likely end up somewhere between a few hundred to a few thousand frames.
 This gives a good compromise between efficiency and memory usage.
+
+### Chunk size and fixed size options
+
+Rubato processes audio in chunks.
+The size of these chunks is determined by the chunk size parameter given to the resampler constructor.
+Depending on the configuration, this parameter determines
+the number of frames in the input or output chunk, or both.
+
+The resamplers allow specifying which side should have a fixed size.
+
+*   **Fixed input**: The input chunk size is fixed to the given value.
+The output chunk size will vary depending on how many samples can be calculated using the available input data.
+This is convenient to use for resampling data from a source that delivers data in fixed size chunks.
+*   **Fixed output**: The output chunk size is fixed to the given value.
+The input chunk size will vary depending on how many new samples the resampler needs to calculate the output.
+This is meant to be used for resampling data that will be sent to some target that requires fixed size chunks.
+*   **Both input and output fixed**: Both input and output chunk sizes are fixed.
+This is only available for the synchronous resampler.
+In this mode, the chunk size parameter is used as a hint,
+and the actual chunk sizes are calculated to fit the resampling ratio exactly.
+For example, a 44.1 kHz to 48 kHz resampler must use an input chunk size that is a multiple of 147,
+and an output chunk size that is a multiple of 160, in order to maintain the correct resampling ratio.
+For asynchronous resamplers, fixing both input and output chunk sizes is not possible
+since the resampling ratio can change, requiring at least one side to be variable.
 
 ### Resampling quality
 The synchronous resampler has no quality settings, it always delivers the best quality.
