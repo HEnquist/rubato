@@ -15,7 +15,7 @@ use core::arch::x86_64::{
     _mm256_fmadd_ps, _mm256_loadu_ps, _mm256_setzero_ps, _mm_add_ps, _mm_hadd_ps, _mm_store_ss,
 };
 
-/// Collection of cpu features required for this interpolator.
+/// Collection of CPU features required for this interpolator.
 static FEATURES: &[CpuFeature] = &[CpuFeature::Avx, CpuFeature::Fma];
 
 /// Trait governing what can be done with an AvxSample.
@@ -139,7 +139,8 @@ impl AvxSample for f64 {
 }
 
 /// An AVX accelerated interpolator.
-pub struct AvxInterpolator<T>
+#[cfg_attr(feature = "bench_asyncro", visibility::make(pub))]
+pub(crate) struct AvxInterpolator<T>
 where
     T: AvxSample,
 {
@@ -169,7 +170,7 @@ where
         unsafe { T::get_sinc_interpolated_unsafe(wave, index, subindex, &self.sincs, self.length) }
     }
 
-    fn len(&self) -> usize {
+    fn nbr_points(&self) -> usize {
         self.length
     }
 

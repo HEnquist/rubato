@@ -1,19 +1,19 @@
 use std::error;
 use std::fmt;
 
-/// An identifier for a cpu feature.
+/// An identifier for a CPU feature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CpuFeature {
-    /// x86 sse3 cpu feature.
+    /// x86 sse3 CPU feature.
     #[cfg(target_arch = "x86_64")]
     Sse3,
-    /// x86_64 avx cpu feature.
+    /// x86_64 avx CPU feature.
     #[cfg(target_arch = "x86_64")]
     Avx,
-    /// the fma cpu feature.
+    /// the fma CPU feature.
     #[cfg(target_arch = "x86_64")]
     Fma,
-    /// aarc64 neon cpu feature.
+    /// aarc64 neon SPU feature.
     #[cfg(target_arch = "aarch64")]
     Neon,
 }
@@ -83,6 +83,7 @@ pub enum ResamplerConstructionError {
     InvalidSampleRate { input: usize, output: usize },
     InvalidRelativeRatio(f64),
     InvalidRatio(f64),
+    InvalidChunkSize(usize),
 }
 
 impl fmt::Display for ResamplerConstructionError {
@@ -96,6 +97,9 @@ impl fmt::Display for ResamplerConstructionError {
             ),
             Self::InvalidRelativeRatio(provided) => write!(formatter,
                 "Invalid max_resample_ratio_relative provided: {}. max_resample_ratio_relative must be >= 1", provided
+            ),
+            Self::InvalidChunkSize(provided) => write!(formatter,
+                "Invalid chunk_size provided: {}. chunk_size must be >= 1", provided
             ),
         }
     }
@@ -140,14 +144,12 @@ pub enum ResampleError {
     /// Error raised when the number of frames in an input channel is less
     /// than the minimum expected.
     InsufficientInputBufferSize {
-        channel: usize,
         expected: usize,
         actual: usize,
     },
     /// Error raised when the number of frames in an output channel is less
     /// than the minimum expected.
     InsufficientOutputBufferSize {
-        channel: usize,
         expected: usize,
         actual: usize,
     },
@@ -193,26 +195,18 @@ impl fmt::Display for ResampleError {
                     actual, expected
                 )
             }
-            Self::InsufficientInputBufferSize {
-                channel,
-                expected,
-                actual,
-            } => {
+            Self::InsufficientInputBufferSize { expected, actual } => {
                 write!(
                     f,
-                    "Insufficient buffer size {} for input channel {}, expected {}",
-                    actual, channel, expected
+                    "Insufficient buffer size {}, expected {} frames",
+                    actual, expected
                 )
             }
-            Self::InsufficientOutputBufferSize {
-                channel,
-                expected,
-                actual,
-            } => {
+            Self::InsufficientOutputBufferSize { expected, actual } => {
                 write!(
                     f,
-                    "Insufficient buffer size {} for output channel {}, expected {}",
-                    actual, channel, expected
+                    "Insufficient buffer size {}, expected {} frames",
+                    actual, expected
                 )
             }
             Self::InvalidChunkSize { max, requested } => {

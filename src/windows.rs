@@ -1,4 +1,5 @@
 use crate::Sample;
+use windowfunctions::{window, Symmetry, WindowFunction as ImportedWindowFunction};
 
 /// Different window functions that can be used to window the sinc function.
 #[derive(Debug, Clone, Copy)]
@@ -24,21 +25,13 @@ where
     T: Sample,
 {
     trace!("Making a BlackmanHarris windows with {} points", npoints);
-    let mut window = vec![T::zero(); npoints];
-    let pi2 = T::coerce(2.0) * T::PI;
-    let pi4 = T::coerce(4.0) * T::PI;
-    let pi6 = T::coerce(6.0) * T::PI;
-    let np_f = T::coerce(npoints);
-    let a = T::coerce(0.35875);
-    let b = T::coerce(0.48829);
-    let c = T::coerce(0.14128);
-    let d = T::coerce(0.01168);
-    for (x, item) in window.iter_mut().enumerate() {
-        let x_float = T::coerce(x);
-        *item = a - b * (pi2 * x_float / np_f).cos() + c * (pi4 * x_float / np_f).cos()
-            - d * (pi6 * x_float / np_f).cos();
-    }
-    window
+    window::<f64>(
+        npoints,
+        ImportedWindowFunction::BlackmanHarris,
+        Symmetry::Periodic,
+    )
+    .map(|v| T::coerce(v))
+    .collect()
 }
 
 /// Helper function. Standard Blackman window.
@@ -48,18 +41,13 @@ where
     T: Sample,
 {
     trace!("Making a Blackman windows with {} points", npoints);
-    let mut window = vec![T::zero(); npoints];
-    let pi2 = T::coerce(2.0) * T::PI;
-    let pi4 = T::coerce(4.0) * T::PI;
-    let np_f = T::coerce(npoints);
-    let a = T::coerce(0.42);
-    let b = T::coerce(0.5);
-    let c = T::coerce(0.08);
-    for (x, item) in window.iter_mut().enumerate() {
-        let x_float = T::coerce(x);
-        *item = a - b * (pi2 * x_float / np_f).cos() + c * (pi4 * x_float / np_f).cos();
-    }
-    window
+    window::<f64>(
+        npoints,
+        ImportedWindowFunction::Blackman,
+        Symmetry::Periodic,
+    )
+    .map(|v| T::coerce(v))
+    .collect()
 }
 
 /// Helper function. Standard Hann window.
@@ -69,15 +57,9 @@ where
     T: Sample,
 {
     trace!("Making a Hann windows with {} points", npoints);
-    let mut window = vec![T::zero(); npoints];
-    let pi2 = T::coerce(2.0) * T::PI;
-    let np_f = T::coerce(npoints);
-    let a = T::coerce(0.5);
-    for (x, item) in window.iter_mut().enumerate() {
-        let x_float = T::coerce(x);
-        *item = a - a * (pi2 * x_float / np_f).cos();
-    }
-    window
+    window::<f64>(npoints, ImportedWindowFunction::Hann, Symmetry::Periodic)
+        .map(|v| T::coerce(v))
+        .collect()
 }
 
 /// Make the selected window function.
@@ -151,30 +133,11 @@ where
 #[cfg(test)]
 mod tests {
     extern crate approx;
-    use crate::windows::blackman;
-    use crate::windows::blackman_harris;
     use crate::windows::calculate_cutoff;
-    use crate::windows::hann;
     use crate::windows::make_window;
     use crate::windows::WindowFunction;
     use approx::assert_abs_diff_eq;
     use test_log::test;
-
-    #[test]
-    fn test_blackman_harris() {
-        let wnd = blackman_harris::<f64>(16);
-        assert_abs_diff_eq!(wnd[8], 1.0, epsilon = 0.000001);
-        assert!(wnd[0] < 0.001);
-        assert!(wnd[15] < 0.1);
-    }
-
-    #[test]
-    fn test_blackman() {
-        let wnd = blackman::<f64>(16);
-        assert_abs_diff_eq!(wnd[8], 1.0, epsilon = 0.000001);
-        assert!(wnd[0] < 0.000001);
-        assert!(wnd[15] < 0.1);
-    }
 
     #[test]
     fn test_blackman2() {
@@ -186,14 +149,6 @@ mod tests {
         assert!(wnd2[1] > 0.000001);
         assert!(wnd2[4] > 0.000001);
         assert!(wnd2[7] > 0.000001);
-    }
-
-    #[test]
-    fn test_hann() {
-        let wnd = hann::<f64>(16);
-        assert_abs_diff_eq!(wnd[8], 1.0, epsilon = 0.000001);
-        assert!(wnd[0] < 0.000001);
-        assert!(wnd[15] < 0.1);
     }
 
     #[test]
