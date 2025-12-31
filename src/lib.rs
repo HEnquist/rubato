@@ -386,7 +386,7 @@ pub mod tests {
     #[test_log::test]
     fn process_all() {
         let mut resampler = Async::<f64>::new_sinc(
-            88200 as f64 / 44100 as f64,
+            88200.0 / 44100.0,
             1.1,
             &SincInterpolationParameters {
                 sinc_len: 64,
@@ -447,7 +447,7 @@ pub mod tests {
     fn boxed_resampler() {
         let mut boxed: Box<dyn Resampler<f64>> = Box::new(
             Async::<f64>::new_sinc(
-                88200 as f64 / 44100 as f64,
+                88200.0 / 44100.0,
                 1.1,
                 &SincInterpolationParameters {
                     sinc_len: 64,
@@ -468,7 +468,7 @@ pub mod tests {
         let mut waves_out = vec![vec![0.0f64; max_frames_out]; 2];
         let input = SequentialSliceOfVecs::new(&waves, 2, nbr_frames_in_next).unwrap();
         let mut output = SequentialSliceOfVecs::new_mut(&mut waves_out, 2, max_frames_out).unwrap();
-        let _ = process_with_boxed(&mut boxed, &input, &mut output);
+        process_with_boxed(&mut boxed, &input, &mut output);
     }
 
     fn process_with_boxed<'a>(
@@ -527,7 +527,7 @@ pub mod tests {
                     for ch in 0..2 {
                         input_data[ch][m] = ramp_value;
                     }
-                    ramp_value = ramp_value + 0.1;
+                    ramp_value += 0.1;
                 }
                 let input = SequentialSliceOfVecs::new(&input_data, 2, expected_frames_in).unwrap();
                 let mut output_data = vec![vec![0.0 as $fty; expected_frames_out]; 2];
