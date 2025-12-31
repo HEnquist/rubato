@@ -2,6 +2,9 @@
 
 #[cfg(feature = "log")]
 extern crate log;
+
+pub use audioadapter;
+
 use audioadapter::{Adapter, AdapterMut};
 use audioadapter_buffers::owned::InterleavedOwned;
 
