@@ -250,7 +250,7 @@ mod tests {
             wave.push(rng.gen::<f64>());
         }
         let sinc_len = 256;
-        let f_cutoff = 0.9473371669037001;
+        let f_cutoff = 0.94733715;
         let oversampling_factor = 256;
         let window = WindowFunction::BlackmanHarris2;
         let sincs = make_sincs::<f64>(sinc_len, oversampling_factor, f_cutoff, window);
@@ -269,7 +269,7 @@ mod tests {
             wave.push(rng.gen::<f32>());
         }
         let sinc_len = 256;
-        let f_cutoff = 0.9473371669037001;
+        let f_cutoff = 0.94733715;
         let oversampling_factor = 256;
         let window = WindowFunction::BlackmanHarris2;
         let sincs = make_sincs::<f32>(sinc_len, oversampling_factor, f_cutoff, window);
