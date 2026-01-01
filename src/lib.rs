@@ -180,6 +180,8 @@ where
     ///
     /// The `active_channels_mask` parameter has the same meaning as in
     /// [process_into_buffer](Resampler::process_into_buffer).
+    ///
+    /// Returns the lengths of the original input and the resampled output.
     fn process_all_into_buffer<'a>(
         &mut self,
         buffer_in: &dyn Adapter<'a, T>,
@@ -251,6 +253,10 @@ where
     /// Calculate the minimal length of the output buffer
     /// needed to process a clip of length `input_len` using the
     /// [process_all_into_buffer](Resampler::process_all_into_buffer) method.
+    ///
+    /// Includes additional space needed by the resampler implementation. For
+    /// the length of resampled output, see the return value of
+    /// [process_all_into_buffer](Resampler::process_all_into_buffer).
     fn process_all_needed_output_len(&mut self, input_len: usize) -> usize {
         let delay_frames = self.output_delay();
         let output_frames_next = self.output_frames_next();
