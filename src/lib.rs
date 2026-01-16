@@ -220,7 +220,7 @@ where
             indexing.output_offset += nbr_out;
             if frames_to_trim > 0 && output_len > frames_to_trim {
                 debug!(
-                    "output, {} is longer  than delay to trim, {}, trimming..",
+                    "output, {} is longer than delay to trim, {}, trimming..",
                     output_len, frames_to_trim
                 );
                 // move useful output data to start of output buffer
