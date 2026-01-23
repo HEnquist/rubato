@@ -220,7 +220,7 @@ where
             indexing.output_offset += nbr_out;
             if frames_to_trim > 0 && output_len > frames_to_trim {
                 debug!(
-                    "output, {} is longer  than delay to trim, {}, trimming..",
+                    "output, {} is longer than delay to trim, {}, trimming..",
                     output_len, frames_to_trim
                 );
                 // move useful output data to start of output buffer
@@ -262,9 +262,9 @@ where
     /// [process_all_into_buffer](Resampler::process_all_into_buffer).
     fn process_all_needed_output_len(&mut self, input_len: usize) -> usize {
         let delay_frames = self.output_delay();
-        let output_frames_next = self.output_frames_next();
+        let output_frames_max = self.output_frames_max();
         let expected_output_len = (self.resample_ratio() * input_len as f64).ceil() as usize;
-        delay_frames + output_frames_next + expected_output_len
+        delay_frames + output_frames_max + expected_output_len
     }
 
     /// Get the maximum possible number of input frames per channel the resampler could require.

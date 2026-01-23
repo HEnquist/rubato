@@ -87,11 +87,15 @@ The resamplers allow specifying which side should have a fixed size.
     The input chunk size will vary depending on how many new samples the resampler needs to calculate the output.
     This is meant to be used for resampling data that will be sent to some target that requires fixed size chunks.
 *   **Both input and output fixed**: Both input and output chunk sizes are fixed.
-    This is only available for the synchronous resampler.
+    This mode is only available for the synchronous resampler.
     In this mode, the chunk size parameter is used as a hint,
     and the actual chunk sizes are calculated to fit the resampling ratio exactly.
     For example, a 44.1 kHz to 48 kHz resampler must use an input chunk size that is a multiple of 147,
     and an output chunk size that is a multiple of 160, in order to maintain the correct resampling ratio.
+
+    This mode avoids some internal buffering compared to fixed input or fixed output modes,
+    and is therefore somewhat more efficient.
+
     For asynchronous resamplers, fixing both input and output chunk sizes is not possible
     since the resampling ratio can change, requiring at least one side to be variable.
 
@@ -130,8 +134,11 @@ The resampler trait provides the `Resampler::process_all_into_buffer()` method
 for resampling a full audio clip of arbitrary length.
 To use this, create a resampler of suitable type, for example `Fft` which is fast and gives good quality.
 The chunk size can be chosen arbitrarily. Start with a chunk size of for example 1024.
-Then call `Resampler::process_all_needed_output_len()` to find out the length of the result.
-Create an output buffer, and call `Resampler::process_all_into_buffer()`.
+In this application, the exact input or output chunk sizes are not important
+and therefore the `FixedSync::Both` setting can be used for the `Fft` resampler.
+After creating the resampler, call `Resampler::process_all_needed_output_len()`
+to find out the minimum length of the needed output buffer.
+Create a suitable output buffer, and then call `Resampler::process_all_into_buffer()`.
 
 If there is more than one clip to resample from and to the same sample rates,
 the same resampler should be reused.
@@ -232,27 +239,11 @@ Resample a dummy audio file from 44100 to 48000 Hz.
 See also the "process_f64" example that can be used to process a file from disk.
 ```rust
 use rubato::{
-    Resampler, Async, FixedAsync, Indexing,
-    SincInterpolationType, SincInterpolationParameters,
-    WindowFunction
+    Resampler, Fft, FixedSync, Indexing
 };
 use audioadapter_buffers::direct::InterleavedSlice;
 
-let params = SincInterpolationParameters {
-    sinc_len: 256,
-    f_cutoff: 0.95,
-    interpolation: SincInterpolationType::Linear,
-    oversampling_factor: 256,
-    window: WindowFunction::BlackmanHarris2,
-};
-let mut resampler = Async::<f64>::new_sinc(
-    48000 as f64 / 44100 as f64,
-    2.0,
-    &params,
-    1024,
-    2,
-    FixedAsync::Input,
-).unwrap();
+let mut resampler = Fft::<f64>::new(48000, 44100, 1024, 2, 2, FixedSync::Both).unwrap();
 
 // create a short dummy audio clip, assuming it's stereo stored as interleaved f64 values
 let audio_clip = vec![0.0; 2*10000];
@@ -322,6 +313,8 @@ Many audio editors, for example Audacity, are also able to directly import and e
 The `rubato` crate requires rustc version 1.74 or newer.
 
 ## Changelog
+- v1.0.1
+  - Fix calculation in process_all_needed_output_len method.
 - v1.0.0
   - New API using the AudioAdapter crate to handle different buffer layouts and sample formats.
   - Merged the FixedIn, FixedOut and FixedInOut resamplers into single types that supports all modes.
