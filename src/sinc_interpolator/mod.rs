@@ -156,7 +156,6 @@ mod tests {
     use super::SincInterpolator;
     use crate::WindowFunction;
     use num_traits::Float;
-    use rand::Rng;
     use test_log::test;
 
     fn get_sinc_interpolated<T: Float>(wave: &[T], index: usize, sinc: &[T]) -> T {
@@ -169,10 +168,9 @@ mod tests {
 
     #[test]
     fn test_scalar_interpolator_64() {
-        let mut rng = rand::thread_rng();
         let mut wave = Vec::new();
         for _ in 0..2048 {
-            wave.push(rng.gen::<f64>());
+            wave.push(rand::random::<f64>());
         }
         let sinc_len = 256;
         let f_cutoff = 0.94733715;
@@ -188,10 +186,9 @@ mod tests {
 
     #[test]
     fn test_scalar_interpolator_32() {
-        let mut rng = rand::thread_rng();
         let mut wave = Vec::new();
         for _ in 0..2048 {
-            wave.push(rng.gen::<f32>());
+            wave.push(rand::random::<f32>());
         }
         let sinc_len = 256;
         let f_cutoff = 0.94733715;

@@ -645,7 +645,6 @@ mod tests {
     };
     use approx::assert_abs_diff_eq;
     use audioadapter_buffers::direct::SequentialSliceOfVecs;
-    use rand::Rng;
     use test_case::test_matrix;
 
     #[test_log::test]

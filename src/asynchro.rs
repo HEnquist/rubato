@@ -641,7 +641,6 @@ mod tests {
     };
     use crate::{Async, FixedAsync};
     use audioadapter_buffers::direct::SequentialSliceOfVecs;
-    use rand::Rng;
     use test_case::test_matrix;
 
     fn basic_params() -> SincInterpolationParameters {
@@ -814,5 +813,92 @@ mod tests {
         let mut resampler = Async::<f64>::new_sinc(ratio, 1.0, &params, 1024, 2, fixed).unwrap();
         resampler.set_chunk_size(600).unwrap();
         check_output!(resampler, f64);
+    }
+
+    fn process_and_get_frame_counts(resampler: &mut Async<f64>) -> (usize, usize) {
+        let input_frames = resampler.input_frames_next();
+        let output_frames_max = resampler.output_frames_max();
+        let input_data = vec![vec![0.25; input_frames]; 2];
+        let input = SequentialSliceOfVecs::new(&input_data, 2, input_frames).unwrap();
+
+        let mut output_data = vec![vec![0.0; output_frames_max]; 2];
+        let mut output =
+            SequentialSliceOfVecs::new_mut(&mut output_data, 2, output_frames_max).unwrap();
+
+        let (consumed_frames, produced_frames) = resampler
+            .process_into_buffer(&input, &mut output, None)
+            .unwrap();
+        (consumed_frames, produced_frames)
+    }
+
+    fn process_chunks_and_get_total_frame_counts(
+        resampler: &mut Async<f64>,
+        nbr_chunks: usize,
+    ) -> (usize, usize) {
+        (0..nbr_chunks).fold((0, 0), |(sum_in, sum_out), _| {
+            let (frames_in, frames_out) = process_and_get_frame_counts(resampler);
+            (sum_in + frames_in, sum_out + frames_out)
+        })
+    }
+
+    fn assert_ratio_within_tolerance(
+        total_in: usize,
+        total_out: usize,
+        expected_ratio: f64,
+        tolerance: f64,
+        label: &str,
+    ) {
+        let measured_ratio = total_out as f64 / total_in as f64;
+        let lower = expected_ratio - tolerance;
+        let upper = expected_ratio + tolerance;
+        assert!(
+            measured_ratio >= lower && measured_ratio <= upper,
+            "{} ratio out of range: got {}, expected {} +/- {} (out {}, in {})",
+            label,
+            measured_ratio,
+            expected_ratio,
+            tolerance,
+            total_out,
+            total_in,
+        );
+    }
+
+    fn check_relative_ratio_changes_frame_ratio(mut resampler: Async<f64>) {
+        let nbr_chunks = 8;
+        let tolerance = 0.01;
+
+        let (baseline_in, baseline_out) =
+            process_chunks_and_get_total_frame_counts(&mut resampler, nbr_chunks);
+        assert_ratio_within_tolerance(baseline_in, baseline_out, 1.0, tolerance, "Baseline");
+
+        // Lower ratio speeds up output.
+        resampler.set_resample_ratio_relative(0.75, false).unwrap();
+        let (lower_in, lower_out) =
+            process_chunks_and_get_total_frame_counts(&mut resampler, nbr_chunks);
+        assert_ratio_within_tolerance(lower_in, lower_out, 0.75, tolerance, "0.75x");
+
+        // Higher ratio slows down output.
+        resampler.set_resample_ratio_relative(1.25, false).unwrap();
+        let (higher_in, higher_out) =
+            process_chunks_and_get_total_frame_counts(&mut resampler, nbr_chunks);
+        assert_ratio_within_tolerance(higher_in, higher_out, 1.25, tolerance, "1.25x");
+    }
+
+    #[test_log::test(test_matrix(
+        [FixedAsync::Input, FixedAsync::Output]
+    ))]
+    fn poly_relative_ratio_changes_frame_ratio(fixed: FixedAsync) {
+        let resampler =
+            Async::<f64>::new_poly(1.0, 4.0, PolynomialDegree::Cubic, 1024, 2, fixed).unwrap();
+        check_relative_ratio_changes_frame_ratio(resampler);
+    }
+
+    #[test_log::test(test_matrix(
+        [FixedAsync::Input, FixedAsync::Output]
+    ))]
+    fn sinc_relative_ratio_changes_frame_ratio(fixed: FixedAsync) {
+        let params = basic_params();
+        let resampler = Async::<f64>::new_sinc(1.0, 4.0, &params, 1024, 2, fixed).unwrap();
+        check_relative_ratio_changes_frame_ratio(resampler);
     }
 }

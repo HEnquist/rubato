@@ -4,6 +4,7 @@
 extern crate log;
 
 pub use audioadapter;
+pub use audioadapter_buffers;
 
 use audioadapter::{Adapter, AdapterMut};
 use audioadapter_buffers::owned::InterleavedOwned;
@@ -679,11 +680,10 @@ pub mod tests {
         ($resampler:ident) => {
             let frames_in = $resampler.input_frames_next();
 
-            let mut rng = rand::thread_rng();
             let mut input_data = vec![vec![0.0f64; frames_in]; 2];
             input_data
                 .iter_mut()
-                .for_each(|ch| ch.iter_mut().for_each(|s| *s = rng.gen()));
+                .for_each(|ch| ch.iter_mut().for_each(|s| *s = rand::random()));
 
             let input = SequentialSliceOfVecs::new(&input_data, 2, frames_in).unwrap();
 
@@ -718,11 +718,10 @@ pub mod tests {
         ($resampler:ident) => {
             let frames_in = $resampler.input_frames_next();
 
-            let mut rng = rand::thread_rng();
             let mut input_data_1 = vec![vec![0.0f64; frames_in]; 2];
             input_data_1
                 .iter_mut()
-                .for_each(|ch| ch.iter_mut().for_each(|s| *s = rng.gen()));
+                .for_each(|ch| ch.iter_mut().for_each(|s| *s = rand::random()));
 
             let offset = 123;
             let mut input_data_2 = vec![vec![0.0f64; frames_in + offset]; 2];
@@ -771,11 +770,10 @@ pub mod tests {
         ($resampler:ident) => {
             let frames_in = $resampler.input_frames_next();
 
-            let mut rng = rand::thread_rng();
             let mut input_data = vec![vec![0.0f64; frames_in]; 2];
             input_data
                 .iter_mut()
-                .for_each(|ch| ch.iter_mut().for_each(|s| *s = rng.gen()));
+                .for_each(|ch| ch.iter_mut().for_each(|s| *s = rand::random()));
 
             let input = SequentialSliceOfVecs::new(&input_data, 2, frames_in).unwrap();
 
@@ -823,11 +821,10 @@ pub mod tests {
         ($resampler:ident) => {
             let frames_in = $resampler.input_frames_next();
 
-            let mut rng = rand::thread_rng();
             let mut input_data = vec![vec![0.0f64; frames_in]; 2];
             input_data
                 .iter_mut()
-                .for_each(|ch| ch.iter_mut().for_each(|s| *s = rng.gen()));
+                .for_each(|ch| ch.iter_mut().for_each(|s| *s = rand::random()));
 
             let input = SequentialSliceOfVecs::new(&input_data, 2, frames_in).unwrap();
 
