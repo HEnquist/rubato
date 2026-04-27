@@ -401,10 +401,10 @@ impl<T> Resampler<T> for Fft<T>
 where
     T: Sample,
 {
-    fn process_into_buffer<'a>(
+    fn process_into_buffer<'a, 'b>(
         &mut self,
         buffer_in: &dyn Adapter<'a, T>,
-        buffer_out: &mut dyn AdapterMut<'a, T>,
+        buffer_out: &mut dyn AdapterMut<'b, T>,
         indexing: Option<&Indexing>,
     ) -> ResampleResult<(usize, usize)> {
         // read the optional indexing struct

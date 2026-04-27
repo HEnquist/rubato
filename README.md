@@ -313,6 +313,8 @@ Many audio editors, for example Audacity, are also able to directly import and e
 The `rubato` crate requires rustc version 1.85 or newer.
 
 ## Changelog
+- v3.0.0
+  - Use separate lifetimes for `buffer_in` and `buffer_out` in `process_into_buffer`.
 - v2.0.0
   - Update to `audioadapter` 3.0.
   - Add re-export of `audioadapter-buffers`.
