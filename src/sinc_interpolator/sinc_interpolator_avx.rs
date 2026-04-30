@@ -12,8 +12,10 @@ use core::arch::x86_64::{
     _mm_store_sd,
 };
 use core::arch::x86_64::{
-    _mm256_fmadd_ps, _mm256_loadu_ps, _mm256_setzero_ps, _mm_add_ps, _mm_hadd_ps, _mm_store_ss,
+    _mm256_add_ps, _mm256_fmadd_ps, _mm256_loadu_ps, _mm256_setzero_ps, _mm_add_ps, _mm_hadd_ps,
+    _mm_store_ss,
 };
+use core::arch::x86_64::{_mm_prefetch, _MM_HINT_T0};
 
 /// Collection of CPU features required for this interpolator.
 static FEATURES: &[CpuFeature] = &[CpuFeature::Avx, CpuFeature::Fma];
@@ -45,6 +47,71 @@ pub trait AvxSample: Sized + Send {
     ) -> Self;
 }
 
+/// Const-generic AVX f32 dot product. With a compile-time `LEN` the loop
+/// trip count is known, so the optimiser can fully unroll it and schedule
+/// the FMA chain independently of any runtime length.
+///
+/// Uses four parallel accumulator chains. AVX FMA has 4-cycle latency and
+/// throughput of 2 per cycle, so a single-chain reduction caps the kernel
+/// at 1/8 of peak throughput. Splitting into 4 independent chains lets
+/// both FMA ports stay busy across the 4-cycle latency window.
+/// `LEN` must be a multiple of 32 (4 lanes × 8 floats per __m256). The
+/// callers already only pass values that satisfy this.
+#[target_feature(enable = "avx", enable = "fma")]
+#[inline]
+unsafe fn dot_avx_f32_n<const LEN: usize>(wave_cut: &[f32], sinc: &[__m256]) -> f32 {
+    let mut acc0 = _mm256_setzero_ps();
+    let mut acc1 = _mm256_setzero_ps();
+    let mut acc2 = _mm256_setzero_ps();
+    let mut acc3 = _mm256_setzero_ps();
+    let mut w_idx = 0;
+    let mut s_idx = 0;
+    let chunks = LEN / 32;
+    for _ in 0..chunks {
+        let w0 = _mm256_loadu_ps(wave_cut.get_unchecked(w_idx));
+        let w1 = _mm256_loadu_ps(wave_cut.get_unchecked(w_idx + 8));
+        let w2 = _mm256_loadu_ps(wave_cut.get_unchecked(w_idx + 16));
+        let w3 = _mm256_loadu_ps(wave_cut.get_unchecked(w_idx + 24));
+        acc0 = _mm256_fmadd_ps(w0, *sinc.get_unchecked(s_idx), acc0);
+        acc1 = _mm256_fmadd_ps(w1, *sinc.get_unchecked(s_idx + 1), acc1);
+        acc2 = _mm256_fmadd_ps(w2, *sinc.get_unchecked(s_idx + 2), acc2);
+        acc3 = _mm256_fmadd_ps(w3, *sinc.get_unchecked(s_idx + 3), acc3);
+        w_idx += 32;
+        s_idx += 4;
+    }
+    let acc01 = _mm256_add_ps(acc0, acc1);
+    let acc23 = _mm256_add_ps(acc2, acc3);
+    let acc = _mm256_add_ps(acc01, acc23);
+    let acc_high = _mm256_extractf128_ps(acc, 1);
+    let acc_low = _mm_add_ps(acc_high, _mm256_castps256_ps128(acc));
+    let temp2 = _mm_hadd_ps(acc_low, acc_low);
+    let temp1 = _mm_hadd_ps(temp2, temp2);
+    let mut result = 0.0;
+    _mm_store_ss(&mut result, temp1);
+    result
+}
+
+/// Runtime-length fallback. Single accumulator (the original path), kept
+/// for sinc lengths that are not multiples of 32.
+#[target_feature(enable = "avx", enable = "fma")]
+#[inline]
+unsafe fn dot_avx_f32_dyn(wave_cut: &[f32], sinc: &[__m256], length: usize) -> f32 {
+    let mut acc = _mm256_setzero_ps();
+    let mut w_idx = 0;
+    for s_idx in 0..length / 8 {
+        let w = _mm256_loadu_ps(wave_cut.get_unchecked(w_idx));
+        acc = _mm256_fmadd_ps(w, *sinc.get_unchecked(s_idx), acc);
+        w_idx += 8;
+    }
+    let acc_high = _mm256_extractf128_ps(acc, 1);
+    let acc_low = _mm_add_ps(acc_high, _mm256_castps256_ps128(acc));
+    let temp2 = _mm_hadd_ps(acc_low, acc_low);
+    let temp1 = _mm_hadd_ps(temp2, temp2);
+    let mut result = 0.0;
+    _mm_store_ss(&mut result, temp1);
+    result
+}
+
 impl AvxSample for f32 {
     type Sinc = __m256;
 
@@ -72,21 +139,77 @@ impl AvxSample for f32 {
     ) -> f32 {
         let sinc = sincs.get_unchecked(subindex);
         let wave_cut = &wave[index..(index + length)];
-        let mut acc = _mm256_setzero_ps();
-        let mut w_idx = 0;
-        for s_idx in 0..length / 8 {
-            let w = _mm256_loadu_ps(wave_cut.get_unchecked(w_idx));
-            acc = _mm256_fmadd_ps(w, *sinc.get_unchecked(s_idx), acc);
-            w_idx += 8;
+        // Dispatch to a fully-unrolled specialisation for the common sinc
+        // lengths used in practice. The branch is one-per-call and almost
+        // always perfectly predicted (the resampler's sinc_len does not
+        // change after construction).
+        match length {
+            64 => dot_avx_f32_n::<64>(wave_cut, sinc),
+            128 => dot_avx_f32_n::<128>(wave_cut, sinc),
+            256 => dot_avx_f32_n::<256>(wave_cut, sinc),
+            _ => dot_avx_f32_dyn(wave_cut, sinc, length),
         }
-        let acc_high = _mm256_extractf128_ps(acc, 1);
-        let acc_low = _mm_add_ps(acc_high, _mm256_castps256_ps128(acc));
-        let temp2 = _mm_hadd_ps(acc_low, acc_low);
-        let temp1 = _mm_hadd_ps(temp2, temp2);
-        let mut result = 0.0;
-        _mm_store_ss(&mut result, temp1);
-        result
     }
+}
+
+/// Const-generic AVX f64 dot product. Four parallel accumulator chains
+/// over groups of four __m256d (16 doubles per iteration). Same ILP
+/// rationale as the f32 path: the FMA latency / throughput ratio means a
+/// single chain stalls. `LEN` must be a multiple of 16.
+#[target_feature(enable = "avx", enable = "fma")]
+#[inline]
+unsafe fn dot_avx_f64_n<const LEN: usize>(wave_cut: &[f64], sinc: &[__m256d]) -> f64 {
+    let mut acc0 = _mm256_setzero_pd();
+    let mut acc1 = _mm256_setzero_pd();
+    let mut acc2 = _mm256_setzero_pd();
+    let mut acc3 = _mm256_setzero_pd();
+    let mut w_idx = 0;
+    let mut s_idx = 0;
+    for _ in 0..LEN / 16 {
+        let w0 = _mm256_loadu_pd(wave_cut.get_unchecked(w_idx));
+        let w1 = _mm256_loadu_pd(wave_cut.get_unchecked(w_idx + 4));
+        let w2 = _mm256_loadu_pd(wave_cut.get_unchecked(w_idx + 8));
+        let w3 = _mm256_loadu_pd(wave_cut.get_unchecked(w_idx + 12));
+        acc0 = _mm256_fmadd_pd(w0, *sinc.get_unchecked(s_idx), acc0);
+        acc1 = _mm256_fmadd_pd(w1, *sinc.get_unchecked(s_idx + 1), acc1);
+        acc2 = _mm256_fmadd_pd(w2, *sinc.get_unchecked(s_idx + 2), acc2);
+        acc3 = _mm256_fmadd_pd(w3, *sinc.get_unchecked(s_idx + 3), acc3);
+        w_idx += 16;
+        s_idx += 4;
+    }
+    let acc01 = _mm256_add_pd(acc0, acc1);
+    let acc23 = _mm256_add_pd(acc2, acc3);
+    let acc_all = _mm256_add_pd(acc01, acc23);
+    let acc_high = _mm256_extractf128_pd(acc_all, 1);
+    let temp2 = _mm_add_pd(acc_high, _mm256_castpd256_pd128(acc_all));
+    let temp1 = _mm_hadd_pd(temp2, temp2);
+    let mut result = 0.0;
+    _mm_store_sd(&mut result, temp1);
+    result
+}
+
+#[target_feature(enable = "avx", enable = "fma")]
+#[inline]
+unsafe fn dot_avx_f64_dyn(wave_cut: &[f64], sinc: &[__m256d], length: usize) -> f64 {
+    let mut acc0 = _mm256_setzero_pd();
+    let mut acc1 = _mm256_setzero_pd();
+    let mut w_idx = 0;
+    let mut s_idx = 0;
+    for _ in 0..length / 8 {
+        let w0 = _mm256_loadu_pd(wave_cut.get_unchecked(w_idx));
+        let w1 = _mm256_loadu_pd(wave_cut.get_unchecked(w_idx + 4));
+        acc0 = _mm256_fmadd_pd(w0, *sinc.get_unchecked(s_idx), acc0);
+        acc1 = _mm256_fmadd_pd(w1, *sinc.get_unchecked(s_idx + 1), acc1);
+        w_idx += 8;
+        s_idx += 2;
+    }
+    let acc_all = _mm256_add_pd(acc0, acc1);
+    let acc_high = _mm256_extractf128_pd(acc_all, 1);
+    let temp2 = _mm_add_pd(acc_high, _mm256_castpd256_pd128(acc_all));
+    let temp1 = _mm_hadd_pd(temp2, temp2);
+    let mut result = 0.0;
+    _mm_store_sd(&mut result, temp1);
+    result
 }
 
 impl AvxSample for f64 {
@@ -116,25 +239,12 @@ impl AvxSample for f64 {
     ) -> f64 {
         let sinc = sincs.get_unchecked(subindex);
         let wave_cut = &wave[index..(index + length)];
-        let mut acc0 = _mm256_setzero_pd();
-        let mut acc1 = _mm256_setzero_pd();
-        let mut w_idx = 0;
-        let mut s_idx = 0;
-        for _ in 0..wave_cut.len() / 8 {
-            let w0 = _mm256_loadu_pd(wave_cut.get_unchecked(w_idx));
-            let w1 = _mm256_loadu_pd(wave_cut.get_unchecked(w_idx + 4));
-            acc0 = _mm256_fmadd_pd(w0, *sinc.get_unchecked(s_idx), acc0);
-            acc1 = _mm256_fmadd_pd(w1, *sinc.get_unchecked(s_idx + 1), acc1);
-            w_idx += 8;
-            s_idx += 2;
+        match length {
+            64 => dot_avx_f64_n::<64>(wave_cut, sinc),
+            128 => dot_avx_f64_n::<128>(wave_cut, sinc),
+            256 => dot_avx_f64_n::<256>(wave_cut, sinc),
+            _ => dot_avx_f64_dyn(wave_cut, sinc, length),
         }
-        let acc_all = _mm256_add_pd(acc0, acc1);
-        let acc_high = _mm256_extractf128_pd(acc_all, 1);
-        let temp2 = _mm_add_pd(acc_high, _mm256_castpd256_pd128(acc_all));
-        let temp1 = _mm_hadd_pd(temp2, temp2);
-        let mut result = 0.0;
-        _mm_store_sd(&mut result, temp1);
-        result
     }
 }
 
@@ -176,6 +286,19 @@ where
 
     fn nbr_sincs(&self) -> usize {
         self.nbr_sincs
+    }
+
+    #[inline]
+    fn prefetch_sinc(&self, subindex: usize) {
+        if subindex < self.nbr_sincs {
+            // Sinc rows can be ~1KB each (sinc_len/8 * 32 bytes for f32, sinc_len/4 * 32
+            // for f64). For sinc_len=128 the full table is 256KB which sits at the
+            // edge of L2 on many CPUs, so warming the next row to L1 is worthwhile.
+            unsafe {
+                let row = self.sincs.get_unchecked(subindex);
+                _mm_prefetch::<_MM_HINT_T0>(row.as_ptr() as *const i8);
+            }
+        }
     }
 }
 

@@ -6,7 +6,7 @@ use crate::sinc_interpolator::sinc_interpolator_avx::AvxInterpolator;
 use crate::sinc_interpolator::sinc_interpolator_neon::NeonInterpolator;
 #[cfg(target_arch = "x86_64")]
 use crate::sinc_interpolator::sinc_interpolator_sse::SseInterpolator;
-use crate::sinc_interpolator::{ScalarInterpolator, SincInterpolator};
+use crate::sinc_interpolator::{AnyInterpolator, ScalarInterpolator, SincInterpolator};
 use crate::windows::WindowFunction;
 use crate::Sample;
 use audioadapter::AdapterMut;
@@ -85,7 +85,7 @@ pub fn make_interpolator<T>(
     f_cutoff: f32,
     oversampling_factor: usize,
     window: WindowFunction,
-) -> Box<dyn SincInterpolator<T>>
+) -> AnyInterpolator<T>
 where
     T: Sample,
 {
@@ -100,24 +100,24 @@ where
     if let Ok(interpolator) =
         AvxInterpolator::<T>::new(sinc_len, oversampling_factor, f_cutoff, window)
     {
-        return Box::new(interpolator);
+        return AnyInterpolator::Avx(interpolator);
     }
 
     #[cfg(target_arch = "x86_64")]
     if let Ok(interpolator) =
         SseInterpolator::<T>::new(sinc_len, oversampling_factor, f_cutoff, window)
     {
-        return Box::new(interpolator);
+        return AnyInterpolator::Sse(interpolator);
     }
 
     #[cfg(target_arch = "aarch64")]
     if let Ok(interpolator) =
         NeonInterpolator::<T>::new(sinc_len, oversampling_factor, f_cutoff, window)
     {
-        return Box::new(interpolator);
+        return AnyInterpolator::Neon(interpolator);
     }
 
-    Box::new(ScalarInterpolator::<T>::new(
+    AnyInterpolator::Scalar(ScalarInterpolator::<T>::new(
         sinc_len,
         oversampling_factor,
         f_cutoff,
@@ -161,8 +161,11 @@ where
     yvals[0] + x * (yvals[1] - yvals[0])
 }
 
-pub(crate) struct InnerSinc<T> {
-    pub interpolator: Box<dyn SincInterpolator<T>>,
+pub(crate) struct InnerSinc<T>
+where
+    T: Sample,
+{
+    pub interpolator: AnyInterpolator<T>,
     pub interpolation: SincInterpolationType,
 }
 
@@ -196,6 +199,10 @@ where
                     let frac = idx * oversampling_factor as f64
                         - (idx * oversampling_factor as f64).floor();
                     let frac_offset = t!(frac);
+                    // Warm L1 with the upcoming sinc rows.
+                    for n in &nearest {
+                        self.interpolator.prefetch_sinc(n.1 as usize);
+                    }
                     for (chan, active) in channel_mask.iter().enumerate() {
                         if *active {
                             let buf = &wave_in[chan];
@@ -226,6 +233,9 @@ where
                     let frac = idx * oversampling_factor as f64
                         - (idx * oversampling_factor as f64).floor();
                     let frac_offset = t!(frac);
+                    for n in &nearest {
+                        self.interpolator.prefetch_sinc(n.1 as usize);
+                    }
                     for (chan, active) in channel_mask.iter().enumerate() {
                         if *active {
                             let buf = &wave_in[chan];
@@ -256,6 +266,7 @@ where
                     let frac = idx * oversampling_factor as f64
                         - (idx * oversampling_factor as f64).floor();
                     let frac_offset = t!(frac);
+                    self.interpolator.prefetch_sinc(nearest[1].1 as usize);
                     for (chan, active) in channel_mask.iter().enumerate() {
                         if *active {
                             let buf = &wave_in[chan];

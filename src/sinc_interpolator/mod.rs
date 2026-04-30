@@ -59,6 +59,128 @@ pub(crate) trait SincInterpolator<T>: Send {
 
     /// Get number of sincs used for oversampling.
     fn nbr_sincs(&self) -> usize;
+
+    /// Issue a hardware prefetch hint for the sinc row at `subindex`.
+    /// The default is a no-op; SIMD implementations may override this to bring
+    /// the next sinc row into cache while the current one is being processed.
+    #[inline]
+    fn prefetch_sinc(&self, _subindex: usize) {}
+}
+
+/// A concrete enum over every sinc interpolator implementation.
+///
+/// Replaces a `Box<dyn SincInterpolator<T>>` so that the hot path can dispatch
+/// via a `match` on a known-small set of variants. This enables the compiler to
+/// inline `get_sinc_interpolated`, which in turn unlocks unrolling of the inner
+/// FMA loop and cross-call register reuse.
+#[cfg_attr(feature = "bench_asyncro", visibility::make(pub))]
+pub(crate) enum AnyInterpolator<T>
+where
+    T: Sample,
+{
+    #[cfg(target_arch = "x86_64")]
+    Avx(sinc_interpolator_avx::AvxInterpolator<T>),
+    #[cfg(target_arch = "x86_64")]
+    Sse(sinc_interpolator_sse::SseInterpolator<T>),
+    #[cfg(target_arch = "aarch64")]
+    Neon(sinc_interpolator_neon::NeonInterpolator<T>),
+    Scalar(ScalarInterpolator<T>),
+}
+
+impl<T> SincInterpolator<T> for AnyInterpolator<T>
+where
+    T: Sample,
+{
+    #[inline]
+    fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T {
+        match self {
+            #[cfg(target_arch = "x86_64")]
+            AnyInterpolator::Avx(i) => i.get_sinc_interpolated(wave, index, subindex),
+            #[cfg(target_arch = "x86_64")]
+            AnyInterpolator::Sse(i) => i.get_sinc_interpolated(wave, index, subindex),
+            #[cfg(target_arch = "aarch64")]
+            AnyInterpolator::Neon(i) => i.get_sinc_interpolated(wave, index, subindex),
+            AnyInterpolator::Scalar(i) => i.get_sinc_interpolated(wave, index, subindex),
+        }
+    }
+
+    #[inline]
+    fn nbr_points(&self) -> usize {
+        match self {
+            #[cfg(target_arch = "x86_64")]
+            AnyInterpolator::Avx(i) => i.nbr_points(),
+            #[cfg(target_arch = "x86_64")]
+            AnyInterpolator::Sse(i) => i.nbr_points(),
+            #[cfg(target_arch = "aarch64")]
+            AnyInterpolator::Neon(i) => i.nbr_points(),
+            AnyInterpolator::Scalar(i) => i.nbr_points(),
+        }
+    }
+
+    #[inline]
+    fn nbr_sincs(&self) -> usize {
+        match self {
+            #[cfg(target_arch = "x86_64")]
+            AnyInterpolator::Avx(i) => i.nbr_sincs(),
+            #[cfg(target_arch = "x86_64")]
+            AnyInterpolator::Sse(i) => i.nbr_sincs(),
+            #[cfg(target_arch = "aarch64")]
+            AnyInterpolator::Neon(i) => i.nbr_sincs(),
+            AnyInterpolator::Scalar(i) => i.nbr_sincs(),
+        }
+    }
+
+    #[inline]
+    fn prefetch_sinc(&self, subindex: usize) {
+        match self {
+            #[cfg(target_arch = "x86_64")]
+            AnyInterpolator::Avx(i) => i.prefetch_sinc(subindex),
+            #[cfg(target_arch = "x86_64")]
+            AnyInterpolator::Sse(i) => i.prefetch_sinc(subindex),
+            #[cfg(target_arch = "aarch64")]
+            AnyInterpolator::Neon(i) => i.prefetch_sinc(subindex),
+            AnyInterpolator::Scalar(i) => i.prefetch_sinc(subindex),
+        }
+    }
+}
+
+impl<T> From<ScalarInterpolator<T>> for AnyInterpolator<T>
+where
+    T: Sample,
+{
+    fn from(value: ScalarInterpolator<T>) -> Self {
+        AnyInterpolator::Scalar(value)
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+impl<T> From<sinc_interpolator_avx::AvxInterpolator<T>> for AnyInterpolator<T>
+where
+    T: Sample,
+{
+    fn from(value: sinc_interpolator_avx::AvxInterpolator<T>) -> Self {
+        AnyInterpolator::Avx(value)
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+impl<T> From<sinc_interpolator_sse::SseInterpolator<T>> for AnyInterpolator<T>
+where
+    T: Sample,
+{
+    fn from(value: sinc_interpolator_sse::SseInterpolator<T>) -> Self {
+        AnyInterpolator::Sse(value)
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+impl<T> From<sinc_interpolator_neon::NeonInterpolator<T>> for AnyInterpolator<T>
+where
+    T: Sample,
+{
+    fn from(value: sinc_interpolator_neon::NeonInterpolator<T>) -> Self {
+        AnyInterpolator::Neon(value)
+    }
 }
 
 /// A plain scalar interpolator.

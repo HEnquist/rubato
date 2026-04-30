@@ -10,6 +10,7 @@ use core::arch::x86_64::{
 use core::arch::x86_64::{
     _mm_add_ps, _mm_hadd_ps, _mm_loadu_ps, _mm_mul_ps, _mm_setzero_ps, _mm_store_ss,
 };
+use core::arch::x86_64::{_mm_prefetch, _MM_HINT_T0};
 
 /// Collection of CPU features required for this interpolator.
 static FEATURES: &[CpuFeature] = &[CpuFeature::Sse3];
@@ -188,6 +189,16 @@ where
 
     fn nbr_sincs(&self) -> usize {
         self.nbr_sincs
+    }
+
+    #[inline]
+    fn prefetch_sinc(&self, subindex: usize) {
+        if subindex < self.nbr_sincs {
+            unsafe {
+                let row = self.sincs.get_unchecked(subindex);
+                _mm_prefetch::<_MM_HINT_T0>(row.as_ptr() as *const i8);
+            }
+        }
     }
 }
 
