@@ -14,69 +14,40 @@ static FEATURES: &[CpuFeature] = &[CpuFeature::Neon];
 
 /// Trait governing what can be done with an NeonSample.
 pub trait NeonSample: Sized + Send {
-    type Sinc: Send;
-
-    /// Pack sincs into a vector.
+    /// Compute the dot product of `wave[index..]` with `sinc` using NEON instructions.
     ///
     /// # Safety
     ///
-    /// This is unsafe because it uses target_enable dispatching. There are no
-    /// special requirements from the caller.
-    unsafe fn pack_sincs(sincs: Vec<Vec<Self>>) -> Vec<Vec<Self::Sinc>>;
-
-    /// Interpolate a sinc sample.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that the various indexes are not out of bounds
-    /// in the collection of sincs.
-    unsafe fn get_sinc_interpolated_unsafe(
+    /// The caller must ensure that `wave[index..index+length]` and `sinc[..length]` are
+    /// valid, and that `length` is a multiple of 8.
+    unsafe fn get_sinc_dot_product_unsafe(
         wave: &[Self],
         index: usize,
-        subindex: usize,
-        sincs: &[Vec<Self::Sinc>],
+        sinc: &[Self],
         length: usize,
     ) -> Self;
 }
 
 impl NeonSample for f32 {
-    type Sinc = float32x4_t;
-
     #[target_feature(enable = "neon")]
-    unsafe fn pack_sincs(sincs: Vec<Vec<Self>>) -> Vec<Vec<Self::Sinc>> {
-        let mut packed_sincs = Vec::new();
-        for sinc in sincs.iter() {
-            let mut packed = Vec::new();
-            for elements in sinc.chunks(4) {
-                let packed_elems = vld1q_f32(&elements[0]);
-                packed.push(packed_elems);
-            }
-            packed_sincs.push(packed);
-        }
-        packed_sincs
-    }
-
-    #[target_feature(enable = "neon")]
-    unsafe fn get_sinc_interpolated_unsafe(
+    unsafe fn get_sinc_dot_product_unsafe(
         wave: &[f32],
         index: usize,
-        subindex: usize,
-        sincs: &[Vec<Self::Sinc>],
+        sinc: &[f32],
         length: usize,
     ) -> f32 {
-        let sinc = sincs.get_unchecked(subindex);
         let wave_cut = &wave[index..(index + length)];
         let mut acc0 = vmovq_n_f32(0.0);
         let mut acc1 = vmovq_n_f32(0.0);
-        let mut w_idx = 0;
-        let mut s_idx = 0;
-        for _ in 0..wave_cut.len() / 8 {
-            let w0 = vld1q_f32(wave_cut.get_unchecked(w_idx));
-            let w1 = vld1q_f32(wave_cut.get_unchecked(w_idx + 4));
-            acc0 = vfmaq_f32(acc0, w0, *sinc.get_unchecked(s_idx));
-            acc1 = vfmaq_f32(acc1, w1, *sinc.get_unchecked(s_idx + 1));
-            w_idx += 8;
-            s_idx += 2;
+        let mut idx = 0;
+        for _ in 0..length / 8 {
+            let w0 = vld1q_f32(wave_cut.get_unchecked(idx));
+            let w1 = vld1q_f32(wave_cut.get_unchecked(idx + 4));
+            let s0 = vld1q_f32(sinc.get_unchecked(idx));
+            let s1 = vld1q_f32(sinc.get_unchecked(idx + 4));
+            acc0 = vfmaq_f32(acc0, w0, s0);
+            acc1 = vfmaq_f32(acc1, w1, s1);
+            idx += 8;
         }
         let sum4 = vaddq_f32(acc0, acc1);
         let high = vget_high_f32(sum4);
@@ -89,49 +60,25 @@ impl NeonSample for f32 {
 }
 
 impl NeonSample for f64 {
-    type Sinc = float64x2_t;
-
     #[target_feature(enable = "neon")]
-    unsafe fn pack_sincs(sincs: Vec<Vec<f64>>) -> Vec<Vec<Self::Sinc>> {
-        let mut packed_sincs = Vec::new();
-        for sinc in sincs.iter() {
-            let mut packed = Vec::new();
-            for elements in sinc.chunks(2) {
-                let packed_elems = vld1q_f64(&elements[0]);
-                packed.push(packed_elems);
-            }
-            packed_sincs.push(packed);
-        }
-        packed_sincs
-    }
-
-    #[target_feature(enable = "neon")]
-    unsafe fn get_sinc_interpolated_unsafe(
+    unsafe fn get_sinc_dot_product_unsafe(
         wave: &[f64],
         index: usize,
-        subindex: usize,
-        sincs: &[Vec<Self::Sinc>],
+        sinc: &[f64],
         length: usize,
     ) -> f64 {
-        let sinc = sincs.get_unchecked(subindex);
         let wave_cut = &wave[index..(index + length)];
         let mut acc0 = vmovq_n_f64(0.0);
         let mut acc1 = vmovq_n_f64(0.0);
         let mut acc2 = vmovq_n_f64(0.0);
         let mut acc3 = vmovq_n_f64(0.0);
-        let mut w_idx = 0;
-        let mut s_idx = 0;
-        for _ in 0..wave_cut.len() / 8 {
-            let w0 = vld1q_f64(wave_cut.get_unchecked(w_idx));
-            let w1 = vld1q_f64(wave_cut.get_unchecked(w_idx + 2));
-            let w2 = vld1q_f64(wave_cut.get_unchecked(w_idx + 4));
-            let w3 = vld1q_f64(wave_cut.get_unchecked(w_idx + 6));
-            acc0 = vfmaq_f64(acc0, w0, *sinc.get_unchecked(s_idx));
-            acc1 = vfmaq_f64(acc1, w1, *sinc.get_unchecked(s_idx + 1));
-            acc2 = vfmaq_f64(acc2, w2, *sinc.get_unchecked(s_idx + 2));
-            acc3 = vfmaq_f64(acc3, w3, *sinc.get_unchecked(s_idx + 3));
-            w_idx += 8;
-            s_idx += 4;
+        let mut idx = 0;
+        for _ in 0..length / 8 {
+            acc0 = vfmaq_f64(acc0, vld1q_f64(wave_cut.get_unchecked(idx)), vld1q_f64(sinc.get_unchecked(idx)));
+            acc1 = vfmaq_f64(acc1, vld1q_f64(wave_cut.get_unchecked(idx + 2)), vld1q_f64(sinc.get_unchecked(idx + 2)));
+            acc2 = vfmaq_f64(acc2, vld1q_f64(wave_cut.get_unchecked(idx + 4)), vld1q_f64(sinc.get_unchecked(idx + 4)));
+            acc3 = vfmaq_f64(acc3, vld1q_f64(wave_cut.get_unchecked(idx + 6)), vld1q_f64(sinc.get_unchecked(idx + 6)));
+            idx += 8;
         }
         let packedsum0 = vaddq_f64(acc0, acc1);
         let packedsum1 = vaddq_f64(acc2, acc3);
@@ -142,36 +89,27 @@ impl NeonSample for f64 {
     }
 }
 
-/// A SSE accelerated interpolator.
+/// A NEON accelerated interpolator.
 #[cfg_attr(feature = "bench_asyncro", visibility::make(pub))]
 pub(crate) struct NeonInterpolator<T>
 where
     T: NeonSample,
 {
-    sincs: Vec<Vec<T::Sinc>>,
+    sincs: Vec<Vec<T>>,
     length: usize,
     nbr_sincs: usize,
 }
 
 impl<T> SincInterpolator<T> for NeonInterpolator<T>
 where
-    T: Sample,
+    T: NeonSample,
 {
-    /// Calculate the scalar produt of an input wave and the selected sinc filter.
-    fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T {
-        assert!(
-            (index + self.length) < wave.len(),
-            "Tried to interpolate for index {}, max for the given input is {}",
-            index,
-            wave.len() - self.length - 1
-        );
-        assert!(
-            subindex < self.nbr_sincs,
-            "Tried to use sinc subindex {}, max is {}",
-            subindex,
-            self.nbr_sincs - 1
-        );
-        unsafe { T::get_sinc_interpolated_unsafe(wave, index, subindex, &self.sincs, self.length) }
+    fn get_sinc_dot_product(&self, wave: &[T], index: usize, sinc: &[T]) -> T {
+        unsafe { T::get_sinc_dot_product_unsafe(wave, index, sinc, self.length) }
+    }
+
+    fn get_sincs(&self) -> &[Vec<T>] {
+        &self.sincs
     }
 
     fn nbr_points(&self) -> usize {
@@ -185,7 +123,7 @@ where
 
 impl<T> NeonInterpolator<T>
 where
-    T: Sample,
+    T: NeonSample + Sample,
 {
     /// Create a new NeonInterpolator.
     ///
@@ -206,7 +144,6 @@ where
 
         assert!(sinc_len % 8 == 0, "Sinc length must be a multiple of 8.");
         let sincs = make_sincs(sinc_len, oversampling_factor, f_cutoff, window);
-        let sincs = unsafe { <T as NeonSample>::pack_sincs(sincs) };
 
         Ok(Self {
             sincs,
@@ -215,6 +152,14 @@ where
         })
     }
 }
+
+// Suppress dead_code warnings for float32x4_t/float64x2_t used only in
+// target_feature-gated functions.
+#[allow(dead_code)]
+const _: () = {
+    let _ = core::mem::size_of::<float32x4_t>();
+    let _ = core::mem::size_of::<float64x2_t>();
+};
 
 #[cfg(test)]
 mod tests {

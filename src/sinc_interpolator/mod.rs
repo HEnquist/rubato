@@ -51,14 +51,63 @@ interpolator! {
 /// Functions for making the scalar product with a sinc.
 #[cfg_attr(feature = "bench_asyncro", visibility::make(pub))]
 pub(crate) trait SincInterpolator<T>: Send {
-    /// Make the scalar product between the waveform starting at `index` and the sinc of `subindex`.
-    fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T;
+    /// Compute the dot product of the wave starting at `index` with the provided sinc slice.
+    fn get_sinc_dot_product(&self, wave: &[T], index: usize, sinc: &[T]) -> T;
+
+    /// Expose the raw sinc table for use in combined-sinc building.
+    fn get_sincs(&self) -> &[Vec<T>];
 
     /// Get sinc length.
     fn nbr_points(&self) -> usize;
 
     /// Get number of sincs used for oversampling.
     fn nbr_sincs(&self) -> usize;
+
+    /// Make the scalar product between the waveform starting at `index` and the sinc of `subindex`.
+    fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T {
+        assert!(
+            (index + self.nbr_points()) < wave.len(),
+            "Tried to interpolate for index {}, max for the given input is {}",
+            index,
+            wave.len() - self.nbr_points() - 1
+        );
+        assert!(
+            subindex < self.nbr_sincs(),
+            "Tried to use sinc subindex {}, max is {}",
+            subindex,
+            self.nbr_sincs() - 1
+        );
+        self.get_sinc_dot_product(wave, index, &self.get_sincs()[subindex])
+    }
+
+    /// Build a combined sinc by blending the sincs indicated by `nearest` with `weights`.
+    ///
+    /// The 4 (or fewer) nearest points may span two consecutive integer indices, so `combined`
+    /// must have length `nbr_points() + 1`. The extra element at position `nbr_points()` holds
+    /// the contribution of any points at the higher index, which the caller adds as a scalar
+    /// multiply after the main SIMD dot-product loop.
+    ///
+    /// Returns the minimum integer index found in `nearest`, used by the caller to compute the
+    /// base buffer offset.
+    fn make_combined_sinc(
+        &self,
+        nearest: &[(isize, isize)],
+        weights: &[T],
+        combined: &mut [T],
+    ) -> isize
+    where
+        T: Sample,
+    {
+        let min_idx = nearest.iter().map(|n| n.0).min().unwrap();
+        combined.iter_mut().for_each(|x| *x = T::zero());
+        for (n, &w) in nearest.iter().zip(weights.iter()) {
+            let shift = (n.0 - min_idx) as usize;
+            for (k, &s) in self.get_sincs()[n.1 as usize].iter().enumerate() {
+                combined[shift + k] += w * s;
+            }
+        }
+        min_idx
+    }
 }
 
 /// A plain scalar interpolator.
@@ -73,22 +122,8 @@ impl<T> SincInterpolator<T> for ScalarInterpolator<T>
 where
     T: Sample,
 {
-    /// Calculate the scalar produt of an input wave and the selected sinc filter.
-    fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T {
-        assert!(
-            (index + self.length) < wave.len(),
-            "Tried to interpolate for index {}, max for the given input is {}",
-            index,
-            wave.len() - self.length - 1
-        );
-        assert!(
-            subindex < self.nbr_sincs,
-            "Tried to use sinc subindex {}, max is {}",
-            subindex,
-            self.nbr_sincs - 1
-        );
-        let wave_cut = &wave[index..(index + self.sincs[subindex].len())];
-        let sinc = &self.sincs[subindex];
+    fn get_sinc_dot_product(&self, wave: &[T], index: usize, sinc: &[T]) -> T {
+        let wave_cut = &wave[index..(index + sinc.len())];
         unsafe {
             let mut acc0 = T::zero();
             let mut acc1 = T::zero();
@@ -112,6 +147,10 @@ where
             }
             acc0 + acc1 + acc2 + acc3 + acc4 + acc5 + acc6 + acc7
         }
+    }
+
+    fn get_sincs(&self) -> &[Vec<T>] {
+        &self.sincs
     }
 
     fn nbr_points(&self) -> usize {

@@ -16,71 +16,41 @@ static FEATURES: &[CpuFeature] = &[CpuFeature::Sse3];
 
 /// Trait governing what can be done with an SseSample.
 pub trait SseSample: Sized + Send {
-    type Sinc: Send;
-
-    /// Pack sincs into a vector.
+    /// Compute the dot product of `wave[index..]` with `sinc` using SSE instructions.
     ///
     /// # Safety
     ///
-    /// This is unsafe because it uses target_enable dispatching. There are no
-    /// special requirements from the caller.
-    unsafe fn pack_sincs(sincs: Vec<Vec<Self>>) -> Vec<Vec<Self::Sinc>>;
-
-    /// Interpolate a sinc sample.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that the various indexes are not out of bounds
-    /// in the collection of sincs.
-    unsafe fn get_sinc_interpolated_unsafe(
+    /// The caller must ensure that `wave[index..index+length]` and `sinc[..length]` are
+    /// valid, and that `length` is a multiple of 8.
+    unsafe fn get_sinc_dot_product_unsafe(
         wave: &[Self],
         index: usize,
-        subindex: usize,
-        sincs: &[Vec<Self::Sinc>],
+        sinc: &[Self],
         length: usize,
     ) -> Self;
 }
 
 impl SseSample for f32 {
-    type Sinc = __m128;
-
     #[target_feature(enable = "sse3")]
-    unsafe fn pack_sincs(sincs: Vec<Vec<Self>>) -> Vec<Vec<Self::Sinc>> {
-        let mut packed_sincs = Vec::new();
-        for sinc in sincs.iter() {
-            let mut packed = Vec::new();
-            for elements in sinc.chunks(4) {
-                let packed_elems = _mm_loadu_ps(&elements[0]);
-                packed.push(packed_elems);
-            }
-            packed_sincs.push(packed);
-        }
-        packed_sincs
-    }
-
-    #[target_feature(enable = "sse3")]
-    unsafe fn get_sinc_interpolated_unsafe(
+    unsafe fn get_sinc_dot_product_unsafe(
         wave: &[f32],
         index: usize,
-        subindex: usize,
-        sincs: &[Vec<Self::Sinc>],
+        sinc: &[f32],
         length: usize,
     ) -> f32 {
-        let sinc = sincs.get_unchecked(subindex);
         let wave_cut = &wave[index..(index + length)];
         let mut acc0 = _mm_setzero_ps();
         let mut acc1 = _mm_setzero_ps();
-        let mut w_idx = 0;
-        let mut s_idx = 0;
-        for _ in 0..wave_cut.len() / 8 {
-            let w0 = _mm_loadu_ps(wave_cut.get_unchecked(w_idx));
-            let w1 = _mm_loadu_ps(wave_cut.get_unchecked(w_idx + 4));
-            let s0 = _mm_mul_ps(w0, *sinc.get_unchecked(s_idx));
-            let s1 = _mm_mul_ps(w1, *sinc.get_unchecked(s_idx + 1));
-            acc0 = _mm_add_ps(acc0, s0);
-            acc1 = _mm_add_ps(acc1, s1);
-            w_idx += 8;
-            s_idx += 2;
+        let mut idx = 0;
+        for _ in 0..length / 8 {
+            let w0 = _mm_loadu_ps(wave_cut.get_unchecked(idx));
+            let w1 = _mm_loadu_ps(wave_cut.get_unchecked(idx + 4));
+            acc0 = _mm_add_ps(acc0, _mm_mul_ps(w0, _mm_loadu_ps(sinc.get_unchecked(idx))));
+            acc1 = _mm_add_ps(
+                acc1,
+                _mm_mul_ps(w1, _mm_loadu_ps(sinc.get_unchecked(idx + 4))),
+            );
+            idx += 8;
         }
         let temp4 = _mm_add_ps(acc0, acc1);
         let temp2 = _mm_hadd_ps(temp4, temp4);
@@ -92,53 +62,49 @@ impl SseSample for f32 {
 }
 
 impl SseSample for f64 {
-    type Sinc = __m128d;
-
     #[target_feature(enable = "sse3")]
-    unsafe fn pack_sincs(sincs: Vec<Vec<f64>>) -> Vec<Vec<Self::Sinc>> {
-        let mut packed_sincs = Vec::new();
-        for sinc in sincs.iter() {
-            let mut packed = Vec::new();
-            for elements in sinc.chunks(2) {
-                let packed_elems = _mm_loadu_pd(&elements[0]);
-                packed.push(packed_elems);
-            }
-            packed_sincs.push(packed);
-        }
-        packed_sincs
-    }
-
-    #[target_feature(enable = "sse3")]
-    unsafe fn get_sinc_interpolated_unsafe(
+    unsafe fn get_sinc_dot_product_unsafe(
         wave: &[f64],
         index: usize,
-        subindex: usize,
-        sincs: &[Vec<Self::Sinc>],
+        sinc: &[f64],
         length: usize,
     ) -> f64 {
-        let sinc = sincs.get_unchecked(subindex);
         let wave_cut = &wave[index..(index + length)];
         let mut acc0 = _mm_setzero_pd();
         let mut acc1 = _mm_setzero_pd();
         let mut acc2 = _mm_setzero_pd();
         let mut acc3 = _mm_setzero_pd();
-        let mut w_idx = 0;
-        let mut s_idx = 0;
-        for _ in 0..wave_cut.len() / 8 {
-            let w0 = _mm_loadu_pd(wave_cut.get_unchecked(w_idx));
-            let w1 = _mm_loadu_pd(wave_cut.get_unchecked(w_idx + 2));
-            let w2 = _mm_loadu_pd(wave_cut.get_unchecked(w_idx + 4));
-            let w3 = _mm_loadu_pd(wave_cut.get_unchecked(w_idx + 6));
-            let s0 = _mm_mul_pd(w0, *sinc.get_unchecked(s_idx));
-            let s1 = _mm_mul_pd(w1, *sinc.get_unchecked(s_idx + 1));
-            let s2 = _mm_mul_pd(w2, *sinc.get_unchecked(s_idx + 2));
-            let s3 = _mm_mul_pd(w3, *sinc.get_unchecked(s_idx + 3));
-            acc0 = _mm_add_pd(acc0, s0);
-            acc1 = _mm_add_pd(acc1, s1);
-            acc2 = _mm_add_pd(acc2, s2);
-            acc3 = _mm_add_pd(acc3, s3);
-            w_idx += 8;
-            s_idx += 4;
+        let mut idx = 0;
+        for _ in 0..length / 8 {
+            acc0 = _mm_add_pd(
+                acc0,
+                _mm_mul_pd(
+                    _mm_loadu_pd(wave_cut.get_unchecked(idx)),
+                    _mm_loadu_pd(sinc.get_unchecked(idx)),
+                ),
+            );
+            acc1 = _mm_add_pd(
+                acc1,
+                _mm_mul_pd(
+                    _mm_loadu_pd(wave_cut.get_unchecked(idx + 2)),
+                    _mm_loadu_pd(sinc.get_unchecked(idx + 2)),
+                ),
+            );
+            acc2 = _mm_add_pd(
+                acc2,
+                _mm_mul_pd(
+                    _mm_loadu_pd(wave_cut.get_unchecked(idx + 4)),
+                    _mm_loadu_pd(sinc.get_unchecked(idx + 4)),
+                ),
+            );
+            acc3 = _mm_add_pd(
+                acc3,
+                _mm_mul_pd(
+                    _mm_loadu_pd(wave_cut.get_unchecked(idx + 6)),
+                    _mm_loadu_pd(sinc.get_unchecked(idx + 6)),
+                ),
+            );
+            idx += 8;
         }
         let temp2_0 = _mm_add_pd(acc0, acc1);
         let temp2_1 = _mm_add_pd(acc2, acc3);
@@ -156,7 +122,7 @@ pub(crate) struct SseInterpolator<T>
 where
     T: SseSample,
 {
-    sincs: Vec<Vec<T::Sinc>>,
+    sincs: Vec<Vec<T>>,
     length: usize,
     nbr_sincs: usize,
 }
@@ -165,21 +131,12 @@ impl<T> SincInterpolator<T> for SseInterpolator<T>
 where
     T: SseSample,
 {
-    /// Calculate the scalar produt of an input wave and the selected sinc filter.
-    fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T {
-        assert!(
-            (index + self.length) < wave.len(),
-            "Tried to interpolate for index {}, max for the given input is {}",
-            index,
-            wave.len() - self.length - 1
-        );
-        assert!(
-            subindex < self.nbr_sincs,
-            "Tried to use sinc subindex {}, max is {}",
-            subindex,
-            self.nbr_sincs - 1
-        );
-        unsafe { T::get_sinc_interpolated_unsafe(wave, index, subindex, &self.sincs, self.length) }
+    fn get_sinc_dot_product(&self, wave: &[T], index: usize, sinc: &[T]) -> T {
+        unsafe { T::get_sinc_dot_product_unsafe(wave, index, sinc, self.length) }
+    }
+
+    fn get_sincs(&self) -> &[Vec<T>] {
+        &self.sincs
     }
 
     fn nbr_points(&self) -> usize {
@@ -193,7 +150,7 @@ where
 
 impl<T> SseInterpolator<T>
 where
-    T: Sample,
+    T: SseSample + Sample,
 {
     /// Create a new SseInterpolator.
     ///
@@ -214,7 +171,6 @@ where
 
         assert!(sinc_len % 8 == 0, "Sinc length must be a multiple of 8.");
         let sincs = make_sincs(sinc_len, oversampling_factor, f_cutoff, window);
-        let sincs = unsafe { <T as SseSample>::pack_sincs(sincs) };
 
         Ok(Self {
             sincs,
@@ -223,6 +179,13 @@ where
         })
     }
 }
+
+// Suppress dead_code warnings for __m128/__m128d used only in target_feature-gated functions.
+#[allow(dead_code)]
+const _: () = {
+    let _ = core::mem::size_of::<__m128>();
+    let _ = core::mem::size_of::<__m128d>();
+};
 
 #[cfg(test)]
 mod tests {

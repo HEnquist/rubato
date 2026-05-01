@@ -127,6 +127,7 @@ where
 
 /// Perform cubic polynomial interpolation to get value at x.
 /// Input points are assumed to be at x = -1, 0, 1, 2.
+#[allow(dead_code)]
 pub fn interp_cubic<T>(x: T, yvals: &[T; 4]) -> T
 where
     T: Sample,
@@ -140,8 +141,26 @@ where
     a0 + a1 * x + a2 * x2 + a3 * x3
 }
 
+/// Compute the four blending weights for cubic interpolation at fractional position x.
+/// These are the per-point coefficients such that interp_cubic(x, pts) == dot(weights, pts).
+/// Input points are assumed to be at x = -1, 0, 1, 2.
+pub fn interp_cubic_weights<T>(x: T) -> [T; 4]
+where
+    T: Sample,
+{
+    let x2 = x * x;
+    let x3 = x2 * x;
+    [
+        t!(-1.0 / 3.0) * x + t!(0.5) * x2 - t!(1.0 / 6.0) * x3,
+        t!(1.0) - t!(0.5) * x - x2 + t!(0.5) * x3,
+        x + t!(0.5) * x2 - t!(0.5) * x3,
+        -t!(1.0 / 6.0) * x + t!(1.0 / 6.0) * x3,
+    ]
+}
+
 /// Perform quadratic polynomial interpolation to get value at x.
 /// Input points are assumed to be at x = 0, 1, 2.
+#[allow(dead_code)]
 pub fn interp_quad<T>(x: T, yvals: &[T; 3]) -> T
 where
     T: Sample,
@@ -153,12 +172,37 @@ where
     t!(0.5) * (a0 + a1 * x + a2 * x2)
 }
 
+/// Compute the three blending weights for quadratic interpolation at fractional position x.
+/// These are the per-point coefficients such that interp_quad(x, pts) == dot(weights, pts).
+/// Input points are assumed to be at x = 0, 1, 2.
+pub fn interp_quad_weights<T>(x: T) -> [T; 3]
+where
+    T: Sample,
+{
+    let x2 = x * x;
+    [
+        t!(0.5) * (t!(2.0) - t!(3.0) * x + x2),
+        t!(0.5) * (t!(4.0) * x - t!(2.0) * x2),
+        t!(0.5) * (x2 - x),
+    ]
+}
+
 /// Perform linear interpolation between two points at x=0 and x=1.
+#[allow(dead_code)]
 pub fn interp_lin<T>(x: T, yvals: &[T; 2]) -> T
 where
     T: Sample,
 {
     yvals[0] + x * (yvals[1] - yvals[0])
+}
+
+/// Compute the two blending weights for linear interpolation at fractional position x.
+/// These are the per-point coefficients such that interp_lin(x, pts) == dot(weights, pts).
+pub fn interp_lin_weights<T>(x: T) -> [T; 2]
+where
+    T: Sample,
+{
+    [t!(1.0) - x, x]
 }
 
 pub(crate) struct InnerSinc<T> {
@@ -184,10 +228,13 @@ where
         let mut t_ratio = t_ratio;
         let mut idx = idx;
         let interpolator_len = self.interpolator.nbr_points();
+        // combined holds the blended sinc (length interpolator_len) plus one
+        // extra element for the possible index-shifted contribution from the
+        // higher-index group of nearest points.
+        let mut combined = vec![T::zero(); interpolator_len + 1];
         match self.interpolation {
             SincInterpolationType::Cubic => {
                 let oversampling_factor = self.interpolator.nbr_sincs();
-                let mut points = [T::zero(); 4];
                 let mut nearest = [(0isize, 0isize); 4];
                 for frame in 0..nbr_frames {
                     t_ratio += t_ratio_increment;
@@ -196,28 +243,27 @@ where
                     let frac = idx * oversampling_factor as f64
                         - (idx * oversampling_factor as f64).floor();
                     let frac_offset = t!(frac);
+                    let weights = interp_cubic_weights(frac_offset);
+                    let min_idx =
+                        self.interpolator
+                            .make_combined_sinc(&nearest, &weights, &mut combined);
+                    let base = (min_idx + 2 * interpolator_len as isize) as usize;
                     for (chan, active) in channel_mask.iter().enumerate() {
                         if *active {
                             let buf = &wave_in[chan];
-                            for (n, p) in nearest.iter().zip(points.iter_mut()) {
-                                *p = self.interpolator.get_sinc_interpolated(
-                                    buf,
-                                    (n.0 + 2 * interpolator_len as isize) as usize,
-                                    n.1 as usize,
-                                );
-                            }
-                            wave_out.write_sample(
-                                chan,
-                                frame + output_offset,
-                                &interp_cubic(frac_offset, &points),
-                            );
+                            let result = self.interpolator.get_sinc_dot_product(
+                                buf,
+                                base,
+                                &combined[..interpolator_len],
+                            ) + combined[interpolator_len]
+                                * buf[base + interpolator_len];
+                            wave_out.write_sample(chan, frame + output_offset, &result);
                         }
                     }
                 }
             }
             SincInterpolationType::Quadratic => {
                 let oversampling_factor = self.interpolator.nbr_sincs();
-                let mut points = [T::zero(); 3];
                 let mut nearest = [(0isize, 0isize); 3];
                 for frame in 0..nbr_frames {
                     t_ratio += t_ratio_increment;
@@ -226,28 +272,27 @@ where
                     let frac = idx * oversampling_factor as f64
                         - (idx * oversampling_factor as f64).floor();
                     let frac_offset = t!(frac);
+                    let weights = interp_quad_weights(frac_offset);
+                    let min_idx =
+                        self.interpolator
+                            .make_combined_sinc(&nearest, &weights, &mut combined);
+                    let base = (min_idx + 2 * interpolator_len as isize) as usize;
                     for (chan, active) in channel_mask.iter().enumerate() {
                         if *active {
                             let buf = &wave_in[chan];
-                            for (n, p) in nearest.iter().zip(points.iter_mut()) {
-                                *p = self.interpolator.get_sinc_interpolated(
-                                    buf,
-                                    (n.0 + 2 * interpolator_len as isize) as usize,
-                                    n.1 as usize,
-                                );
-                            }
-                            wave_out.write_sample(
-                                chan,
-                                frame + output_offset,
-                                &interp_quad(frac_offset, &points),
-                            );
+                            let result = self.interpolator.get_sinc_dot_product(
+                                buf,
+                                base,
+                                &combined[..interpolator_len],
+                            ) + combined[interpolator_len]
+                                * buf[base + interpolator_len];
+                            wave_out.write_sample(chan, frame + output_offset, &result);
                         }
                     }
                 }
             }
             SincInterpolationType::Linear => {
                 let oversampling_factor = self.interpolator.nbr_sincs();
-                let mut points = [T::zero(); 2];
                 let mut nearest = [(0isize, 0isize); 2];
                 for frame in 0..nbr_frames {
                     t_ratio += t_ratio_increment;
@@ -256,21 +301,21 @@ where
                     let frac = idx * oversampling_factor as f64
                         - (idx * oversampling_factor as f64).floor();
                     let frac_offset = t!(frac);
+                    let weights = interp_lin_weights(frac_offset);
+                    let min_idx =
+                        self.interpolator
+                            .make_combined_sinc(&nearest, &weights, &mut combined);
+                    let base = (min_idx + 2 * interpolator_len as isize) as usize;
                     for (chan, active) in channel_mask.iter().enumerate() {
                         if *active {
                             let buf = &wave_in[chan];
-                            for (n, p) in nearest.iter().zip(points.iter_mut()) {
-                                *p = self.interpolator.get_sinc_interpolated(
-                                    buf,
-                                    (n.0 + 2 * interpolator_len as isize) as usize,
-                                    n.1 as usize,
-                                );
-                            }
-                            wave_out.write_sample(
-                                chan,
-                                frame + output_offset,
-                                &interp_lin(frac_offset, &points),
-                            );
+                            let result = self.interpolator.get_sinc_dot_product(
+                                buf,
+                                base,
+                                &combined[..interpolator_len],
+                            ) + combined[interpolator_len]
+                                * buf[base + interpolator_len];
+                            wave_out.write_sample(chan, frame + output_offset, &result);
                         }
                     }
                 }
@@ -311,7 +356,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{interp_cubic, interp_lin};
+    use super::{
+        interp_cubic, interp_cubic_weights, interp_lin, interp_lin_weights, interp_quad,
+        interp_quad_weights,
+    };
 
     #[test]
     fn int_cubic() {
@@ -334,10 +382,42 @@ mod tests {
         assert_eq!(interp, 3.0f32);
     }
 
+    /// Verify that interp_cubic_weights produces the same result as interp_cubic.
     #[test]
-    fn int_lin() {
-        let yvals = [1.0f64, 5.0f64];
-        let interp = interp_lin(0.25f64, &yvals);
-        assert_eq!(interp, 2.0f64);
+    fn cubic_weights_match_cubic() {
+        let yvals = [1.3f64, -0.7f64, 2.1f64, 0.4f64];
+        for x_int in 0..=10 {
+            let x = x_int as f64 / 10.0;
+            let direct = interp_cubic(x, &yvals);
+            let w = interp_cubic_weights(x);
+            let blended = w[0] * yvals[0] + w[1] * yvals[1] + w[2] * yvals[2] + w[3] * yvals[3];
+            assert!((direct - blended).abs() < 1.0e-12, "mismatch at x={x}");
+        }
+    }
+
+    /// Verify that interp_quad_weights produces the same result as interp_quad.
+    #[test]
+    fn quad_weights_match_quad() {
+        let yvals = [1.3f64, -0.7f64, 2.1f64];
+        for x_int in 0..=10 {
+            let x = x_int as f64 / 10.0;
+            let direct = interp_quad(x, &yvals);
+            let w = interp_quad_weights(x);
+            let blended = w[0] * yvals[0] + w[1] * yvals[1] + w[2] * yvals[2];
+            assert!((direct - blended).abs() < 1.0e-12, "mismatch at x={x}");
+        }
+    }
+
+    /// Verify that interp_lin_weights produces the same result as interp_lin.
+    #[test]
+    fn lin_weights_match_lin() {
+        let yvals = [1.3f64, -0.7f64];
+        for x_int in 0..=10 {
+            let x = x_int as f64 / 10.0;
+            let direct = interp_lin(x, &yvals);
+            let w = interp_lin_weights(x);
+            let blended = w[0] * yvals[0] + w[1] * yvals[1];
+            assert!((direct - blended).abs() < 1.0e-12, "mismatch at x={x}");
+        }
     }
 }

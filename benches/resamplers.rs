@@ -40,26 +40,25 @@ mod bench_asyncro {
             let resample_ratio = 192000 as f64 / 44100 as f64;
             let interpolation_type = $ip;
 
-            let interpolator = $it::<$ft>::new(
-                sinc_len,
-                oversampling_factor,
-                f_cutoff,
-                window,
-            );
-            let interpolator = unwrap_helper!($($unwrap)* interpolator);
-            let interpolator = Box::new(interpolator);
-            let mut resampler = Async::<$ft>::new_with_sinc_interpolator(
-                resample_ratio,
-                1.1,
-                interpolation_type,
-                interpolator,
-                chunksize,
-                1,
-                FixedAsync::Input,
-            ).unwrap();
-            let buffer_in =  InterleavedOwned::new(0.0, 1, chunksize);
-            let mut buffer_out =  InterleavedOwned::new(0.0, 1, resampler.output_frames_max());
-            c.bench_function($desc, |b| b.iter(|| resampler.process_into_buffer(black_box(&buffer_in), &mut buffer_out, None).unwrap()));
+            let mut group = c.benchmark_group($desc);
+            for (label, channels) in [("1ch", 1usize), ("2ch", 2), ("4ch", 4)] {
+                let interpolator = $it::<$ft>::new(sinc_len, oversampling_factor, f_cutoff, window);
+                let interpolator = unwrap_helper!($($unwrap)* interpolator);
+                let interpolator = Box::new(interpolator);
+                let mut resampler = Async::<$ft>::new_with_sinc_interpolator(
+                    resample_ratio,
+                    1.1,
+                    interpolation_type,
+                    interpolator,
+                    chunksize,
+                    channels,
+                    FixedAsync::Input,
+                ).unwrap();
+                let buffer_in = InterleavedOwned::new(0.0, channels, chunksize);
+                let mut buffer_out = InterleavedOwned::new(0.0, channels, resampler.output_frames_max());
+                group.bench_function(label, |b| b.iter(|| resampler.process_into_buffer(black_box(&buffer_in), &mut buffer_out, None).unwrap()));
+            }
+            group.finish();
         }
     };
 }
@@ -266,24 +265,30 @@ mod bench_asyncro {
                 let chunksize = 1024;
                 let interpolation_type = $ip;
                 let resample_ratio = 192000 as f64 / 44100 as f64;
-                let mut resampler = Async::<$ft>::new_poly(
-                    resample_ratio,
-                    1.1,
-                    interpolation_type,
-                    chunksize,
-                    1,
-                    FixedAsync::Input,
-                )
-                .unwrap();
-                let buffer_in = InterleavedOwned::new(0.0, 1, chunksize);
-                let mut buffer_out = InterleavedOwned::new(0.0, 1, resampler.output_frames_max());
-                c.bench_function($desc, |b| {
-                    b.iter(|| {
-                        resampler
-                            .process_into_buffer(black_box(&buffer_in), &mut buffer_out, None)
-                            .unwrap()
-                    })
-                });
+
+                let mut group = c.benchmark_group($desc);
+                for (label, channels) in [("1ch", 1usize), ("2ch", 2), ("4ch", 4)] {
+                    let mut resampler = Async::<$ft>::new_poly(
+                        resample_ratio,
+                        1.1,
+                        interpolation_type,
+                        chunksize,
+                        channels,
+                        FixedAsync::Input,
+                    )
+                    .unwrap();
+                    let buffer_in = InterleavedOwned::new(0.0, channels, chunksize);
+                    let mut buffer_out =
+                        InterleavedOwned::new(0.0, channels, resampler.output_frames_max());
+                    group.bench_function(label, |b| {
+                        b.iter(|| {
+                            resampler
+                                .process_into_buffer(black_box(&buffer_in), &mut buffer_out, None)
+                                .unwrap()
+                        })
+                    });
+                }
+                group.finish();
             }
         };
     }

@@ -20,64 +20,36 @@ static FEATURES: &[CpuFeature] = &[CpuFeature::Avx, CpuFeature::Fma];
 
 /// Trait governing what can be done with an AvxSample.
 pub trait AvxSample: Sized + Send {
-    type Sinc: Send;
-
-    /// Pack sincs into a vector.
+    /// Compute the dot product of `wave[index..]` with `sinc` using AVX instructions.
     ///
     /// # Safety
     ///
-    /// This is unsafe because it uses target_enable dispatching. There are no
-    /// special requirements from the caller.
-    unsafe fn pack_sincs(sincs: Vec<Vec<Self>>) -> Vec<Vec<Self::Sinc>>;
-
-    /// Interpolate a sinc sample.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that the various indexes are not out of bounds
-    /// in the collection of sincs.
-    unsafe fn get_sinc_interpolated_unsafe(
+    /// The caller must ensure that `wave[index..index+length]` and `sinc[..length]` are
+    /// valid, and that `length` is a multiple of 8.
+    unsafe fn get_sinc_dot_product_unsafe(
         wave: &[Self],
         index: usize,
-        subindex: usize,
-        sincs: &[Vec<Self::Sinc>],
+        sinc: &[Self],
         length: usize,
     ) -> Self;
 }
 
 impl AvxSample for f32 {
-    type Sinc = __m256;
-
     #[target_feature(enable = "avx", enable = "fma")]
-    unsafe fn pack_sincs(sincs: Vec<Vec<Self>>) -> Vec<Vec<Self::Sinc>> {
-        let mut packed_sincs = Vec::new();
-        for sinc in sincs.iter() {
-            let mut packed = Vec::new();
-            for elements in sinc.chunks(8) {
-                let packed_elems = _mm256_loadu_ps(&elements[0]);
-                packed.push(packed_elems);
-            }
-            packed_sincs.push(packed);
-        }
-        packed_sincs
-    }
-
-    #[target_feature(enable = "avx", enable = "fma")]
-    unsafe fn get_sinc_interpolated_unsafe(
+    unsafe fn get_sinc_dot_product_unsafe(
         wave: &[f32],
         index: usize,
-        subindex: usize,
-        sincs: &[Vec<Self::Sinc>],
+        sinc: &[f32],
         length: usize,
     ) -> f32 {
-        let sinc = sincs.get_unchecked(subindex);
         let wave_cut = &wave[index..(index + length)];
         let mut acc = _mm256_setzero_ps();
-        let mut w_idx = 0;
-        for s_idx in 0..length / 8 {
-            let w = _mm256_loadu_ps(wave_cut.get_unchecked(w_idx));
-            acc = _mm256_fmadd_ps(w, *sinc.get_unchecked(s_idx), acc);
-            w_idx += 8;
+        let mut idx = 0;
+        for _ in 0..length / 8 {
+            let w = _mm256_loadu_ps(wave_cut.get_unchecked(idx));
+            let s = _mm256_loadu_ps(sinc.get_unchecked(idx));
+            acc = _mm256_fmadd_ps(w, s, acc);
+            idx += 8;
         }
         let acc_high = _mm256_extractf128_ps(acc, 1);
         let acc_low = _mm_add_ps(acc_high, _mm256_castps256_ps128(acc));
@@ -90,43 +62,25 @@ impl AvxSample for f32 {
 }
 
 impl AvxSample for f64 {
-    type Sinc = __m256d;
-
     #[target_feature(enable = "avx", enable = "fma")]
-    unsafe fn pack_sincs(sincs: Vec<Vec<f64>>) -> Vec<Vec<Self::Sinc>> {
-        let mut packed_sincs = Vec::new();
-        for sinc in sincs.iter() {
-            let mut packed = Vec::new();
-            for elements in sinc.chunks(4) {
-                let packed_elems = _mm256_loadu_pd(&elements[0]);
-                packed.push(packed_elems);
-            }
-            packed_sincs.push(packed);
-        }
-        packed_sincs
-    }
-
-    #[target_feature(enable = "avx", enable = "fma")]
-    unsafe fn get_sinc_interpolated_unsafe(
+    unsafe fn get_sinc_dot_product_unsafe(
         wave: &[f64],
         index: usize,
-        subindex: usize,
-        sincs: &[Vec<Self::Sinc>],
+        sinc: &[f64],
         length: usize,
     ) -> f64 {
-        let sinc = sincs.get_unchecked(subindex);
         let wave_cut = &wave[index..(index + length)];
         let mut acc0 = _mm256_setzero_pd();
         let mut acc1 = _mm256_setzero_pd();
-        let mut w_idx = 0;
-        let mut s_idx = 0;
-        for _ in 0..wave_cut.len() / 8 {
-            let w0 = _mm256_loadu_pd(wave_cut.get_unchecked(w_idx));
-            let w1 = _mm256_loadu_pd(wave_cut.get_unchecked(w_idx + 4));
-            acc0 = _mm256_fmadd_pd(w0, *sinc.get_unchecked(s_idx), acc0);
-            acc1 = _mm256_fmadd_pd(w1, *sinc.get_unchecked(s_idx + 1), acc1);
-            w_idx += 8;
-            s_idx += 2;
+        let mut idx = 0;
+        for _ in 0..length / 8 {
+            let w0 = _mm256_loadu_pd(wave_cut.get_unchecked(idx));
+            let w1 = _mm256_loadu_pd(wave_cut.get_unchecked(idx + 4));
+            let s0 = _mm256_loadu_pd(sinc.get_unchecked(idx));
+            let s1 = _mm256_loadu_pd(sinc.get_unchecked(idx + 4));
+            acc0 = _mm256_fmadd_pd(w0, s0, acc0);
+            acc1 = _mm256_fmadd_pd(w1, s1, acc1);
+            idx += 8;
         }
         let acc_all = _mm256_add_pd(acc0, acc1);
         let acc_high = _mm256_extractf128_pd(acc_all, 1);
@@ -144,7 +98,7 @@ pub(crate) struct AvxInterpolator<T>
 where
     T: AvxSample,
 {
-    sincs: Vec<Vec<T::Sinc>>,
+    sincs: Vec<Vec<T>>,
     length: usize,
     nbr_sincs: usize,
 }
@@ -153,21 +107,12 @@ impl<T> SincInterpolator<T> for AvxInterpolator<T>
 where
     T: AvxSample,
 {
-    /// Calculate the scalar produt of an input wave and the selected sinc filter.
-    fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T {
-        assert!(
-            (index + self.length) < wave.len(),
-            "Tried to interpolate for index {}, max for the given input is {}",
-            index,
-            wave.len() - self.length - 1
-        );
-        assert!(
-            subindex < self.nbr_sincs,
-            "Tried to use sinc subindex {}, max is {}",
-            subindex,
-            self.nbr_sincs - 1
-        );
-        unsafe { T::get_sinc_interpolated_unsafe(wave, index, subindex, &self.sincs, self.length) }
+    fn get_sinc_dot_product(&self, wave: &[T], index: usize, sinc: &[T]) -> T {
+        unsafe { T::get_sinc_dot_product_unsafe(wave, index, sinc, self.length) }
+    }
+
+    fn get_sincs(&self) -> &[Vec<T>] {
+        &self.sincs
     }
 
     fn nbr_points(&self) -> usize {
@@ -181,7 +126,7 @@ where
 
 impl<T> AvxInterpolator<T>
 where
-    T: Sample,
+    T: AvxSample + Sample,
 {
     /// Create a new AvxInterpolator.
     ///
@@ -202,7 +147,6 @@ where
 
         assert!(sinc_len % 8 == 0, "Sinc length must be a multiple of 8.");
         let sincs = make_sincs(sinc_len, oversampling_factor, f_cutoff, window);
-        let sincs = unsafe { <T as AvxSample>::pack_sincs(sincs) };
 
         Ok(Self {
             sincs,
@@ -211,6 +155,14 @@ where
         })
     }
 }
+
+// Suppress dead_code warning for __m256/__m256d: they are used only in the
+// target_feature-gated functions above and the compiler can't see through that.
+#[allow(dead_code)]
+const _: () = {
+    let _ = core::mem::size_of::<__m256>();
+    let _ = core::mem::size_of::<__m256d>();
+};
 
 #[cfg(test)]
 mod tests {
@@ -278,6 +230,6 @@ mod tests {
 
         let value = interpolator.get_sinc_interpolated(&wave, 333, 123);
         let check = get_sinc_interpolated(&wave, 333, &sincs[123]);
-        assert!((value - check).abs() < 1.0e-5);
+        assert!((value - check).abs() < 1.0e-6);
     }
 }
