@@ -5,7 +5,8 @@ use crate::windows::WindowFunction;
 use crate::Sample;
 use core::arch::aarch64::{float32x4_t, float64x2_t};
 use core::arch::aarch64::{
-    vadd_f32, vaddq_f32, vfmaq_f32, vget_high_f32, vget_low_f32, vld1q_f32, vmovq_n_f32, vst1_f32,
+    vadd_f32, vaddq_f32, vfmaq_f32, vget_high_f32, vget_low_f32, vld1q_f32, vmovq_n_f32,
+    vst1_f32, vst1q_f32,
 };
 use core::arch::aarch64::{vaddq_f64, vfmaq_f64, vld1q_f64, vmovq_n_f64, vst1q_f64};
 
@@ -26,9 +27,29 @@ pub trait NeonSample: Sized + Send {
         sinc: &[Self],
         length: usize,
     ) -> Self;
+
+    /// Compute `out[..length] += scale * input[..length]` using NEON instructions.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `out[..length]` and `input[..length]` are valid,
+    /// and that `length` is a multiple of 8.
+    unsafe fn saxpy_unsafe(out: &mut [Self], scale: Self, input: &[Self], length: usize);
 }
 
 impl NeonSample for f32 {
+    #[target_feature(enable = "neon")]
+    unsafe fn saxpy_unsafe(out: &mut [f32], scale: f32, input: &[f32], length: usize) {
+        let scale_vec = vmovq_n_f32(scale);
+        let mut idx = 0;
+        for _ in 0..length / 4 {
+            let x = vld1q_f32(input.get_unchecked(idx));
+            let y = vld1q_f32(out.get_unchecked(idx));
+            vst1q_f32(out.get_unchecked_mut(idx) as *mut f32, vfmaq_f32(y, scale_vec, x));
+            idx += 4;
+        }
+    }
+
     #[target_feature(enable = "neon")]
     unsafe fn get_sinc_dot_product_unsafe(
         wave: &[f32],
@@ -60,6 +81,18 @@ impl NeonSample for f32 {
 }
 
 impl NeonSample for f64 {
+    #[target_feature(enable = "neon")]
+    unsafe fn saxpy_unsafe(out: &mut [f64], scale: f64, input: &[f64], length: usize) {
+        let scale_vec = vmovq_n_f64(scale);
+        let mut idx = 0;
+        for _ in 0..length / 2 {
+            let x = vld1q_f64(input.get_unchecked(idx));
+            let y = vld1q_f64(out.get_unchecked(idx));
+            vst1q_f64(out.get_unchecked_mut(idx) as *mut f64, vfmaq_f64(y, scale_vec, x));
+            idx += 2;
+        }
+    }
+
     #[target_feature(enable = "neon")]
     unsafe fn get_sinc_dot_product_unsafe(
         wave: &[f64],
@@ -118,6 +151,31 @@ where
 
     fn nbr_sincs(&self) -> usize {
         self.nbr_sincs
+    }
+
+    fn make_combined_sinc(
+        &self,
+        nearest: &[(isize, isize)],
+        weights: &[T],
+        combined: &mut [T],
+    ) -> isize
+    where
+        T: crate::Sample,
+    {
+        let min_idx = nearest.iter().map(|n| n.0).min().unwrap();
+        combined.iter_mut().for_each(|x| *x = T::zero());
+        for (n, &w) in nearest.iter().zip(weights.iter()) {
+            let shift = (n.0 - min_idx) as usize;
+            unsafe {
+                T::saxpy_unsafe(
+                    &mut combined[shift..shift + self.length],
+                    w,
+                    &self.sincs[n.1 as usize],
+                    self.length,
+                );
+            }
+        }
+        min_idx
     }
 }
 

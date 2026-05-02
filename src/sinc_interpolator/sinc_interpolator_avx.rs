@@ -8,11 +8,12 @@ use core::arch::x86_64::{
     _mm256_extractf128_ps,
 };
 use core::arch::x86_64::{
-    _mm256_add_pd, _mm256_fmadd_pd, _mm256_loadu_pd, _mm256_setzero_pd, _mm_add_pd, _mm_hadd_pd,
-    _mm_store_sd,
+    _mm256_add_pd, _mm256_fmadd_pd, _mm256_loadu_pd, _mm256_set1_pd, _mm256_setzero_pd,
+    _mm256_storeu_pd, _mm_add_pd, _mm_hadd_pd, _mm_store_sd,
 };
 use core::arch::x86_64::{
-    _mm256_fmadd_ps, _mm256_loadu_ps, _mm256_setzero_ps, _mm_add_ps, _mm_hadd_ps, _mm_store_ss,
+    _mm256_fmadd_ps, _mm256_loadu_ps, _mm256_set1_ps, _mm256_setzero_ps, _mm256_storeu_ps,
+    _mm_add_ps, _mm_hadd_ps, _mm_store_ss,
 };
 
 /// Collection of CPU features required for this interpolator.
@@ -32,9 +33,32 @@ pub trait AvxSample: Sized + Send {
         sinc: &[Self],
         length: usize,
     ) -> Self;
+
+    /// Compute `out[..length] += scale * input[..length]` using AVX instructions.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `out[..length]` and `input[..length]` are valid,
+    /// and that `length` is a multiple of 8.
+    unsafe fn saxpy_unsafe(out: &mut [Self], scale: Self, input: &[Self], length: usize);
 }
 
 impl AvxSample for f32 {
+    #[target_feature(enable = "avx", enable = "fma")]
+    unsafe fn saxpy_unsafe(out: &mut [f32], scale: f32, input: &[f32], length: usize) {
+        let scale_vec = _mm256_set1_ps(scale);
+        let mut idx = 0;
+        for _ in 0..length / 8 {
+            let x = _mm256_loadu_ps(input.get_unchecked(idx));
+            let y = _mm256_loadu_ps(out.get_unchecked(idx));
+            _mm256_storeu_ps(
+                out.get_unchecked_mut(idx) as *mut f32,
+                _mm256_fmadd_ps(scale_vec, x, y),
+            );
+            idx += 8;
+        }
+    }
+
     #[target_feature(enable = "avx", enable = "fma")]
     unsafe fn get_sinc_dot_product_unsafe(
         wave: &[f32],
@@ -62,6 +86,21 @@ impl AvxSample for f32 {
 }
 
 impl AvxSample for f64 {
+    #[target_feature(enable = "avx", enable = "fma")]
+    unsafe fn saxpy_unsafe(out: &mut [f64], scale: f64, input: &[f64], length: usize) {
+        let scale_vec = _mm256_set1_pd(scale);
+        let mut idx = 0;
+        for _ in 0..length / 4 {
+            let x = _mm256_loadu_pd(input.get_unchecked(idx));
+            let y = _mm256_loadu_pd(out.get_unchecked(idx));
+            _mm256_storeu_pd(
+                out.get_unchecked_mut(idx) as *mut f64,
+                _mm256_fmadd_pd(scale_vec, x, y),
+            );
+            idx += 4;
+        }
+    }
+
     #[target_feature(enable = "avx", enable = "fma")]
     unsafe fn get_sinc_dot_product_unsafe(
         wave: &[f64],
@@ -121,6 +160,31 @@ where
 
     fn nbr_sincs(&self) -> usize {
         self.nbr_sincs
+    }
+
+    fn make_combined_sinc(
+        &self,
+        nearest: &[(isize, isize)],
+        weights: &[T],
+        combined: &mut [T],
+    ) -> isize
+    where
+        T: crate::Sample,
+    {
+        let min_idx = nearest.iter().map(|n| n.0).min().unwrap();
+        combined.iter_mut().for_each(|x| *x = T::zero());
+        for (n, &w) in nearest.iter().zip(weights.iter()) {
+            let shift = (n.0 - min_idx) as usize;
+            unsafe {
+                T::saxpy_unsafe(
+                    &mut combined[shift..shift + self.length],
+                    w,
+                    &self.sincs[n.1 as usize],
+                    self.length,
+                );
+            }
+        }
+        min_idx
     }
 }
 
