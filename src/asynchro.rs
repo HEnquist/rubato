@@ -28,7 +28,7 @@ pub trait InnerResampler<T>: Send {
     /// Make the scalar product between the waveform starting at `index` and the sinc of `subindex`.
     #[allow(clippy::too_many_arguments)]
     fn process(
-        &self,
+        &mut self,
         index: f64,
         nbr_frames: usize,
         channel_mask: &[bool],
@@ -298,10 +298,7 @@ where
 
         let interpolator_len = interpolator.nbr_points();
 
-        let inner_resampler = InnerSinc {
-            interpolator,
-            interpolation: interpolation_type,
-        };
+        let inner_resampler = InnerSinc::new(interpolator, interpolation_type);
 
         let last_index = inner_resampler.init_last_index();
         let needed_input_size = Self::calculate_input_size(
@@ -511,7 +508,7 @@ where
         let mut idx = self.last_index;
 
         // Process
-        idx = self.inner_resampler.process(
+        idx = self.inner_resampler.as_mut().process(
             idx,
             self.needed_output_size,
             &self.channel_mask,
@@ -900,5 +897,90 @@ mod tests {
         let params = basic_params();
         let resampler = Async::<f64>::new_sinc(1.0, 4.0, &params, 1024, 2, fixed).unwrap();
         check_relative_ratio_changes_frame_ratio(resampler);
+    }
+
+    /// Run a 1-channel and a 4-channel sinc resampler with identical per-channel input and
+    /// compare their outputs. The 1-channel resampler uses the direct path (separate dot
+    /// products per nearest point); the 4-channel resampler uses the combined-sinc path
+    /// (SIMD SAXPY build then one dot product per channel). They must agree within floating-
+    /// point rounding tolerance.
+    fn compare_1ch_4ch_sinc_output(
+        interpolation: SincInterpolationType,
+        ratio: f64,
+        fixed: FixedAsync,
+    ) {
+        let params = SincInterpolationParameters {
+            sinc_len: 64,
+            f_cutoff: 0.95,
+            interpolation,
+            oversampling_factor: 16,
+            window: WindowFunction::BlackmanHarris2,
+        };
+        let chunk = 256;
+
+        let mut r1 = Async::<f64>::new_sinc(ratio, 1.0, &params, chunk, 1, fixed).unwrap();
+        let mut r4 = Async::<f64>::new_sinc(ratio, 1.0, &params, chunk, 4, fixed).unwrap();
+
+        let mut phase = 0.0f64;
+        for _ in 0..20 {
+            let frames_in = r1.input_frames_next();
+            let frames_out = r1.output_frames_next();
+            assert_eq!(frames_in, r4.input_frames_next());
+            assert_eq!(frames_out, r4.output_frames_next());
+
+            let wave: Vec<f64> = (0..frames_in)
+                .map(|i| (phase + i as f64 * 0.1).sin())
+                .collect();
+            phase += frames_in as f64 * 0.1;
+
+            let in1_data = vec![wave.clone()];
+            let in4_data = vec![wave.clone(), wave.clone(), wave.clone(), wave.clone()];
+            let input_1ch = SequentialSliceOfVecs::new(&in1_data, 1, frames_in).unwrap();
+            let input_4ch = SequentialSliceOfVecs::new(&in4_data, 4, frames_in).unwrap();
+
+            let mut out1_data = vec![vec![0.0f64; frames_out]; 1];
+            let mut out4_data = vec![vec![0.0f64; frames_out]; 4];
+            let mut out1 = SequentialSliceOfVecs::new_mut(&mut out1_data, 1, frames_out).unwrap();
+            let mut out4 = SequentialSliceOfVecs::new_mut(&mut out4_data, 4, frames_out).unwrap();
+
+            r1.process_into_buffer(&input_1ch, &mut out1, None).unwrap();
+            r4.process_into_buffer(&input_4ch, &mut out4, None).unwrap();
+
+            for frame in 0..frames_out {
+                let expected = out1_data[0][frame];
+                // All 4 channels must be exactly equal (identical input, same combined sinc).
+                for ch in 1..4 {
+                    assert_eq!(
+                        out4_data[ch][frame], out4_data[0][frame],
+                        "interp={interpolation:?} ratio={ratio} frame={frame}: \
+                         ch{ch} differs from ch0 inside 4ch resampler"
+                    );
+                }
+                // 4ch output must agree with 1ch output within floating-point tolerance.
+                for ch in 0..4 {
+                    let diff = (out4_data[ch][frame] - expected).abs();
+                    assert!(
+                        diff < 1e-10,
+                        "interp={interpolation:?} ratio={ratio} ch={ch} frame={frame}: \
+                         4ch={} vs 1ch={expected} diff={diff}",
+                        out4_data[ch][frame]
+                    );
+                }
+            }
+        }
+    }
+
+    #[test_log::test(test_matrix(
+        [
+            SincInterpolationType::Cubic,
+            SincInterpolationType::Quadratic,
+            SincInterpolationType::Linear,
+            SincInterpolationType::Nearest,
+        ],
+        [0.8f64, 1.2f64],
+        [FixedAsync::Input, FixedAsync::Output]
+    ))]
+    fn sinc_4ch_matches_1ch(interp: SincInterpolationType, ratio: f64, fixed: FixedAsync) {
+        compare_1ch_4ch_sinc_output(interp, ratio, fixed);
     }
 }
