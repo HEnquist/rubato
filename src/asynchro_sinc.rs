@@ -246,11 +246,10 @@ where
         let mut idx = idx;
         let interpolator_len = self.interpolator.nbr_points();
         let active_count = channel_mask.iter().filter(|&&a| a).count();
-        // combined sinc is only worthwhile when there are enough channels to amortise
-        // the build cost; for <=2 channels we do separate dot products directly.
-        let use_combined = active_count > 2;
         match self.interpolation {
             SincInterpolationType::Cubic => {
+                // Cubic has 4 nearest points so the build cost breaks even at 2 channels.
+                let use_combined = active_count >= 2;
                 let oversampling_factor = self.interpolator.nbr_sincs();
                 let sincs = self.interpolator.get_sincs();
                 let mut nearest = [(0isize, 0isize); 4];
@@ -318,6 +317,8 @@ where
                 }
             }
             SincInterpolationType::Quadratic => {
+                // Quadratic has 3 nearest points; combined sinc pays off from 3 channels.
+                let use_combined = active_count > 2;
                 let oversampling_factor = self.interpolator.nbr_sincs();
                 let sincs = self.interpolator.get_sincs();
                 let mut nearest = [(0isize, 0isize); 3];
@@ -379,6 +380,8 @@ where
                 }
             }
             SincInterpolationType::Linear => {
+                // Linear has 2 nearest points; combined sinc pays off from 3 channels.
+                let use_combined = active_count > 2;
                 let oversampling_factor = self.interpolator.nbr_sincs();
                 let sincs = self.interpolator.get_sincs();
                 let mut nearest = [(0isize, 0isize); 2];
