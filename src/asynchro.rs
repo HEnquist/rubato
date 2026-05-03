@@ -7,7 +7,9 @@ use crate::asynchro_sinc::{
     make_interpolator, InnerSinc, SincInterpolationParameters, SincInterpolationType,
 };
 use crate::error::{ResampleError, ResampleResult, ResamplerConstructionError};
-use crate::sinc_interpolator::SincInterpolator;
+use crate::sinc_interpolator::{
+    AnyInterpolator, AvxSample, NeonSample, SincInterpolator, SseSample,
+};
 use crate::{get_offsets, get_partial_len, update_mask, Indexing};
 use crate::{validate_buffers, Resampler, Sample};
 
@@ -285,11 +287,14 @@ where
         resample_ratio: f64,
         max_resample_ratio_relative: f64,
         interpolation_type: SincInterpolationType,
-        interpolator: Box<dyn SincInterpolator<T>>,
+        interpolator: AnyInterpolator<T>,
         chunk_size: usize,
         nbr_channels: usize,
         fixed: FixedAsync,
-    ) -> Result<Self, ResamplerConstructionError> {
+    ) -> Result<Self, ResamplerConstructionError>
+    where
+        T: AvxSample + SseSample + NeonSample,
+    {
         validate_ratios(resample_ratio, max_resample_ratio_relative)?;
 
         if chunk_size == 0 {

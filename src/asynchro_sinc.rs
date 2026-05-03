@@ -6,7 +6,9 @@ use crate::sinc_interpolator::sinc_interpolator_avx::AvxInterpolator;
 use crate::sinc_interpolator::sinc_interpolator_neon::NeonInterpolator;
 #[cfg(target_arch = "x86_64")]
 use crate::sinc_interpolator::sinc_interpolator_sse::SseInterpolator;
-use crate::sinc_interpolator::{ScalarInterpolator, SincInterpolator};
+use crate::sinc_interpolator::{
+    AnyInterpolator, AvxSample, NeonSample, ScalarInterpolator, SincInterpolator, SseSample,
+};
 use crate::windows::WindowFunction;
 use crate::Sample;
 use audioadapter::AdapterMut;
@@ -85,9 +87,9 @@ pub fn make_interpolator<T>(
     f_cutoff: f32,
     oversampling_factor: usize,
     window: WindowFunction,
-) -> Box<dyn SincInterpolator<T>>
+) -> AnyInterpolator<T>
 where
-    T: Sample,
+    T: AvxSample + SseSample + NeonSample + Sample,
 {
     let sinc_len = 8 * (((sinc_len as f32) / 8.0).ceil() as usize);
     let f_cutoff = if resample_ratio >= 1.0 {
@@ -100,24 +102,24 @@ where
     if let Ok(interpolator) =
         AvxInterpolator::<T>::new(sinc_len, oversampling_factor, f_cutoff, window)
     {
-        return Box::new(interpolator);
+        return AnyInterpolator::Avx(interpolator);
     }
 
     #[cfg(target_arch = "x86_64")]
     if let Ok(interpolator) =
         SseInterpolator::<T>::new(sinc_len, oversampling_factor, f_cutoff, window)
     {
-        return Box::new(interpolator);
+        return AnyInterpolator::Sse(interpolator);
     }
 
     #[cfg(target_arch = "aarch64")]
     if let Ok(interpolator) =
         NeonInterpolator::<T>::new(sinc_len, oversampling_factor, f_cutoff, window)
     {
-        return Box::new(interpolator);
+        return AnyInterpolator::Neon(interpolator);
     }
 
-    Box::new(ScalarInterpolator::<T>::new(
+    AnyInterpolator::Scalar(ScalarInterpolator::<T>::new(
         sinc_len,
         oversampling_factor,
         f_cutoff,
@@ -205,17 +207,23 @@ where
     [t!(1.0) - x, x]
 }
 
-pub(crate) struct InnerSinc<T> {
-    pub interpolator: Box<dyn SincInterpolator<T>>,
+pub(crate) struct InnerSinc<T>
+where
+    T: AvxSample + SseSample + NeonSample + Sample,
+{
+    pub interpolator: AnyInterpolator<T>,
     pub interpolation: SincInterpolationType,
     // Pre-allocated buffer for the combined sinc (used by the >2 channel path).
     // Length is interpolator.nbr_points() + 1.
     combined: Vec<T>,
 }
 
-impl<T: Sample> InnerSinc<T> {
+impl<T> InnerSinc<T>
+where
+    T: AvxSample + SseSample + NeonSample + Sample,
+{
     pub(crate) fn new(
-        interpolator: Box<dyn SincInterpolator<T>>,
+        interpolator: AnyInterpolator<T>,
         interpolation: SincInterpolationType,
     ) -> Self {
         let len = interpolator.nbr_points() + 1;
@@ -229,7 +237,7 @@ impl<T: Sample> InnerSinc<T> {
 
 impl<T> InnerResampler<T> for InnerSinc<T>
 where
-    T: Sample,
+    T: AvxSample + SseSample + NeonSample + Sample,
 {
     fn process(
         &mut self,
@@ -261,6 +269,9 @@ where
                         - (idx * oversampling_factor as f64).floor();
                     let frac_offset = t!(frac);
                     let weights = interp_cubic_weights(frac_offset);
+                    for n in &nearest {
+                        self.interpolator.prefetch_sinc(n.1 as usize);
+                    }
                     if use_combined {
                         let min_idx = self.interpolator.make_combined_sinc(
                             &nearest,
@@ -330,6 +341,9 @@ where
                         - (idx * oversampling_factor as f64).floor();
                     let frac_offset = t!(frac);
                     let weights = interp_quad_weights(frac_offset);
+                    for n in &nearest {
+                        self.interpolator.prefetch_sinc(n.1 as usize);
+                    }
                     if use_combined {
                         let min_idx = self.interpolator.make_combined_sinc(
                             &nearest,
@@ -393,6 +407,9 @@ where
                         - (idx * oversampling_factor as f64).floor();
                     let frac_offset = t!(frac);
                     let weights = interp_lin_weights(frac_offset);
+                    for n in &nearest {
+                        self.interpolator.prefetch_sinc(n.1 as usize);
+                    }
                     if use_combined {
                         let min_idx = self.interpolator.make_combined_sinc(
                             &nearest,
@@ -444,6 +461,7 @@ where
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     nearest = get_nearest_time(idx, oversampling_factor as isize);
+                    self.interpolator.prefetch_sinc(nearest.1 as usize);
                     for (chan, active) in channel_mask.iter().enumerate() {
                         if *active {
                             let buf = &wave_in[chan];

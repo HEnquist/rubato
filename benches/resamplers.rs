@@ -8,7 +8,7 @@ mod bench_asyncro {
         Async, FixedAsync, PolynomialDegree, Resampler, SincInterpolationType, WindowFunction,
     };
 
-    use rubato::sinc_interpolator::ScalarInterpolator;
+    use rubato::sinc_interpolator::{AnyInterpolator, ScalarInterpolator};
 
     #[cfg(target_arch = "x86_64")]
     use rubato::sinc_interpolator::sinc_interpolator_avx::AvxInterpolator;
@@ -44,7 +44,7 @@ mod bench_asyncro {
             for (label, channels) in [("1ch", 1usize), ("2ch", 2), ("4ch", 4)] {
                 let interpolator = $it::<$ft>::new(sinc_len, oversampling_factor, f_cutoff, window);
                 let interpolator = unwrap_helper!($($unwrap)* interpolator);
-                let interpolator = Box::new(interpolator);
+                let interpolator: AnyInterpolator<$ft> = interpolator.into();
                 let mut resampler = Async::<$ft>::new_with_sinc_interpolator(
                     resample_ratio,
                     1.1,

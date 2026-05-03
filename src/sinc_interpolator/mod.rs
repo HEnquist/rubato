@@ -63,6 +63,11 @@ pub(crate) trait SincInterpolator<T>: Send {
     /// Get number of sincs used for oversampling.
     fn nbr_sincs(&self) -> usize;
 
+    /// Warm the CPU cache with the sinc row at `subindex`.
+    /// The default is a no-op; SIMD backends may override this to hide L2 latency.
+    #[inline]
+    fn prefetch_sinc(&self, _subindex: usize) {}
+
     /// Make the scalar product between the waveform starting at `index` and the sinc of `subindex`.
     fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T {
         assert!(
@@ -107,6 +112,158 @@ pub(crate) trait SincInterpolator<T>: Send {
             }
         }
         min_idx
+    }
+}
+
+/// A concrete enum over every sinc-interpolator implementation.
+///
+/// Replaces `Box<dyn SincInterpolator<T>>` so the hot path can dispatch via a
+/// `match` on a small closed set of variants, enabling the compiler to inline
+/// `get_sinc_dot_product` and fully unroll the inner FMA loop.
+///
+/// The bounds `T: AvxSample + SseSample + NeonSample` collapse to `T: Sample`
+/// on each platform because the non-native SIMD traits have blanket impls.
+#[cfg_attr(feature = "bench_asyncro", visibility::make(pub))]
+pub(crate) enum AnyInterpolator<T>
+where
+    T: AvxSample + SseSample + NeonSample + Sample,
+{
+    #[cfg(target_arch = "x86_64")]
+    Avx(sinc_interpolator_avx::AvxInterpolator<T>),
+    #[cfg(target_arch = "x86_64")]
+    Sse(sinc_interpolator_sse::SseInterpolator<T>),
+    #[cfg(target_arch = "aarch64")]
+    Neon(sinc_interpolator_neon::NeonInterpolator<T>),
+    Scalar(ScalarInterpolator<T>),
+}
+
+impl<T> SincInterpolator<T> for AnyInterpolator<T>
+where
+    T: AvxSample + SseSample + NeonSample + Sample,
+{
+    #[inline]
+    fn get_sinc_dot_product(&self, wave: &[T], index: usize, sinc: &[T]) -> T {
+        match self {
+            #[cfg(target_arch = "x86_64")]
+            AnyInterpolator::Avx(i) => i.get_sinc_dot_product(wave, index, sinc),
+            #[cfg(target_arch = "x86_64")]
+            AnyInterpolator::Sse(i) => i.get_sinc_dot_product(wave, index, sinc),
+            #[cfg(target_arch = "aarch64")]
+            AnyInterpolator::Neon(i) => i.get_sinc_dot_product(wave, index, sinc),
+            AnyInterpolator::Scalar(i) => i.get_sinc_dot_product(wave, index, sinc),
+        }
+    }
+
+    #[inline]
+    fn get_sincs(&self) -> &[Vec<T>] {
+        match self {
+            #[cfg(target_arch = "x86_64")]
+            AnyInterpolator::Avx(i) => i.get_sincs(),
+            #[cfg(target_arch = "x86_64")]
+            AnyInterpolator::Sse(i) => i.get_sincs(),
+            #[cfg(target_arch = "aarch64")]
+            AnyInterpolator::Neon(i) => i.get_sincs(),
+            AnyInterpolator::Scalar(i) => i.get_sincs(),
+        }
+    }
+
+    #[inline]
+    fn nbr_points(&self) -> usize {
+        match self {
+            #[cfg(target_arch = "x86_64")]
+            AnyInterpolator::Avx(i) => i.nbr_points(),
+            #[cfg(target_arch = "x86_64")]
+            AnyInterpolator::Sse(i) => i.nbr_points(),
+            #[cfg(target_arch = "aarch64")]
+            AnyInterpolator::Neon(i) => i.nbr_points(),
+            AnyInterpolator::Scalar(i) => i.nbr_points(),
+        }
+    }
+
+    #[inline]
+    fn nbr_sincs(&self) -> usize {
+        match self {
+            #[cfg(target_arch = "x86_64")]
+            AnyInterpolator::Avx(i) => i.nbr_sincs(),
+            #[cfg(target_arch = "x86_64")]
+            AnyInterpolator::Sse(i) => i.nbr_sincs(),
+            #[cfg(target_arch = "aarch64")]
+            AnyInterpolator::Neon(i) => i.nbr_sincs(),
+            AnyInterpolator::Scalar(i) => i.nbr_sincs(),
+        }
+    }
+
+    #[inline]
+    fn prefetch_sinc(&self, subindex: usize) {
+        match self {
+            #[cfg(target_arch = "x86_64")]
+            AnyInterpolator::Avx(i) => i.prefetch_sinc(subindex),
+            #[cfg(target_arch = "x86_64")]
+            AnyInterpolator::Sse(i) => i.prefetch_sinc(subindex),
+            #[cfg(target_arch = "aarch64")]
+            AnyInterpolator::Neon(i) => i.prefetch_sinc(subindex),
+            AnyInterpolator::Scalar(i) => i.prefetch_sinc(subindex),
+        }
+    }
+
+    #[inline]
+    fn make_combined_sinc(
+        &self,
+        nearest: &[(isize, isize)],
+        weights: &[T],
+        combined: &mut [T],
+    ) -> isize
+    where
+        T: Sample,
+    {
+        match self {
+            #[cfg(target_arch = "x86_64")]
+            AnyInterpolator::Avx(i) => i.make_combined_sinc(nearest, weights, combined),
+            #[cfg(target_arch = "x86_64")]
+            AnyInterpolator::Sse(i) => i.make_combined_sinc(nearest, weights, combined),
+            #[cfg(target_arch = "aarch64")]
+            AnyInterpolator::Neon(i) => i.make_combined_sinc(nearest, weights, combined),
+            AnyInterpolator::Scalar(i) => i.make_combined_sinc(nearest, weights, combined),
+        }
+    }
+}
+
+impl<T> From<ScalarInterpolator<T>> for AnyInterpolator<T>
+where
+    T: AvxSample + SseSample + NeonSample + Sample,
+{
+    fn from(value: ScalarInterpolator<T>) -> Self {
+        AnyInterpolator::Scalar(value)
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+impl<T> From<sinc_interpolator_avx::AvxInterpolator<T>> for AnyInterpolator<T>
+where
+    T: AvxSample + SseSample + NeonSample + Sample,
+{
+    fn from(value: sinc_interpolator_avx::AvxInterpolator<T>) -> Self {
+        AnyInterpolator::Avx(value)
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+impl<T> From<sinc_interpolator_sse::SseInterpolator<T>> for AnyInterpolator<T>
+where
+    T: AvxSample + SseSample + NeonSample + Sample,
+{
+    fn from(value: sinc_interpolator_sse::SseInterpolator<T>) -> Self {
+        AnyInterpolator::Sse(value)
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+impl<T> From<sinc_interpolator_neon::NeonInterpolator<T>> for AnyInterpolator<T>
+where
+    T: AvxSample + SseSample + NeonSample + Sample,
+{
+    fn from(value: sinc_interpolator_neon::NeonInterpolator<T>) -> Self {
+        AnyInterpolator::Neon(value)
     }
 }
 
