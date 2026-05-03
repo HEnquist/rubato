@@ -12,6 +12,111 @@ use core::arch::x86_64::{
     _mm_add_ps, _mm_hadd_ps, _mm_loadu_ps, _mm_mul_ps, _mm_set1_ps, _mm_setzero_ps,
     _mm_store_ss, _mm_storeu_ps,
 };
+use core::arch::x86_64::{_mm_prefetch, _MM_HINT_T0};
+
+/// f32 dot product with 4 accumulators and const-generic length for full loop unrolling.
+/// Each iteration consumes 16 floats (4 chains × 4 floats per __m128).
+#[target_feature(enable = "sse3")]
+unsafe fn dot_sse_f32_n<const LEN: usize>(wave: &[f32], index: usize, sinc: &[f32]) -> f32 {
+    let wave_cut = &wave[index..(index + LEN)];
+    let mut acc0 = _mm_setzero_ps();
+    let mut acc1 = _mm_setzero_ps();
+    let mut acc2 = _mm_setzero_ps();
+    let mut acc3 = _mm_setzero_ps();
+    let mut idx = 0;
+    for _ in 0..LEN / 16 {
+        acc0 = _mm_add_ps(acc0, _mm_mul_ps(_mm_loadu_ps(wave_cut.get_unchecked(idx)),      _mm_loadu_ps(sinc.get_unchecked(idx))));
+        acc1 = _mm_add_ps(acc1, _mm_mul_ps(_mm_loadu_ps(wave_cut.get_unchecked(idx + 4)),  _mm_loadu_ps(sinc.get_unchecked(idx + 4))));
+        acc2 = _mm_add_ps(acc2, _mm_mul_ps(_mm_loadu_ps(wave_cut.get_unchecked(idx + 8)),  _mm_loadu_ps(sinc.get_unchecked(idx + 8))));
+        acc3 = _mm_add_ps(acc3, _mm_mul_ps(_mm_loadu_ps(wave_cut.get_unchecked(idx + 12)), _mm_loadu_ps(sinc.get_unchecked(idx + 12))));
+        idx += 16;
+    }
+    let temp4 = _mm_add_ps(_mm_add_ps(acc0, acc1), _mm_add_ps(acc2, acc3));
+    let temp2 = _mm_hadd_ps(temp4, temp4);
+    let temp1 = _mm_hadd_ps(temp2, temp2);
+    let mut result = 0.0f32;
+    _mm_store_ss(&mut result, temp1);
+    result
+}
+
+/// Runtime-length f32 fallback with 4 accumulators.
+#[target_feature(enable = "sse3")]
+unsafe fn dot_sse_f32_dyn(wave: &[f32], index: usize, sinc: &[f32], length: usize) -> f32 {
+    let wave_cut = &wave[index..(index + length)];
+    let mut acc0 = _mm_setzero_ps();
+    let mut acc1 = _mm_setzero_ps();
+    let mut acc2 = _mm_setzero_ps();
+    let mut acc3 = _mm_setzero_ps();
+    let mut idx = 0;
+    for _ in 0..length / 16 {
+        acc0 = _mm_add_ps(acc0, _mm_mul_ps(_mm_loadu_ps(wave_cut.get_unchecked(idx)),      _mm_loadu_ps(sinc.get_unchecked(idx))));
+        acc1 = _mm_add_ps(acc1, _mm_mul_ps(_mm_loadu_ps(wave_cut.get_unchecked(idx + 4)),  _mm_loadu_ps(sinc.get_unchecked(idx + 4))));
+        acc2 = _mm_add_ps(acc2, _mm_mul_ps(_mm_loadu_ps(wave_cut.get_unchecked(idx + 8)),  _mm_loadu_ps(sinc.get_unchecked(idx + 8))));
+        acc3 = _mm_add_ps(acc3, _mm_mul_ps(_mm_loadu_ps(wave_cut.get_unchecked(idx + 12)), _mm_loadu_ps(sinc.get_unchecked(idx + 12))));
+        idx += 16;
+    }
+    for _ in 0..(length % 16) / 4 {
+        acc0 = _mm_add_ps(acc0, _mm_mul_ps(_mm_loadu_ps(wave_cut.get_unchecked(idx)), _mm_loadu_ps(sinc.get_unchecked(idx))));
+        idx += 4;
+    }
+    let temp4 = _mm_add_ps(_mm_add_ps(acc0, acc1), _mm_add_ps(acc2, acc3));
+    let temp2 = _mm_hadd_ps(temp4, temp4);
+    let temp1 = _mm_hadd_ps(temp2, temp2);
+    let mut result = 0.0f32;
+    _mm_store_ss(&mut result, temp1);
+    result
+}
+
+/// f64 dot product with 4 accumulators and const-generic length for full loop unrolling.
+/// Each iteration consumes 8 doubles (4 chains × 2 doubles per __m128d).
+#[target_feature(enable = "sse3")]
+unsafe fn dot_sse_f64_n<const LEN: usize>(wave: &[f64], index: usize, sinc: &[f64]) -> f64 {
+    let wave_cut = &wave[index..(index + LEN)];
+    let mut acc0 = _mm_setzero_pd();
+    let mut acc1 = _mm_setzero_pd();
+    let mut acc2 = _mm_setzero_pd();
+    let mut acc3 = _mm_setzero_pd();
+    let mut idx = 0;
+    for _ in 0..LEN / 8 {
+        acc0 = _mm_add_pd(acc0, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx)),     _mm_loadu_pd(sinc.get_unchecked(idx))));
+        acc1 = _mm_add_pd(acc1, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx + 2)), _mm_loadu_pd(sinc.get_unchecked(idx + 2))));
+        acc2 = _mm_add_pd(acc2, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx + 4)), _mm_loadu_pd(sinc.get_unchecked(idx + 4))));
+        acc3 = _mm_add_pd(acc3, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx + 6)), _mm_loadu_pd(sinc.get_unchecked(idx + 6))));
+        idx += 8;
+    }
+    let temp2_0 = _mm_add_pd(acc0, acc1);
+    let temp2_1 = _mm_add_pd(acc2, acc3);
+    let temp2 = _mm_hadd_pd(temp2_0, temp2_1);
+    let temp1 = _mm_hadd_pd(temp2, temp2);
+    let mut result = 0.0f64;
+    _mm_store_sd(&mut result, temp1);
+    result
+}
+
+/// Runtime-length f64 fallback with 4 accumulators.
+#[target_feature(enable = "sse3")]
+unsafe fn dot_sse_f64_dyn(wave: &[f64], index: usize, sinc: &[f64], length: usize) -> f64 {
+    let wave_cut = &wave[index..(index + length)];
+    let mut acc0 = _mm_setzero_pd();
+    let mut acc1 = _mm_setzero_pd();
+    let mut acc2 = _mm_setzero_pd();
+    let mut acc3 = _mm_setzero_pd();
+    let mut idx = 0;
+    for _ in 0..length / 8 {
+        acc0 = _mm_add_pd(acc0, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx)),     _mm_loadu_pd(sinc.get_unchecked(idx))));
+        acc1 = _mm_add_pd(acc1, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx + 2)), _mm_loadu_pd(sinc.get_unchecked(idx + 2))));
+        acc2 = _mm_add_pd(acc2, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx + 4)), _mm_loadu_pd(sinc.get_unchecked(idx + 4))));
+        acc3 = _mm_add_pd(acc3, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx + 6)), _mm_loadu_pd(sinc.get_unchecked(idx + 6))));
+        idx += 8;
+    }
+    let temp2_0 = _mm_add_pd(acc0, acc1);
+    let temp2_1 = _mm_add_pd(acc2, acc3);
+    let temp2 = _mm_hadd_pd(temp2_0, temp2_1);
+    let temp1 = _mm_hadd_pd(temp2, temp2);
+    let mut result = 0.0f64;
+    _mm_store_sd(&mut result, temp1);
+    result
+}
 
 /// Collection of CPU features required for this interpolator.
 static FEATURES: &[CpuFeature] = &[CpuFeature::Sse3];
@@ -63,26 +168,12 @@ impl SseSample for f32 {
         sinc: &[f32],
         length: usize,
     ) -> f32 {
-        let wave_cut = &wave[index..(index + length)];
-        let mut acc0 = _mm_setzero_ps();
-        let mut acc1 = _mm_setzero_ps();
-        let mut idx = 0;
-        for _ in 0..length / 8 {
-            let w0 = _mm_loadu_ps(wave_cut.get_unchecked(idx));
-            let w1 = _mm_loadu_ps(wave_cut.get_unchecked(idx + 4));
-            acc0 = _mm_add_ps(acc0, _mm_mul_ps(w0, _mm_loadu_ps(sinc.get_unchecked(idx))));
-            acc1 = _mm_add_ps(
-                acc1,
-                _mm_mul_ps(w1, _mm_loadu_ps(sinc.get_unchecked(idx + 4))),
-            );
-            idx += 8;
+        match length {
+            64 => dot_sse_f32_n::<64>(wave, index, sinc),
+            128 => dot_sse_f32_n::<128>(wave, index, sinc),
+            256 => dot_sse_f32_n::<256>(wave, index, sinc),
+            _ => dot_sse_f32_dyn(wave, index, sinc, length),
         }
-        let temp4 = _mm_add_ps(acc0, acc1);
-        let temp2 = _mm_hadd_ps(temp4, temp4);
-        let temp1 = _mm_hadd_ps(temp2, temp2);
-        let mut result = 0.0;
-        _mm_store_ss(&mut result, temp1);
-        result
     }
 }
 
@@ -109,50 +200,12 @@ impl SseSample for f64 {
         sinc: &[f64],
         length: usize,
     ) -> f64 {
-        let wave_cut = &wave[index..(index + length)];
-        let mut acc0 = _mm_setzero_pd();
-        let mut acc1 = _mm_setzero_pd();
-        let mut acc2 = _mm_setzero_pd();
-        let mut acc3 = _mm_setzero_pd();
-        let mut idx = 0;
-        for _ in 0..length / 8 {
-            acc0 = _mm_add_pd(
-                acc0,
-                _mm_mul_pd(
-                    _mm_loadu_pd(wave_cut.get_unchecked(idx)),
-                    _mm_loadu_pd(sinc.get_unchecked(idx)),
-                ),
-            );
-            acc1 = _mm_add_pd(
-                acc1,
-                _mm_mul_pd(
-                    _mm_loadu_pd(wave_cut.get_unchecked(idx + 2)),
-                    _mm_loadu_pd(sinc.get_unchecked(idx + 2)),
-                ),
-            );
-            acc2 = _mm_add_pd(
-                acc2,
-                _mm_mul_pd(
-                    _mm_loadu_pd(wave_cut.get_unchecked(idx + 4)),
-                    _mm_loadu_pd(sinc.get_unchecked(idx + 4)),
-                ),
-            );
-            acc3 = _mm_add_pd(
-                acc3,
-                _mm_mul_pd(
-                    _mm_loadu_pd(wave_cut.get_unchecked(idx + 6)),
-                    _mm_loadu_pd(sinc.get_unchecked(idx + 6)),
-                ),
-            );
-            idx += 8;
+        match length {
+            64 => dot_sse_f64_n::<64>(wave, index, sinc),
+            128 => dot_sse_f64_n::<128>(wave, index, sinc),
+            256 => dot_sse_f64_n::<256>(wave, index, sinc),
+            _ => dot_sse_f64_dyn(wave, index, sinc, length),
         }
-        let temp2_0 = _mm_add_pd(acc0, acc1);
-        let temp2_1 = _mm_add_pd(acc2, acc3);
-        let temp2 = _mm_hadd_pd(temp2_0, temp2_1);
-        let temp1 = _mm_hadd_pd(temp2, temp2);
-        let mut result = 0.0;
-        _mm_store_sd(&mut result, temp1);
-        result
     }
 }
 
@@ -185,6 +238,16 @@ where
 
     fn nbr_sincs(&self) -> usize {
         self.nbr_sincs
+    }
+
+    #[inline]
+    fn prefetch_sinc(&self, subindex: usize) {
+        if subindex < self.nbr_sincs {
+            unsafe {
+                let row = self.sincs.get_unchecked(subindex);
+                _mm_prefetch::<_MM_HINT_T0>(row.as_ptr() as *const i8);
+            }
+        }
     }
 
     fn make_combined_sinc(

@@ -13,6 +13,111 @@ use core::arch::aarch64::{vaddq_f64, vfmaq_f64, vld1q_f64, vmovq_n_f64, vst1q_f6
 /// Collection of CPU features required for this interpolator.
 static FEATURES: &[CpuFeature] = &[CpuFeature::Neon];
 
+/// f32 dot product with 4 accumulators and const-generic length for full loop unrolling.
+/// Each iteration consumes 16 floats (4 chains × 4 floats per float32x4_t).
+#[target_feature(enable = "neon")]
+unsafe fn dot_neon_f32_n<const LEN: usize>(wave: &[f32], index: usize, sinc: &[f32]) -> f32 {
+    let wave_cut = &wave[index..(index + LEN)];
+    let mut acc0 = vmovq_n_f32(0.0);
+    let mut acc1 = vmovq_n_f32(0.0);
+    let mut acc2 = vmovq_n_f32(0.0);
+    let mut acc3 = vmovq_n_f32(0.0);
+    let mut idx = 0;
+    for _ in 0..LEN / 16 {
+        acc0 = vfmaq_f32(acc0, vld1q_f32(wave_cut.get_unchecked(idx)),      vld1q_f32(sinc.get_unchecked(idx)));
+        acc1 = vfmaq_f32(acc1, vld1q_f32(wave_cut.get_unchecked(idx + 4)),  vld1q_f32(sinc.get_unchecked(idx + 4)));
+        acc2 = vfmaq_f32(acc2, vld1q_f32(wave_cut.get_unchecked(idx + 8)),  vld1q_f32(sinc.get_unchecked(idx + 8)));
+        acc3 = vfmaq_f32(acc3, vld1q_f32(wave_cut.get_unchecked(idx + 12)), vld1q_f32(sinc.get_unchecked(idx + 12)));
+        idx += 16;
+    }
+    let sum4 = vaddq_f32(vaddq_f32(acc0, acc1), vaddq_f32(acc2, acc3));
+    let high = vget_high_f32(sum4);
+    let low = vget_low_f32(sum4);
+    let sum2 = vadd_f32(high, low);
+    let mut array = [0.0f32, 0.0f32];
+    vst1_f32(array.as_mut_ptr(), sum2);
+    array[0] + array[1]
+}
+
+/// Runtime-length f32 fallback with 4 accumulators.
+#[target_feature(enable = "neon")]
+unsafe fn dot_neon_f32_dyn(wave: &[f32], index: usize, sinc: &[f32], length: usize) -> f32 {
+    let wave_cut = &wave[index..(index + length)];
+    let mut acc0 = vmovq_n_f32(0.0);
+    let mut acc1 = vmovq_n_f32(0.0);
+    let mut acc2 = vmovq_n_f32(0.0);
+    let mut acc3 = vmovq_n_f32(0.0);
+    let mut idx = 0;
+    for _ in 0..length / 16 {
+        acc0 = vfmaq_f32(acc0, vld1q_f32(wave_cut.get_unchecked(idx)),      vld1q_f32(sinc.get_unchecked(idx)));
+        acc1 = vfmaq_f32(acc1, vld1q_f32(wave_cut.get_unchecked(idx + 4)),  vld1q_f32(sinc.get_unchecked(idx + 4)));
+        acc2 = vfmaq_f32(acc2, vld1q_f32(wave_cut.get_unchecked(idx + 8)),  vld1q_f32(sinc.get_unchecked(idx + 8)));
+        acc3 = vfmaq_f32(acc3, vld1q_f32(wave_cut.get_unchecked(idx + 12)), vld1q_f32(sinc.get_unchecked(idx + 12)));
+        idx += 16;
+    }
+    for _ in 0..(length % 16) / 8 {
+        acc0 = vfmaq_f32(acc0, vld1q_f32(wave_cut.get_unchecked(idx)),     vld1q_f32(sinc.get_unchecked(idx)));
+        acc1 = vfmaq_f32(acc1, vld1q_f32(wave_cut.get_unchecked(idx + 4)), vld1q_f32(sinc.get_unchecked(idx + 4)));
+        idx += 8;
+    }
+    let sum4 = vaddq_f32(vaddq_f32(acc0, acc1), vaddq_f32(acc2, acc3));
+    let high = vget_high_f32(sum4);
+    let low = vget_low_f32(sum4);
+    let sum2 = vadd_f32(high, low);
+    let mut array = [0.0f32, 0.0f32];
+    vst1_f32(array.as_mut_ptr(), sum2);
+    array[0] + array[1]
+}
+
+/// f64 dot product with 4 accumulators and const-generic length for full loop unrolling.
+/// Each iteration consumes 8 doubles (4 chains × 2 doubles per float64x2_t).
+#[target_feature(enable = "neon")]
+unsafe fn dot_neon_f64_n<const LEN: usize>(wave: &[f64], index: usize, sinc: &[f64]) -> f64 {
+    let wave_cut = &wave[index..(index + LEN)];
+    let mut acc0 = vmovq_n_f64(0.0);
+    let mut acc1 = vmovq_n_f64(0.0);
+    let mut acc2 = vmovq_n_f64(0.0);
+    let mut acc3 = vmovq_n_f64(0.0);
+    let mut idx = 0;
+    for _ in 0..LEN / 8 {
+        acc0 = vfmaq_f64(acc0, vld1q_f64(wave_cut.get_unchecked(idx)),     vld1q_f64(sinc.get_unchecked(idx)));
+        acc1 = vfmaq_f64(acc1, vld1q_f64(wave_cut.get_unchecked(idx + 2)), vld1q_f64(sinc.get_unchecked(idx + 2)));
+        acc2 = vfmaq_f64(acc2, vld1q_f64(wave_cut.get_unchecked(idx + 4)), vld1q_f64(sinc.get_unchecked(idx + 4)));
+        acc3 = vfmaq_f64(acc3, vld1q_f64(wave_cut.get_unchecked(idx + 6)), vld1q_f64(sinc.get_unchecked(idx + 6)));
+        idx += 8;
+    }
+    let packedsum0 = vaddq_f64(acc0, acc1);
+    let packedsum1 = vaddq_f64(acc2, acc3);
+    let packedsum2 = vaddq_f64(packedsum0, packedsum1);
+    let mut values = [0.0f64, 0.0f64];
+    vst1q_f64(values.as_mut_ptr(), packedsum2);
+    values[0] + values[1]
+}
+
+/// Runtime-length f64 fallback with 4 accumulators.
+#[target_feature(enable = "neon")]
+unsafe fn dot_neon_f64_dyn(wave: &[f64], index: usize, sinc: &[f64], length: usize) -> f64 {
+    let wave_cut = &wave[index..(index + length)];
+    let mut acc0 = vmovq_n_f64(0.0);
+    let mut acc1 = vmovq_n_f64(0.0);
+    let mut acc2 = vmovq_n_f64(0.0);
+    let mut acc3 = vmovq_n_f64(0.0);
+    let mut idx = 0;
+    for _ in 0..length / 8 {
+        acc0 = vfmaq_f64(acc0, vld1q_f64(wave_cut.get_unchecked(idx)),     vld1q_f64(sinc.get_unchecked(idx)));
+        acc1 = vfmaq_f64(acc1, vld1q_f64(wave_cut.get_unchecked(idx + 2)), vld1q_f64(sinc.get_unchecked(idx + 2)));
+        acc2 = vfmaq_f64(acc2, vld1q_f64(wave_cut.get_unchecked(idx + 4)), vld1q_f64(sinc.get_unchecked(idx + 4)));
+        acc3 = vfmaq_f64(acc3, vld1q_f64(wave_cut.get_unchecked(idx + 6)), vld1q_f64(sinc.get_unchecked(idx + 6)));
+        idx += 8;
+    }
+    let packedsum0 = vaddq_f64(acc0, acc1);
+    let packedsum1 = vaddq_f64(acc2, acc3);
+    let packedsum2 = vaddq_f64(packedsum0, packedsum1);
+    let mut values = [0.0f64, 0.0f64];
+    vst1q_f64(values.as_mut_ptr(), packedsum2);
+    values[0] + values[1]
+}
+
 /// Trait governing what can be done with an NeonSample.
 pub trait NeonSample: Sized + Send {
     /// Compute the dot product of `wave[index..]` with `sinc` using NEON instructions.
@@ -57,26 +162,12 @@ impl NeonSample for f32 {
         sinc: &[f32],
         length: usize,
     ) -> f32 {
-        let wave_cut = &wave[index..(index + length)];
-        let mut acc0 = vmovq_n_f32(0.0);
-        let mut acc1 = vmovq_n_f32(0.0);
-        let mut idx = 0;
-        for _ in 0..length / 8 {
-            let w0 = vld1q_f32(wave_cut.get_unchecked(idx));
-            let w1 = vld1q_f32(wave_cut.get_unchecked(idx + 4));
-            let s0 = vld1q_f32(sinc.get_unchecked(idx));
-            let s1 = vld1q_f32(sinc.get_unchecked(idx + 4));
-            acc0 = vfmaq_f32(acc0, w0, s0);
-            acc1 = vfmaq_f32(acc1, w1, s1);
-            idx += 8;
+        match length {
+            64 => dot_neon_f32_n::<64>(wave, index, sinc),
+            128 => dot_neon_f32_n::<128>(wave, index, sinc),
+            256 => dot_neon_f32_n::<256>(wave, index, sinc),
+            _ => dot_neon_f32_dyn(wave, index, sinc, length),
         }
-        let sum4 = vaddq_f32(acc0, acc1);
-        let high = vget_high_f32(sum4);
-        let low = vget_low_f32(sum4);
-        let sum2 = vadd_f32(high, low);
-        let mut array = [0.0, 0.0];
-        vst1_f32(array.as_mut_ptr(), sum2);
-        array[0] + array[1]
     }
 }
 
@@ -100,25 +191,12 @@ impl NeonSample for f64 {
         sinc: &[f64],
         length: usize,
     ) -> f64 {
-        let wave_cut = &wave[index..(index + length)];
-        let mut acc0 = vmovq_n_f64(0.0);
-        let mut acc1 = vmovq_n_f64(0.0);
-        let mut acc2 = vmovq_n_f64(0.0);
-        let mut acc3 = vmovq_n_f64(0.0);
-        let mut idx = 0;
-        for _ in 0..length / 8 {
-            acc0 = vfmaq_f64(acc0, vld1q_f64(wave_cut.get_unchecked(idx)), vld1q_f64(sinc.get_unchecked(idx)));
-            acc1 = vfmaq_f64(acc1, vld1q_f64(wave_cut.get_unchecked(idx + 2)), vld1q_f64(sinc.get_unchecked(idx + 2)));
-            acc2 = vfmaq_f64(acc2, vld1q_f64(wave_cut.get_unchecked(idx + 4)), vld1q_f64(sinc.get_unchecked(idx + 4)));
-            acc3 = vfmaq_f64(acc3, vld1q_f64(wave_cut.get_unchecked(idx + 6)), vld1q_f64(sinc.get_unchecked(idx + 6)));
-            idx += 8;
+        match length {
+            64 => dot_neon_f64_n::<64>(wave, index, sinc),
+            128 => dot_neon_f64_n::<128>(wave, index, sinc),
+            256 => dot_neon_f64_n::<256>(wave, index, sinc),
+            _ => dot_neon_f64_dyn(wave, index, sinc, length),
         }
-        let packedsum0 = vaddq_f64(acc0, acc1);
-        let packedsum1 = vaddq_f64(acc2, acc3);
-        let packedsum2 = vaddq_f64(packedsum0, packedsum1);
-        let mut values = [0.0, 0.0];
-        vst1q_f64(values.as_mut_ptr(), packedsum2);
-        values[0] + values[1]
     }
 }
 
@@ -151,6 +229,20 @@ where
 
     fn nbr_sincs(&self) -> usize {
         self.nbr_sincs
+    }
+
+    #[inline]
+    fn prefetch_sinc(&self, subindex: usize) {
+        if subindex < self.nbr_sincs {
+            unsafe {
+                let ptr = self.sincs.get_unchecked(subindex).as_ptr();
+                core::arch::asm!(
+                    "prfm pldl1keep, [{ptr}]",
+                    ptr = in(reg) ptr,
+                    options(nostack, readonly, preserves_flags)
+                );
+            }
+        }
     }
 
     fn make_combined_sinc(
