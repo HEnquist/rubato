@@ -962,13 +962,13 @@ mod tests {
                     );
                 }
                 // 4ch output must agree with 1ch output within floating-point tolerance.
-                for ch in 0..4 {
-                    let diff = (out4_data[ch][frame] - expected).abs();
+                for (ch, ch_data) in out4_data.iter().enumerate() {
+                    let diff = (ch_data[frame] - expected).abs();
                     assert!(
                         diff < 1e-10,
                         "interp={interpolation:?} ratio={ratio} ch={ch} frame={frame}: \
                          4ch={} vs 1ch={expected} diff={diff}",
-                        out4_data[ch][frame]
+                        ch_data[frame]
                     );
                 }
             }
