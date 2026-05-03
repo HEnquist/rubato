@@ -201,7 +201,7 @@ where
         for (n, &w) in nearest.iter().zip(weights.iter()) {
             let shift = (n.0 - min_idx) as usize;
             unsafe {
-                T::saxpy_unsafe(
+                <T as SseSample>::saxpy_unsafe(
                     &mut combined[shift..shift + self.length],
                     w,
                     &self.sincs[n.1 as usize],
