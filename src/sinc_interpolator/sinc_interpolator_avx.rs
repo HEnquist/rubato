@@ -1,6 +1,6 @@
 use crate::error::{CpuFeature, MissingCpuFeature};
 use crate::sinc::make_sincs;
-use crate::sinc_interpolator::SincInterpolator;
+use crate::sinc_interpolator::{AlignedBuf, SincInterpolator};
 use crate::windows::WindowFunction;
 use crate::Sample;
 use core::arch::x86_64::{
@@ -75,32 +75,6 @@ unsafe fn dot_avx_f32_dyn(wave: &[f32], index: usize, sinc: &[f32], length: usiz
     let temp1 = _mm_hadd_ps(temp2, temp2);
     let mut result = 0.0f32;
     _mm_store_ss(&mut result, temp1);
-    result
-}
-
-/// Const-generic AVX f64 dot product with 4 parallel FMA accumulator chains.
-/// LEN is the sinc length (multiple of 16).
-#[target_feature(enable = "avx", enable = "fma")]
-unsafe fn dot_avx_f64_n<const LEN: usize>(wave: &[f64], index: usize, sinc: &[f64]) -> f64 {
-    let wave_cut = &wave[index..(index + LEN)];
-    let mut acc0 = _mm256_setzero_pd();
-    let mut acc1 = _mm256_setzero_pd();
-    let mut acc2 = _mm256_setzero_pd();
-    let mut acc3 = _mm256_setzero_pd();
-    let mut idx = 0;
-    for _ in 0..LEN / 16 {
-        acc0 = _mm256_fmadd_pd(_mm256_loadu_pd(wave_cut.get_unchecked(idx)),      _mm256_loadu_pd(sinc.get_unchecked(idx)),      acc0);
-        acc1 = _mm256_fmadd_pd(_mm256_loadu_pd(wave_cut.get_unchecked(idx + 4)),  _mm256_loadu_pd(sinc.get_unchecked(idx + 4)),  acc1);
-        acc2 = _mm256_fmadd_pd(_mm256_loadu_pd(wave_cut.get_unchecked(idx + 8)),  _mm256_loadu_pd(sinc.get_unchecked(idx + 8)),  acc2);
-        acc3 = _mm256_fmadd_pd(_mm256_loadu_pd(wave_cut.get_unchecked(idx + 12)), _mm256_loadu_pd(sinc.get_unchecked(idx + 12)), acc3);
-        idx += 16;
-    }
-    let acc = _mm256_add_pd(_mm256_add_pd(acc0, acc1), _mm256_add_pd(acc2, acc3));
-    let acc_high = _mm256_extractf128_pd(acc, 1);
-    let temp2 = _mm_add_pd(acc_high, _mm256_castpd256_pd128(acc));
-    let temp1 = _mm_hadd_pd(temp2, temp2);
-    let mut result = 0.0f64;
-    _mm_store_sd(&mut result, temp1);
     result
 }
 
@@ -212,12 +186,13 @@ impl AvxSample for f64 {
         sinc: &[f64],
         length: usize,
     ) -> f64 {
-        match length {
-            64 => dot_avx_f64_n::<64>(wave, index, sinc),
-            128 => dot_avx_f64_n::<128>(wave, index, sinc),
-            256 => dot_avx_f64_n::<256>(wave, index, sinc),
-            _ => dot_avx_f64_dyn(wave, index, sinc, length),
-        }
+        // Use the looped _dyn path for f64. The const-generic versions
+        // fully unroll the inner loop (~64–128 sequential FMAs for typical
+        // sinc lengths), which cannot benefit from the Loop Stream Detector
+        // and pays a larger μOp-cache delivery cost than the compact loop
+        // body. The _dyn variant has the same 4-accumulator structure but
+        // stays short enough for the LSD to replay at near-peak throughput.
+        dot_avx_f64_dyn(wave, index, sinc, length)
     }
 }
 
@@ -227,7 +202,7 @@ pub(crate) struct AvxInterpolator<T>
 where
     T: AvxSample,
 {
-    sincs: Vec<Vec<T>>,
+    sincs: Vec<AlignedBuf<T>>,
     length: usize,
     nbr_sincs: usize,
 }
@@ -240,7 +215,7 @@ where
         unsafe { T::get_sinc_dot_product_unsafe(wave, index, sinc, self.length) }
     }
 
-    fn get_sincs(&self) -> &[Vec<T>] {
+    fn get_sincs(&self) -> &[AlignedBuf<T>] {
         &self.sincs
     }
 
@@ -272,7 +247,10 @@ where
         T: crate::Sample,
     {
         let min_idx = nearest.iter().map(|n| n.0).min().unwrap();
-        combined.iter_mut().for_each(|x| *x = T::zero());
+        // memset to zero — valid for f32/f64 since all-zero bits represent 0.0.
+        unsafe {
+            std::ptr::write_bytes(combined.as_mut_ptr(), 0, combined.len());
+        }
         for (n, &w) in nearest.iter().zip(weights.iter()) {
             let shift = (n.0 - min_idx) as usize;
             unsafe {
@@ -310,7 +288,11 @@ where
         }
 
         assert!(sinc_len % 8 == 0, "Sinc length must be a multiple of 8.");
-        let sincs = make_sincs(sinc_len, oversampling_factor, f_cutoff, window);
+        let raw_sincs: Vec<Vec<T>> = make_sincs(sinc_len, oversampling_factor, f_cutoff, window);
+        let sincs = raw_sincs
+            .into_iter()
+            .map(|row| AlignedBuf::from_slice(&row))
+            .collect();
 
         Ok(Self {
             sincs,

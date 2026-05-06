@@ -2,6 +2,9 @@ use crate::sinc::make_sincs;
 use crate::windows::WindowFunction;
 use crate::Sample;
 
+pub(crate) mod aligned_buf;
+pub(crate) use aligned_buf::AlignedBuf;
+
 /// Helper macro to define a dummy implementation of the sample trait if a
 /// feature is not supported.
 macro_rules! interpolator {
@@ -55,7 +58,7 @@ pub(crate) trait SincInterpolator<T>: Send {
     fn get_sinc_dot_product(&self, wave: &[T], index: usize, sinc: &[T]) -> T;
 
     /// Expose the raw sinc table for use in combined-sinc building.
-    fn get_sincs(&self) -> &[Vec<T>];
+    fn get_sincs(&self) -> &[AlignedBuf<T>];
 
     /// Get sinc length.
     fn nbr_points(&self) -> usize;
@@ -104,7 +107,10 @@ pub(crate) trait SincInterpolator<T>: Send {
         T: Sample,
     {
         let min_idx = nearest.iter().map(|n| n.0).min().unwrap();
-        combined.iter_mut().for_each(|x| *x = T::zero());
+        // memset to zero — valid for f32/f64 since all-zero bits represent 0.0.
+        unsafe {
+            std::ptr::write_bytes(combined.as_mut_ptr(), 0, combined.len());
+        }
         for (n, &w) in nearest.iter().zip(weights.iter()) {
             let shift = (n.0 - min_idx) as usize;
             for (k, &s) in self.get_sincs()[n.1 as usize].iter().enumerate() {
@@ -155,7 +161,7 @@ where
     }
 
     #[inline]
-    fn get_sincs(&self) -> &[Vec<T>] {
+    fn get_sincs(&self) -> &[AlignedBuf<T>] {
         match self {
             #[cfg(target_arch = "x86_64")]
             AnyInterpolator::Avx(i) => i.get_sincs(),
@@ -270,7 +276,7 @@ where
 /// A plain scalar interpolator.
 #[cfg_attr(feature = "bench_asyncro", visibility::make(pub))]
 pub(crate) struct ScalarInterpolator<T> {
-    sincs: Vec<Vec<T>>,
+    sincs: Vec<AlignedBuf<T>>,
     length: usize,
     nbr_sincs: usize,
 }
@@ -306,7 +312,7 @@ where
         }
     }
 
-    fn get_sincs(&self) -> &[Vec<T>] {
+    fn get_sincs(&self) -> &[AlignedBuf<T>] {
         &self.sincs
     }
 
@@ -337,7 +343,11 @@ where
         window: WindowFunction,
     ) -> Self {
         assert!(sinc_len % 8 == 0, "Sinc length must be a multiple of 8");
-        let sincs = make_sincs(sinc_len, oversampling_factor, f_cutoff, window);
+        let raw_sincs: Vec<Vec<T>> = make_sincs(sinc_len, oversampling_factor, f_cutoff, window);
+        let sincs = raw_sincs
+            .into_iter()
+            .map(|row| AlignedBuf::from_slice(&row))
+            .collect();
         Self {
             sincs,
             length: sinc_len,

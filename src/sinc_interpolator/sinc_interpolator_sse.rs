@@ -1,6 +1,6 @@
 use crate::error::{CpuFeature, MissingCpuFeature};
 use crate::sinc::make_sincs;
-use crate::sinc_interpolator::SincInterpolator;
+use crate::sinc_interpolator::{AlignedBuf, SincInterpolator};
 use crate::windows::WindowFunction;
 use crate::Sample;
 use core::arch::x86_64::{__m128, __m128d};
@@ -64,32 +64,6 @@ unsafe fn dot_sse_f32_dyn(wave: &[f32], index: usize, sinc: &[f32], length: usiz
     let temp1 = _mm_hadd_ps(temp2, temp2);
     let mut result = 0.0f32;
     _mm_store_ss(&mut result, temp1);
-    result
-}
-
-/// f64 dot product with 4 accumulators and const-generic length for full loop unrolling.
-/// Each iteration consumes 8 doubles (4 chains × 2 doubles per __m128d).
-#[target_feature(enable = "sse3")]
-unsafe fn dot_sse_f64_n<const LEN: usize>(wave: &[f64], index: usize, sinc: &[f64]) -> f64 {
-    let wave_cut = &wave[index..(index + LEN)];
-    let mut acc0 = _mm_setzero_pd();
-    let mut acc1 = _mm_setzero_pd();
-    let mut acc2 = _mm_setzero_pd();
-    let mut acc3 = _mm_setzero_pd();
-    let mut idx = 0;
-    for _ in 0..LEN / 8 {
-        acc0 = _mm_add_pd(acc0, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx)),     _mm_loadu_pd(sinc.get_unchecked(idx))));
-        acc1 = _mm_add_pd(acc1, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx + 2)), _mm_loadu_pd(sinc.get_unchecked(idx + 2))));
-        acc2 = _mm_add_pd(acc2, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx + 4)), _mm_loadu_pd(sinc.get_unchecked(idx + 4))));
-        acc3 = _mm_add_pd(acc3, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx + 6)), _mm_loadu_pd(sinc.get_unchecked(idx + 6))));
-        idx += 8;
-    }
-    let temp2_0 = _mm_add_pd(acc0, acc1);
-    let temp2_1 = _mm_add_pd(acc2, acc3);
-    let temp2 = _mm_hadd_pd(temp2_0, temp2_1);
-    let temp1 = _mm_hadd_pd(temp2, temp2);
-    let mut result = 0.0f64;
-    _mm_store_sd(&mut result, temp1);
     result
 }
 
@@ -200,12 +174,7 @@ impl SseSample for f64 {
         sinc: &[f64],
         length: usize,
     ) -> f64 {
-        match length {
-            64 => dot_sse_f64_n::<64>(wave, index, sinc),
-            128 => dot_sse_f64_n::<128>(wave, index, sinc),
-            256 => dot_sse_f64_n::<256>(wave, index, sinc),
-            _ => dot_sse_f64_dyn(wave, index, sinc, length),
-        }
+        dot_sse_f64_dyn(wave, index, sinc, length)
     }
 }
 
@@ -215,7 +184,7 @@ pub(crate) struct SseInterpolator<T>
 where
     T: SseSample,
 {
-    sincs: Vec<Vec<T>>,
+    sincs: Vec<AlignedBuf<T>>,
     length: usize,
     nbr_sincs: usize,
 }
@@ -228,7 +197,7 @@ where
         unsafe { T::get_sinc_dot_product_unsafe(wave, index, sinc, self.length) }
     }
 
-    fn get_sincs(&self) -> &[Vec<T>] {
+    fn get_sincs(&self) -> &[AlignedBuf<T>] {
         &self.sincs
     }
 
@@ -260,7 +229,10 @@ where
         T: crate::Sample,
     {
         let min_idx = nearest.iter().map(|n| n.0).min().unwrap();
-        combined.iter_mut().for_each(|x| *x = T::zero());
+        // memset to zero — valid for f32/f64 since all-zero bits represent 0.0.
+        unsafe {
+            std::ptr::write_bytes(combined.as_mut_ptr(), 0, combined.len());
+        }
         for (n, &w) in nearest.iter().zip(weights.iter()) {
             let shift = (n.0 - min_idx) as usize;
             unsafe {
@@ -298,7 +270,11 @@ where
         }
 
         assert!(sinc_len % 8 == 0, "Sinc length must be a multiple of 8.");
-        let sincs = make_sincs(sinc_len, oversampling_factor, f_cutoff, window);
+        let raw_sincs: Vec<Vec<T>> = make_sincs(sinc_len, oversampling_factor, f_cutoff, window);
+        let sincs = raw_sincs
+            .into_iter()
+            .map(|row| AlignedBuf::from_slice(&row))
+            .collect();
 
         Ok(Self {
             sincs,

@@ -1,6 +1,6 @@
 use crate::error::{CpuFeature, MissingCpuFeature};
 use crate::sinc::make_sincs;
-use crate::sinc_interpolator::SincInterpolator;
+use crate::sinc_interpolator::{AlignedBuf, SincInterpolator};
 use crate::windows::WindowFunction;
 use crate::Sample;
 use core::arch::aarch64::{float32x4_t, float64x2_t};
@@ -191,12 +191,7 @@ impl NeonSample for f64 {
         sinc: &[f64],
         length: usize,
     ) -> f64 {
-        match length {
-            64 => dot_neon_f64_n::<64>(wave, index, sinc),
-            128 => dot_neon_f64_n::<128>(wave, index, sinc),
-            256 => dot_neon_f64_n::<256>(wave, index, sinc),
-            _ => dot_neon_f64_dyn(wave, index, sinc, length),
-        }
+        dot_neon_f64_dyn(wave, index, sinc, length)
     }
 }
 
@@ -206,7 +201,7 @@ pub(crate) struct NeonInterpolator<T>
 where
     T: NeonSample,
 {
-    sincs: Vec<Vec<T>>,
+    sincs: Vec<AlignedBuf<T>>,
     length: usize,
     nbr_sincs: usize,
 }
@@ -219,7 +214,7 @@ where
         unsafe { T::get_sinc_dot_product_unsafe(wave, index, sinc, self.length) }
     }
 
-    fn get_sincs(&self) -> &[Vec<T>] {
+    fn get_sincs(&self) -> &[AlignedBuf<T>] {
         &self.sincs
     }
 
@@ -255,7 +250,10 @@ where
         T: crate::Sample,
     {
         let min_idx = nearest.iter().map(|n| n.0).min().unwrap();
-        combined.iter_mut().for_each(|x| *x = T::zero());
+        // memset to zero — valid for f32/f64 since all-zero bits represent 0.0.
+        unsafe {
+            std::ptr::write_bytes(combined.as_mut_ptr(), 0, combined.len());
+        }
         for (n, &w) in nearest.iter().zip(weights.iter()) {
             let shift = (n.0 - min_idx) as usize;
             unsafe {
@@ -293,7 +291,11 @@ where
         }
 
         assert!(sinc_len % 8 == 0, "Sinc length must be a multiple of 8.");
-        let sincs = make_sincs(sinc_len, oversampling_factor, f_cutoff, window);
+        let raw_sincs: Vec<Vec<T>> = make_sincs(sinc_len, oversampling_factor, f_cutoff, window);
+        let sincs = raw_sincs
+            .into_iter()
+            .map(|row| AlignedBuf::from_slice(&row))
+            .collect();
 
         Ok(Self {
             sincs,

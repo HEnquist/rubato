@@ -7,7 +7,8 @@ use crate::sinc_interpolator::sinc_interpolator_neon::NeonInterpolator;
 #[cfg(target_arch = "x86_64")]
 use crate::sinc_interpolator::sinc_interpolator_sse::SseInterpolator;
 use crate::sinc_interpolator::{
-    AnyInterpolator, AvxSample, NeonSample, ScalarInterpolator, SincInterpolator, SseSample,
+    AlignedBuf, AnyInterpolator, AvxSample, NeonSample, ScalarInterpolator, SincInterpolator,
+    SseSample,
 };
 use crate::windows::WindowFunction;
 use crate::Sample;
@@ -214,8 +215,9 @@ where
     pub interpolator: AnyInterpolator<T>,
     pub interpolation: SincInterpolationType,
     // Pre-allocated buffer for the combined sinc (used by the >2 channel path).
-    // Length is interpolator.nbr_points() + 1.
-    combined: Vec<T>,
+    // Length is interpolator.nbr_points() + 1. 32-byte aligned so 256-bit AVX
+    // loads on it never cross a cache line boundary.
+    combined: AlignedBuf<T>,
 }
 
 impl<T> InnerSinc<T>
@@ -230,7 +232,7 @@ where
         Self {
             interpolator,
             interpolation,
-            combined: vec![T::zero(); len],
+            combined: AlignedBuf::zeroed(len),
         }
     }
 }
@@ -259,7 +261,6 @@ where
                 // Cubic has 4 nearest points so the build cost breaks even at 2 channels.
                 let use_combined = active_count >= 2;
                 let oversampling_factor = self.interpolator.nbr_sincs();
-                let sincs = self.interpolator.get_sincs();
                 let mut nearest = [(0isize, 0isize); 4];
                 for frame in 0..nbr_frames {
                     t_ratio += t_ratio_increment;
@@ -268,11 +269,11 @@ where
                     let frac = idx * oversampling_factor as f64
                         - (idx * oversampling_factor as f64).floor();
                     let frac_offset = t!(frac);
-                    let weights = interp_cubic_weights(frac_offset);
-                    for n in &nearest {
-                        self.interpolator.prefetch_sinc(n.1 as usize);
-                    }
                     if use_combined {
+                        let weights = interp_cubic_weights(frac_offset);
+                        for n in &nearest {
+                            self.interpolator.prefetch_sinc(n.1 as usize);
+                        }
                         let min_idx = self.interpolator.make_combined_sinc(
                             &nearest,
                             &weights,
@@ -292,35 +293,18 @@ where
                             }
                         }
                     } else {
-                        let bases = nearest.map(|n| (n.0 + 2 * interpolator_len as isize) as usize);
-                        let subs = nearest.map(|n| n.1 as usize);
                         for (chan, active) in channel_mask.iter().enumerate() {
                             if *active {
                                 let buf = &wave_in[chan];
-                                let result = weights[0]
-                                    * self.interpolator.get_sinc_dot_product(
+                                let mut points = [T::zero(); 4];
+                                for (n, p) in nearest.iter().zip(points.iter_mut()) {
+                                    *p = self.interpolator.get_sinc_interpolated(
                                         buf,
-                                        bases[0],
-                                        &sincs[subs[0]],
-                                    )
-                                    + weights[1]
-                                        * self.interpolator.get_sinc_dot_product(
-                                            buf,
-                                            bases[1],
-                                            &sincs[subs[1]],
-                                        )
-                                    + weights[2]
-                                        * self.interpolator.get_sinc_dot_product(
-                                            buf,
-                                            bases[2],
-                                            &sincs[subs[2]],
-                                        )
-                                    + weights[3]
-                                        * self.interpolator.get_sinc_dot_product(
-                                            buf,
-                                            bases[3],
-                                            &sincs[subs[3]],
-                                        );
+                                        (n.0 + 2 * interpolator_len as isize) as usize,
+                                        n.1 as usize,
+                                    );
+                                }
+                                let result = interp_cubic(frac_offset, &points);
                                 wave_out.write_sample(chan, frame + output_offset, &result);
                             }
                         }
@@ -331,7 +315,6 @@ where
                 // Quadratic has 3 nearest points; combined sinc pays off from 3 channels.
                 let use_combined = active_count > 2;
                 let oversampling_factor = self.interpolator.nbr_sincs();
-                let sincs = self.interpolator.get_sincs();
                 let mut nearest = [(0isize, 0isize); 3];
                 for frame in 0..nbr_frames {
                     t_ratio += t_ratio_increment;
@@ -340,11 +323,11 @@ where
                     let frac = idx * oversampling_factor as f64
                         - (idx * oversampling_factor as f64).floor();
                     let frac_offset = t!(frac);
-                    let weights = interp_quad_weights(frac_offset);
-                    for n in &nearest {
-                        self.interpolator.prefetch_sinc(n.1 as usize);
-                    }
                     if use_combined {
+                        let weights = interp_quad_weights(frac_offset);
+                        for n in &nearest {
+                            self.interpolator.prefetch_sinc(n.1 as usize);
+                        }
                         let min_idx = self.interpolator.make_combined_sinc(
                             &nearest,
                             &weights,
@@ -364,29 +347,18 @@ where
                             }
                         }
                     } else {
-                        let bases = nearest.map(|n| (n.0 + 2 * interpolator_len as isize) as usize);
-                        let subs = nearest.map(|n| n.1 as usize);
                         for (chan, active) in channel_mask.iter().enumerate() {
                             if *active {
                                 let buf = &wave_in[chan];
-                                let result = weights[0]
-                                    * self.interpolator.get_sinc_dot_product(
+                                let mut points = [T::zero(); 3];
+                                for (n, p) in nearest.iter().zip(points.iter_mut()) {
+                                    *p = self.interpolator.get_sinc_interpolated(
                                         buf,
-                                        bases[0],
-                                        &sincs[subs[0]],
-                                    )
-                                    + weights[1]
-                                        * self.interpolator.get_sinc_dot_product(
-                                            buf,
-                                            bases[1],
-                                            &sincs[subs[1]],
-                                        )
-                                    + weights[2]
-                                        * self.interpolator.get_sinc_dot_product(
-                                            buf,
-                                            bases[2],
-                                            &sincs[subs[2]],
-                                        );
+                                        (n.0 + 2 * interpolator_len as isize) as usize,
+                                        n.1 as usize,
+                                    );
+                                }
+                                let result = interp_quad(frac_offset, &points);
                                 wave_out.write_sample(chan, frame + output_offset, &result);
                             }
                         }
@@ -397,7 +369,6 @@ where
                 // Linear has 2 nearest points; combined sinc pays off from 3 channels.
                 let use_combined = active_count > 2;
                 let oversampling_factor = self.interpolator.nbr_sincs();
-                let sincs = self.interpolator.get_sincs();
                 let mut nearest = [(0isize, 0isize); 2];
                 for frame in 0..nbr_frames {
                     t_ratio += t_ratio_increment;
@@ -406,11 +377,11 @@ where
                     let frac = idx * oversampling_factor as f64
                         - (idx * oversampling_factor as f64).floor();
                     let frac_offset = t!(frac);
-                    let weights = interp_lin_weights(frac_offset);
-                    for n in &nearest {
-                        self.interpolator.prefetch_sinc(n.1 as usize);
-                    }
                     if use_combined {
+                        let weights = interp_lin_weights(frac_offset);
+                        for n in &nearest {
+                            self.interpolator.prefetch_sinc(n.1 as usize);
+                        }
                         let min_idx = self.interpolator.make_combined_sinc(
                             &nearest,
                             &weights,
@@ -430,23 +401,18 @@ where
                             }
                         }
                     } else {
-                        let bases = nearest.map(|n| (n.0 + 2 * interpolator_len as isize) as usize);
-                        let subs = nearest.map(|n| n.1 as usize);
                         for (chan, active) in channel_mask.iter().enumerate() {
                             if *active {
                                 let buf = &wave_in[chan];
-                                let result = weights[0]
-                                    * self.interpolator.get_sinc_dot_product(
+                                let mut points = [T::zero(); 2];
+                                for (n, p) in nearest.iter().zip(points.iter_mut()) {
+                                    *p = self.interpolator.get_sinc_interpolated(
                                         buf,
-                                        bases[0],
-                                        &sincs[subs[0]],
-                                    )
-                                    + weights[1]
-                                        * self.interpolator.get_sinc_dot_product(
-                                            buf,
-                                            bases[1],
-                                            &sincs[subs[1]],
-                                        );
+                                        (n.0 + 2 * interpolator_len as isize) as usize,
+                                        n.1 as usize,
+                                    );
+                                }
+                                let result = interp_lin(frac_offset, &points);
                                 wave_out.write_sample(chan, frame + output_offset, &result);
                             }
                         }
@@ -461,7 +427,6 @@ where
                     t_ratio += t_ratio_increment;
                     idx += t_ratio;
                     nearest = get_nearest_time(idx, oversampling_factor as isize);
-                    self.interpolator.prefetch_sinc(nearest.1 as usize);
                     for (chan, active) in channel_mask.iter().enumerate() {
                         if *active {
                             let buf = &wave_in[chan];
