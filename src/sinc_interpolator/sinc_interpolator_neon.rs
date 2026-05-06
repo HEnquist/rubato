@@ -69,31 +69,6 @@ unsafe fn dot_neon_f32_dyn(wave: &[f32], index: usize, sinc: &[f32], length: usi
     array[0] + array[1]
 }
 
-/// f64 dot product with 4 accumulators and const-generic length for full loop unrolling.
-/// Each iteration consumes 8 doubles (4 chains × 2 doubles per float64x2_t).
-#[target_feature(enable = "neon")]
-unsafe fn dot_neon_f64_n<const LEN: usize>(wave: &[f64], index: usize, sinc: &[f64]) -> f64 {
-    let wave_cut = &wave[index..(index + LEN)];
-    let mut acc0 = vmovq_n_f64(0.0);
-    let mut acc1 = vmovq_n_f64(0.0);
-    let mut acc2 = vmovq_n_f64(0.0);
-    let mut acc3 = vmovq_n_f64(0.0);
-    let mut idx = 0;
-    for _ in 0..LEN / 8 {
-        acc0 = vfmaq_f64(acc0, vld1q_f64(wave_cut.get_unchecked(idx)),     vld1q_f64(sinc.get_unchecked(idx)));
-        acc1 = vfmaq_f64(acc1, vld1q_f64(wave_cut.get_unchecked(idx + 2)), vld1q_f64(sinc.get_unchecked(idx + 2)));
-        acc2 = vfmaq_f64(acc2, vld1q_f64(wave_cut.get_unchecked(idx + 4)), vld1q_f64(sinc.get_unchecked(idx + 4)));
-        acc3 = vfmaq_f64(acc3, vld1q_f64(wave_cut.get_unchecked(idx + 6)), vld1q_f64(sinc.get_unchecked(idx + 6)));
-        idx += 8;
-    }
-    let packedsum0 = vaddq_f64(acc0, acc1);
-    let packedsum1 = vaddq_f64(acc2, acc3);
-    let packedsum2 = vaddq_f64(packedsum0, packedsum1);
-    let mut values = [0.0f64, 0.0f64];
-    vst1q_f64(values.as_mut_ptr(), packedsum2);
-    values[0] + values[1]
-}
-
 /// Runtime-length f64 fallback with 4 accumulators.
 #[target_feature(enable = "neon")]
 unsafe fn dot_neon_f64_dyn(wave: &[f64], index: usize, sinc: &[f64], length: usize) -> f64 {
