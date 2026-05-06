@@ -13,32 +13,6 @@ use core::arch::aarch64::{vaddq_f64, vfmaq_f64, vld1q_f64, vmovq_n_f64, vst1q_f6
 /// Collection of CPU features required for this interpolator.
 static FEATURES: &[CpuFeature] = &[CpuFeature::Neon];
 
-/// f32 dot product with 4 accumulators and const-generic length for full loop unrolling.
-/// Each iteration consumes 16 floats (4 chains × 4 floats per float32x4_t).
-#[target_feature(enable = "neon")]
-unsafe fn dot_neon_f32_n<const LEN: usize>(wave: &[f32], index: usize, sinc: &[f32]) -> f32 {
-    let wave_cut = &wave[index..(index + LEN)];
-    let mut acc0 = vmovq_n_f32(0.0);
-    let mut acc1 = vmovq_n_f32(0.0);
-    let mut acc2 = vmovq_n_f32(0.0);
-    let mut acc3 = vmovq_n_f32(0.0);
-    let mut idx = 0;
-    for _ in 0..LEN / 16 {
-        acc0 = vfmaq_f32(acc0, vld1q_f32(wave_cut.get_unchecked(idx)),      vld1q_f32(sinc.get_unchecked(idx)));
-        acc1 = vfmaq_f32(acc1, vld1q_f32(wave_cut.get_unchecked(idx + 4)),  vld1q_f32(sinc.get_unchecked(idx + 4)));
-        acc2 = vfmaq_f32(acc2, vld1q_f32(wave_cut.get_unchecked(idx + 8)),  vld1q_f32(sinc.get_unchecked(idx + 8)));
-        acc3 = vfmaq_f32(acc3, vld1q_f32(wave_cut.get_unchecked(idx + 12)), vld1q_f32(sinc.get_unchecked(idx + 12)));
-        idx += 16;
-    }
-    let sum4 = vaddq_f32(vaddq_f32(acc0, acc1), vaddq_f32(acc2, acc3));
-    let high = vget_high_f32(sum4);
-    let low = vget_low_f32(sum4);
-    let sum2 = vadd_f32(high, low);
-    let mut array = [0.0f32, 0.0f32];
-    vst1_f32(array.as_mut_ptr(), sum2);
-    array[0] + array[1]
-}
-
 /// Runtime-length f32 fallback with 4 accumulators.
 #[target_feature(enable = "neon")]
 unsafe fn dot_neon_f32_dyn(wave: &[f32], index: usize, sinc: &[f32], length: usize) -> f32 {
@@ -137,12 +111,7 @@ impl NeonSample for f32 {
         sinc: &[f32],
         length: usize,
     ) -> f32 {
-        match length {
-            64 => dot_neon_f32_n::<64>(wave, index, sinc),
-            128 => dot_neon_f32_n::<128>(wave, index, sinc),
-            256 => dot_neon_f32_n::<256>(wave, index, sinc),
-            _ => dot_neon_f32_dyn(wave, index, sinc, length),
-        }
+        dot_neon_f32_dyn(wave, index, sinc, length)
     }
 }
 
