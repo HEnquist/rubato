@@ -42,7 +42,8 @@ unsafe fn dot_sse_f32_dyn(wave: &[f32], index: usize, sinc: &[f32], length: usiz
     result
 }
 
-/// Runtime-length f64 fallback with 4 accumulators.
+/// Runtime-length f64 with 8 accumulators; processes 16 f64 per iteration (16 iterations
+/// for the typical length=256), matching the trip count of dot_sse_f32_dyn and dot_avx_f64_dyn.
 #[target_feature(enable = "sse3")]
 unsafe fn dot_sse_f64_dyn(wave: &[f64], index: usize, sinc: &[f64], length: usize) -> f64 {
     let wave_cut = &wave[index..(index + length)];
@@ -50,17 +51,31 @@ unsafe fn dot_sse_f64_dyn(wave: &[f64], index: usize, sinc: &[f64], length: usiz
     let mut acc1 = _mm_setzero_pd();
     let mut acc2 = _mm_setzero_pd();
     let mut acc3 = _mm_setzero_pd();
+    let mut acc4 = _mm_setzero_pd();
+    let mut acc5 = _mm_setzero_pd();
+    let mut acc6 = _mm_setzero_pd();
+    let mut acc7 = _mm_setzero_pd();
     let mut idx = 0;
-    for _ in 0..length / 8 {
-        acc0 = _mm_add_pd(acc0, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx)),     _mm_loadu_pd(sinc.get_unchecked(idx))));
-        acc1 = _mm_add_pd(acc1, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx + 2)), _mm_loadu_pd(sinc.get_unchecked(idx + 2))));
-        acc2 = _mm_add_pd(acc2, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx + 4)), _mm_loadu_pd(sinc.get_unchecked(idx + 4))));
-        acc3 = _mm_add_pd(acc3, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx + 6)), _mm_loadu_pd(sinc.get_unchecked(idx + 6))));
-        idx += 8;
+    for _ in 0..length / 16 {
+        acc0 = _mm_add_pd(acc0, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx)),      _mm_loadu_pd(sinc.get_unchecked(idx))));
+        acc1 = _mm_add_pd(acc1, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx + 2)),  _mm_loadu_pd(sinc.get_unchecked(idx + 2))));
+        acc2 = _mm_add_pd(acc2, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx + 4)),  _mm_loadu_pd(sinc.get_unchecked(idx + 4))));
+        acc3 = _mm_add_pd(acc3, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx + 6)),  _mm_loadu_pd(sinc.get_unchecked(idx + 6))));
+        acc4 = _mm_add_pd(acc4, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx + 8)),  _mm_loadu_pd(sinc.get_unchecked(idx + 8))));
+        acc5 = _mm_add_pd(acc5, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx + 10)), _mm_loadu_pd(sinc.get_unchecked(idx + 10))));
+        acc6 = _mm_add_pd(acc6, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx + 12)), _mm_loadu_pd(sinc.get_unchecked(idx + 12))));
+        acc7 = _mm_add_pd(acc7, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx + 14)), _mm_loadu_pd(sinc.get_unchecked(idx + 14))));
+        idx += 16;
     }
-    let temp2_0 = _mm_add_pd(acc0, acc1);
-    let temp2_1 = _mm_add_pd(acc2, acc3);
-    let temp2 = _mm_hadd_pd(temp2_0, temp2_1);
+    for _ in 0..(length % 16) / 2 {
+        acc0 = _mm_add_pd(acc0, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx)), _mm_loadu_pd(sinc.get_unchecked(idx))));
+        idx += 2;
+    }
+    let s01 = _mm_add_pd(acc0, acc1);
+    let s23 = _mm_add_pd(acc2, acc3);
+    let s45 = _mm_add_pd(acc4, acc5);
+    let s67 = _mm_add_pd(acc6, acc7);
+    let temp2 = _mm_hadd_pd(_mm_add_pd(s01, s23), _mm_add_pd(s45, s67));
     let temp1 = _mm_hadd_pd(temp2, temp2);
     let mut result = 0.0f64;
     _mm_store_sd(&mut result, temp1);

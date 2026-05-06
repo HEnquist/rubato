@@ -43,7 +43,8 @@ unsafe fn dot_neon_f32_dyn(wave: &[f32], index: usize, sinc: &[f32], length: usi
     array[0] + array[1]
 }
 
-/// Runtime-length f64 fallback with 4 accumulators.
+/// Runtime-length f64 with 8 accumulators; processes 16 f64 per iteration (16 iterations
+/// for the typical length=256), matching the trip count of dot_neon_f32_dyn.
 #[target_feature(enable = "neon")]
 unsafe fn dot_neon_f64_dyn(wave: &[f64], index: usize, sinc: &[f64], length: usize) -> f64 {
     let wave_cut = &wave[index..(index + length)];
@@ -51,19 +52,33 @@ unsafe fn dot_neon_f64_dyn(wave: &[f64], index: usize, sinc: &[f64], length: usi
     let mut acc1 = vmovq_n_f64(0.0);
     let mut acc2 = vmovq_n_f64(0.0);
     let mut acc3 = vmovq_n_f64(0.0);
+    let mut acc4 = vmovq_n_f64(0.0);
+    let mut acc5 = vmovq_n_f64(0.0);
+    let mut acc6 = vmovq_n_f64(0.0);
+    let mut acc7 = vmovq_n_f64(0.0);
     let mut idx = 0;
-    for _ in 0..length / 8 {
-        acc0 = vfmaq_f64(acc0, vld1q_f64(wave_cut.get_unchecked(idx)),     vld1q_f64(sinc.get_unchecked(idx)));
-        acc1 = vfmaq_f64(acc1, vld1q_f64(wave_cut.get_unchecked(idx + 2)), vld1q_f64(sinc.get_unchecked(idx + 2)));
-        acc2 = vfmaq_f64(acc2, vld1q_f64(wave_cut.get_unchecked(idx + 4)), vld1q_f64(sinc.get_unchecked(idx + 4)));
-        acc3 = vfmaq_f64(acc3, vld1q_f64(wave_cut.get_unchecked(idx + 6)), vld1q_f64(sinc.get_unchecked(idx + 6)));
-        idx += 8;
+    for _ in 0..length / 16 {
+        acc0 = vfmaq_f64(acc0, vld1q_f64(wave_cut.get_unchecked(idx)),      vld1q_f64(sinc.get_unchecked(idx)));
+        acc1 = vfmaq_f64(acc1, vld1q_f64(wave_cut.get_unchecked(idx + 2)),  vld1q_f64(sinc.get_unchecked(idx + 2)));
+        acc2 = vfmaq_f64(acc2, vld1q_f64(wave_cut.get_unchecked(idx + 4)),  vld1q_f64(sinc.get_unchecked(idx + 4)));
+        acc3 = vfmaq_f64(acc3, vld1q_f64(wave_cut.get_unchecked(idx + 6)),  vld1q_f64(sinc.get_unchecked(idx + 6)));
+        acc4 = vfmaq_f64(acc4, vld1q_f64(wave_cut.get_unchecked(idx + 8)),  vld1q_f64(sinc.get_unchecked(idx + 8)));
+        acc5 = vfmaq_f64(acc5, vld1q_f64(wave_cut.get_unchecked(idx + 10)), vld1q_f64(sinc.get_unchecked(idx + 10)));
+        acc6 = vfmaq_f64(acc6, vld1q_f64(wave_cut.get_unchecked(idx + 12)), vld1q_f64(sinc.get_unchecked(idx + 12)));
+        acc7 = vfmaq_f64(acc7, vld1q_f64(wave_cut.get_unchecked(idx + 14)), vld1q_f64(sinc.get_unchecked(idx + 14)));
+        idx += 16;
     }
-    let packedsum0 = vaddq_f64(acc0, acc1);
-    let packedsum1 = vaddq_f64(acc2, acc3);
-    let packedsum2 = vaddq_f64(packedsum0, packedsum1);
+    for _ in 0..(length % 16) / 2 {
+        acc0 = vfmaq_f64(acc0, vld1q_f64(wave_cut.get_unchecked(idx)), vld1q_f64(sinc.get_unchecked(idx)));
+        idx += 2;
+    }
+    let s01 = vaddq_f64(acc0, acc1);
+    let s23 = vaddq_f64(acc2, acc3);
+    let s45 = vaddq_f64(acc4, acc5);
+    let s67 = vaddq_f64(acc6, acc7);
+    let packedsum = vaddq_f64(vaddq_f64(s01, s23), vaddq_f64(s45, s67));
     let mut values = [0.0f64, 0.0f64];
-    vst1q_f64(values.as_mut_ptr(), packedsum2);
+    vst1q_f64(values.as_mut_ptr(), packedsum);
     values[0] + values[1]
 }
 
