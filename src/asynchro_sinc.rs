@@ -55,6 +55,9 @@ pub struct SincInterpolationParameters {
 ///
 /// # Performance scaling with channel count
 ///
+/// The figures below are approximations; actual performance varies with CPU architecture,
+/// SIMD width, cache behaviour, and compiler optimisation.
+///
 /// Each interpolation mode evaluates N sinc filters per output sample (one per nearest point).
 /// When processing multiple channels that share the same playback position, those N filters are
 /// blended once into a single combined filter, and every channel then performs only one dot
@@ -175,6 +178,7 @@ where
 
 /// Perform cubic polynomial interpolation to get value at x.
 /// Input points are assumed to be at x = -1, 0, 1, 2.
+#[inline]
 pub fn interp_cubic<T>(x: T, yvals: &[T; 4]) -> T
 where
     T: Sample,
@@ -191,6 +195,7 @@ where
 /// Compute the four blending weights for cubic interpolation at fractional position x.
 /// These are the per-point coefficients such that interp_cubic(x, pts) == dot(weights, pts).
 /// Input points are assumed to be at x = -1, 0, 1, 2.
+#[inline]
 pub fn interp_cubic_weights<T>(x: T) -> [T; 4]
 where
     T: Sample,
@@ -207,6 +212,7 @@ where
 
 /// Perform quadratic polynomial interpolation to get value at x.
 /// Input points are assumed to be at x = 0, 1, 2.
+#[inline]
 pub fn interp_quad<T>(x: T, yvals: &[T; 3]) -> T
 where
     T: Sample,
@@ -221,6 +227,7 @@ where
 /// Compute the three blending weights for quadratic interpolation at fractional position x.
 /// These are the per-point coefficients such that interp_quad(x, pts) == dot(weights, pts).
 /// Input points are assumed to be at x = 0, 1, 2.
+#[inline]
 pub fn interp_quad_weights<T>(x: T) -> [T; 3]
 where
     T: Sample,
@@ -234,6 +241,7 @@ where
 }
 
 /// Perform linear interpolation between two points at x=0 and x=1.
+#[inline]
 pub fn interp_lin<T>(x: T, yvals: &[T; 2]) -> T
 where
     T: Sample,
@@ -243,6 +251,7 @@ where
 
 /// Compute the two blending weights for linear interpolation at fractional position x.
 /// These are the per-point coefficients such that interp_lin(x, pts) == dot(weights, pts).
+#[inline]
 pub fn interp_lin_weights<T>(x: T) -> [T; 2]
 where
     T: Sample,

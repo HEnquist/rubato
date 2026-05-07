@@ -178,18 +178,22 @@ impl<T> SincInterpolator<T> for AvxInterpolator<T>
 where
     T: AvxSample,
 {
+    #[inline]
     fn get_sinc_dot_product(&self, wave: &[T], index: usize, sinc: &[T]) -> T {
         unsafe { T::get_sinc_dot_product_unsafe(wave, index, sinc, self.length) }
     }
 
+    #[inline]
     fn get_sincs(&self) -> &[AlignedBuf<T>] {
         &self.sincs
     }
 
+    #[inline]
     fn nbr_points(&self) -> usize {
         self.length
     }
 
+    #[inline]
     fn nbr_sincs(&self) -> usize {
         self.nbr_sincs
     }

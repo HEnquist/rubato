@@ -72,6 +72,7 @@ pub(crate) trait SincInterpolator<T>: Send {
     fn prefetch_sinc(&self, _subindex: usize) {}
 
     /// Make the scalar product between the waveform starting at `index` and the sinc of `subindex`.
+    #[inline]
     fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T {
         assert!(
             (index + self.nbr_points()) < wave.len(),
