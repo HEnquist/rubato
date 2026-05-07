@@ -216,6 +216,12 @@ where
     where
         T: crate::Sample,
     {
+        debug_assert_eq!(
+            combined.len(),
+            self.length + 1,
+            "combined must be nbr_points()+1: the extra element holds any spillover \
+             from nearest points at the higher integer index"
+        );
         let min_idx = nearest.iter().map(|n| n.0).min().unwrap();
         // memset to zero — valid for f32/f64 since all-zero bits represent 0.0.
         unsafe {
@@ -272,8 +278,9 @@ where
     }
 }
 
-// Suppress dead_code warnings for float32x4_t/float64x2_t used only in
-// target_feature-gated functions.
+// float32x4_t/float64x2_t are used only inside #[target_feature]-gated functions. The
+// compiler performs dead-code analysis before monomorphising those gates, so it cannot
+// see the uses and would emit an unused-import warning without this suppression.
 #[allow(dead_code)]
 const _: () = {
     let _ = core::mem::size_of::<float32x4_t>();
