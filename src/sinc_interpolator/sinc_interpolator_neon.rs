@@ -58,14 +58,22 @@ unsafe fn dot_neon_f64_dyn(wave: &[f64], index: usize, sinc: &[f64], length: usi
     let mut acc7 = vmovq_n_f64(0.0);
     let mut idx = 0;
     for _ in 0..length / 16 {
-        acc0 = vfmaq_f64(acc0, vld1q_f64(wave_cut.get_unchecked(idx)),      vld1q_f64(sinc.get_unchecked(idx)));
-        acc1 = vfmaq_f64(acc1, vld1q_f64(wave_cut.get_unchecked(idx + 2)),  vld1q_f64(sinc.get_unchecked(idx + 2)));
-        acc2 = vfmaq_f64(acc2, vld1q_f64(wave_cut.get_unchecked(idx + 4)),  vld1q_f64(sinc.get_unchecked(idx + 4)));
-        acc3 = vfmaq_f64(acc3, vld1q_f64(wave_cut.get_unchecked(idx + 6)),  vld1q_f64(sinc.get_unchecked(idx + 6)));
-        acc4 = vfmaq_f64(acc4, vld1q_f64(wave_cut.get_unchecked(idx + 8)),  vld1q_f64(sinc.get_unchecked(idx + 8)));
-        acc5 = vfmaq_f64(acc5, vld1q_f64(wave_cut.get_unchecked(idx + 10)), vld1q_f64(sinc.get_unchecked(idx + 10)));
-        acc6 = vfmaq_f64(acc6, vld1q_f64(wave_cut.get_unchecked(idx + 12)), vld1q_f64(sinc.get_unchecked(idx + 12)));
-        acc7 = vfmaq_f64(acc7, vld1q_f64(wave_cut.get_unchecked(idx + 14)), vld1q_f64(sinc.get_unchecked(idx + 14)));
+        let w0 = vld1q_f64(wave_cut.get_unchecked(idx));
+        let w1 = vld1q_f64(wave_cut.get_unchecked(idx + 2));
+        let w2 = vld1q_f64(wave_cut.get_unchecked(idx + 4));
+        let w3 = vld1q_f64(wave_cut.get_unchecked(idx + 6));
+        let w4 = vld1q_f64(wave_cut.get_unchecked(idx + 8));
+        let w5 = vld1q_f64(wave_cut.get_unchecked(idx + 10));
+        let w6 = vld1q_f64(wave_cut.get_unchecked(idx + 12));
+        let w7 = vld1q_f64(wave_cut.get_unchecked(idx + 14));
+        acc0 = vfmaq_f64(acc0, w0, vld1q_f64(sinc.get_unchecked(idx)));
+        acc1 = vfmaq_f64(acc1, w1, vld1q_f64(sinc.get_unchecked(idx + 2)));
+        acc2 = vfmaq_f64(acc2, w2, vld1q_f64(sinc.get_unchecked(idx + 4)));
+        acc3 = vfmaq_f64(acc3, w3, vld1q_f64(sinc.get_unchecked(idx + 6)));
+        acc4 = vfmaq_f64(acc4, w4, vld1q_f64(sinc.get_unchecked(idx + 8)));
+        acc5 = vfmaq_f64(acc5, w5, vld1q_f64(sinc.get_unchecked(idx + 10)));
+        acc6 = vfmaq_f64(acc6, w6, vld1q_f64(sinc.get_unchecked(idx + 12)));
+        acc7 = vfmaq_f64(acc7, w7, vld1q_f64(sinc.get_unchecked(idx + 14)));
         idx += 16;
     }
     for _ in 0..(length % 16) / 2 {
