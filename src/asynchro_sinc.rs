@@ -282,6 +282,7 @@ where
     /// run one dot product per active channel. Used when channel count makes the build cost
     /// worthwhile (see `use_combined` thresholds in `process`).
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     fn process_combined_frame(
         &mut self,
         nearest: &[(isize, isize)],
@@ -317,6 +318,7 @@ where
     /// with `interp`. Used for low channel counts where building a combined sinc costs more
     /// than the N separate dot products would.
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     fn process_direct_frame(
         &self,
         nearest: &[(isize, isize)],
