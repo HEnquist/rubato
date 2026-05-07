@@ -106,12 +106,12 @@ pub trait SseSample: Sized + Send {
     ///
     /// The caller must ensure that `out[..length]` and `input[..length]` are valid,
     /// and that `length` is a multiple of 8.
-    unsafe fn saxpy_unsafe(out: &mut [Self], scale: Self, input: &[Self], length: usize);
+    unsafe fn accumulate_scaled_unsafe(out: &mut [Self], scale: Self, input: &[Self], length: usize);
 }
 
 impl SseSample for f32 {
     #[target_feature(enable = "sse3")]
-    unsafe fn saxpy_unsafe(out: &mut [f32], scale: f32, input: &[f32], length: usize) {
+    unsafe fn accumulate_scaled_unsafe(out: &mut [f32], scale: f32, input: &[f32], length: usize) {
         let scale_vec = _mm_set1_ps(scale);
         let mut idx = 0;
         for _ in 0..length / 4 {
@@ -138,7 +138,7 @@ impl SseSample for f32 {
 
 impl SseSample for f64 {
     #[target_feature(enable = "sse3")]
-    unsafe fn saxpy_unsafe(out: &mut [f64], scale: f64, input: &[f64], length: usize) {
+    unsafe fn accumulate_scaled_unsafe(out: &mut [f64], scale: f64, input: &[f64], length: usize) {
         let scale_vec = _mm_set1_pd(scale);
         let mut idx = 0;
         for _ in 0..length / 2 {
@@ -227,7 +227,7 @@ where
         for (n, &w) in nearest.iter().zip(weights.iter()) {
             let shift = (n.0 - min_idx) as usize;
             unsafe {
-                <T as SseSample>::saxpy_unsafe(
+                <T as SseSample>::accumulate_scaled_unsafe(
                     &mut combined[shift..shift + self.length],
                     w,
                     &self.sincs[n.1 as usize],

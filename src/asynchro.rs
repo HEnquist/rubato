@@ -907,7 +907,7 @@ mod tests {
     /// Run a 1-channel and a 4-channel sinc resampler with identical per-channel input and
     /// compare their outputs. The 1-channel resampler uses the direct path (separate dot
     /// products per nearest point); the 4-channel resampler uses the combined-sinc path
-    /// (SIMD SAXPY build then one dot product per channel). They must agree within floating-
+    /// (scaled accumulation into a combined filter, then one dot product per channel). They must agree within floating-
     /// point rounding tolerance.
     fn compare_1ch_4ch_sinc_output(
         interpolation: SincInterpolationType,

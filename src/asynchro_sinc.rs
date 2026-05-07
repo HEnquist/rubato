@@ -52,33 +52,78 @@ pub struct SincInterpolationParameters {
 /// It's more efficient to combine the sinc filters with some other interpolation technique.
 /// Then, sinc filters are used to provide a fixed number of interpolated points between input samples,
 /// and then, the new value is calculated by interpolation between those points.
+///
+/// # Performance scaling with channel count
+///
+/// Each interpolation mode evaluates N sinc filters per output sample (one per nearest point).
+/// When processing multiple channels that share the same playback position, those N filters are
+/// blended once into a single combined filter, and every channel then performs only one dot
+/// product. The build cost of the combined filter is roughly equivalent to N dot products, so
+/// the break-even point depends on the mode:
+///
+/// | Mode      | Nearest points (N) | Combined sinc used when |
+/// |-----------|-------------------|-------------------------|
+/// | Cubic     | 4                 | 2 or more channels      |
+/// | Quadratic | 3                 | 3 or more channels      |
+/// | Linear    | 2                 | 3 or more channels      |
+/// | Nearest   | 1                 | never (no benefit)      |
+///
+/// The table below shows the total cost in dot-product equivalents per output sample.
+/// Building the combined filter requires one scaled-add pass over the sinc buffer for each
+/// nearest point (comparable in cost to one dot product), then each channel runs one dot product:
+///
+/// | Mode      | 1 ch | 2 ch | 3 ch | 4 ch | M ch (above threshold) |
+/// |-----------|------|------|------|------|------------------------|
+/// | Cubic     | 4    | 6    | 7    | 8    | 4 + M (M ≥ 2)          |
+/// | Quadratic | 3    | 6    | 6    | 7    | 3 + M (M ≥ 3)          |
+/// | Linear    | 2    | 4    | 5    | 6    | 2 + M (M ≥ 3)          |
+/// | Nearest   | 1    | 2    | 3    | 4    | M (always)             |
+///
+/// Once above the combined-sinc threshold, every mode costs exactly one additional
+/// dot product per extra channel. Practical consequences:
+///
+/// - **Cubic at M channels ≈ Linear at M+2 channels** (both cost 4+M dp for M ≥ 3).
+///   For example, 4-channel Cubic and 6-channel Linear both cost 8 dp per output sample.
+/// - **Cubic at M channels ≈ Quadratic at M+1 channels** (both cost 4+M dp for M ≥ 3).
+/// - **At 2 channels**, Cubic and Quadratic are equal (both 6 dp), so there is no reason
+///   to choose Quadratic over Cubic for stereo content.
+/// - **Upgrading from Linear to Cubic** above the threshold costs the same as adding
+///   two more channels at the current mode — a fixed overhead, not a multiplier.
 #[derive(Debug, Clone, Copy)]
 pub enum SincInterpolationType {
-    /// For cubic interpolation, the four nearest intermediate points are calculated
-    /// using sinc interpolation.
-    /// Then, a cubic polynomial is fitted to these points, and is used to calculate the new sample value.
-    /// The computation time is approximately twice as long as that of linear interpolation,
-    /// but it requires much fewer intermediate points for a good result.
+    /// Cubic interpolation using the four nearest intermediate sinc points.
+    /// A cubic polynomial is fitted to these points to compute each output sample.
+    ///
+    /// This gives the best quality-to-oversampling-factor trade-off: fewer intermediate
+    /// points are needed compared to linear interpolation for the same artefact level.
+    /// The cost relative to linear is roughly 2× at 1 channel, but at 2+ channels the
+    /// combined-sinc optimisation brings it close to the cost of a single dot product
+    /// per channel.
     Cubic,
-    /// For quadratic interpolation, the three nearest intermediate points are calculated
-    /// using sinc interpolation.
-    /// Then, a quadratic polynomial is fitted to these points, and is used to calculate the new sample value.
-    /// The computation time lies approximately halfway between that of linear and quadratic interpolation.
+    /// Quadratic interpolation using the three nearest intermediate sinc points.
+    /// A quadratic polynomial is fitted to these points to compute each output sample.
+    ///
+    /// Quality and CPU cost lie between `Linear` and `Cubic`.
+    /// The combined-sinc optimisation applies at 3 or more channels.
     Quadratic,
-    /// For linear interpolation, the new sample value is calculated by linear interpolation
-    /// between the two nearest points.
-    /// This requires two intermediate points to be calculated using sinc interpolation,
-    /// and the output is obtained by taking a weighted average of these two points.
-    /// This is relatively fast, but needs a large number of intermediate points to
-    /// push the resampling artefacts below the noise floor.
+    /// Linear interpolation between the two nearest intermediate sinc points.
+    ///
+    /// This is the fastest mode for 1–2 channels but requires a larger
+    /// `oversampling_factor` than cubic to achieve the same artefact floor.
+    /// The combined-sinc optimisation applies at 3 or more channels.
     Linear,
-    /// The Nearest mode doesn't do any interpolation, but simply picks the nearest intermediate point.
-    /// This is useful when the nearest point is actually the correct one, for example when upsampling by a factor 2,
-    /// like 48kHz->96kHz.
-    /// Then, when setting the oversampling_factor to 2 and using Nearest mode,
-    /// no unnecessary computations are performed and the result is equivalent to that of synchronous resampling.
-    /// This also works for other ratios that can be expressed by a fraction. For 44.1kHz -> 48 kHz,
-    /// setting oversampling_factor to 160 gives the desired result (since 48kHz = 160/147 * 44.1kHz).
+    /// No interpolation: the nearest intermediate sinc point is used directly.
+    ///
+    /// This is useful when the ratio between input and output sample rates can be
+    /// expressed exactly by a fraction with a small denominator, so that one of the
+    /// pre-computed sinc points always falls exactly on the desired position.
+    /// For example, upsampling 48 kHz to 96 kHz with `oversampling_factor = 2` is
+    /// equivalent to synchronous resampling with no added artefacts.
+    /// For 44.1 kHz to 48 kHz, `oversampling_factor = 160` achieves the same
+    /// (since 48000 = 160/147 × 44100).
+    ///
+    /// Each output sample requires exactly one sinc dot product per channel regardless
+    /// of channel count; there is no combined-sinc optimisation for this mode.
     Nearest,
 }
 
@@ -236,6 +281,7 @@ where
     /// Combined-sinc path: blend `nearest` sincs by `weights` into `self.combined`, then
     /// run one dot product per active channel. Used when channel count makes the build cost
     /// worthwhile (see `use_combined` thresholds in `process`).
+    #[inline(always)]
     fn process_combined_frame(
         &mut self,
         nearest: &[(isize, isize)],
@@ -270,6 +316,7 @@ where
     /// Direct path: compute N separate sinc dot products per active channel and combine them
     /// with `interp`. Used for low channel counts where building a combined sinc costs more
     /// than the N separate dot products would.
+    #[inline(always)]
     fn process_direct_frame(
         &self,
         nearest: &[(isize, isize)],
