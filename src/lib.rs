@@ -67,11 +67,41 @@ pub use crate::windows::{calculate_cutoff, WindowFunction};
 
 /// A struct for providing optional parameters when calling
 /// [process_into_buffer](Resampler::process_into_buffer).
+///
+/// All fields have sensible defaults: zero offsets, no partial length, and all channels active.
+/// Pass `None` as the `indexing` argument to use these defaults without constructing the struct.
 #[derive(Debug, Clone)]
 pub struct Indexing {
+    /// Number of frames to skip at the beginning of the input buffer before reading.
+    /// Use this to process a sub-region of a larger buffer without copying data.
+    /// Defaults to `0` (read from the start of the buffer).
     pub input_offset: usize,
+
+    /// Number of frames to skip at the beginning of the output buffer before writing.
+    /// Use this to write results into a sub-region of a larger buffer.
+    /// Defaults to `0` (write from the start of the buffer).
     pub output_offset: usize,
+
+    /// Set to `Some(n)` when the input buffer contains fewer valid frames than
+    /// [Resampler::input_frames_next] requires.
+    /// The resampler will read the first `n` frames from the input buffer and
+    /// treat the remaining frames as silence.
+    /// This is useful for processing the very last (partial) chunk of a stream or audio clip.
+    ///
+    /// **Important:** even with `partial_len` set, the output buffer must still be large enough
+    /// to hold at least [Resampler::output_frames_next] frames (plus `output_offset`),
+    /// because the resampler always produces a full output chunk.
+    ///
+    /// Set to `Some(0)` to process a chunk of pure silence (e.g. to flush the resampler delay).
+    ///
+    /// Defaults to `None`, meaning the full [Resampler::input_frames_next] frames are read.
     pub partial_len: Option<usize>,
+
+    /// Optional per-channel processing mask.
+    /// When `Some(vec)`, each element corresponds to one channel:
+    /// `true` means the channel is processed normally,
+    /// `false` means the channel is skipped and its output is left unchanged.
+    /// When `None`, all channels are processed.
     pub active_channels_mask: Option<Vec<bool>>,
 }
 
