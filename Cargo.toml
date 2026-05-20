@@ -1,6 +1,6 @@
 [package]
 name = "rubato"
-version = "2.0.0"
+version = "3.0.0"
 rust-version = "1.85"
 authors = ["HEnquist <henrik.enquist@gmail.com>"]
 description = "Asynchronous resampling library intended for audio data"
