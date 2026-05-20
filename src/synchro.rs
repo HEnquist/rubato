@@ -203,14 +203,33 @@ where
     /// In this mode, the chunk size is not arbitrarily selectable.
     /// Instead, it is automatically calculated based on the provided value as a reference.
     ///
-    /// The delay from the resampler depends on the length of the FFT.
-    /// It can be reduced by increasing the `sub_chunks` value.
-    /// This determines how many sub chunks each chunk should be split into while processing.
-    /// The actual number may be different,
-    /// based on what is possible for the given input and output sample rates.
-    /// A large number of sub chunks (i.e. short sub chunks) reduces the cutoff frequency
-    /// of the anti-aliasing filter.
-    /// It is recommended to set `sub_chunks` to 1 unless this leads to an unacceptably large delay.
+    /// The resampler introduces a delay equal to half the internal FFT block size,
+    /// expressed as a number of output frames.
+    /// This delay can be queried via [Resampler::output_delay].
+    ///
+    /// The `sub_chunks` parameter controls how many sub-chunks each processing chunk is divided into.
+    /// A higher value uses a smaller FFT block size, which reduces the delay proportionally.
+    /// However, a smaller FFT block also lowers the cutoff frequency of the anti-aliasing filter,
+    /// which may affect quality at high frequencies.
+    ///
+    /// The actual number of sub-chunks used may differ from the requested value,
+    /// since the FFT block size must be a valid multiple of the minimum block size
+    /// for the given sample rate pair.
+    ///
+    /// A sub-chunk size (i.e. `chunk_size / sub_chunks`) between roughly 100 and 1000 frames
+    /// is generally a good target. The best value depends on the delay tolerance and quality
+    /// requirements of the application. If uncertain, start with a sub-chunk size of a few hundred
+    /// frames — meaning `sub_chunks = chunk_size / desired_sub_chunk_size` — and adjust as needed.
+    ///
+    /// The requested value is treated as a hint: the actual sub-chunk size is rounded up to the
+    /// nearest integer multiple of the minimum valid block size for the given sample rate pair.
+    /// The minimum block size is determined by the GCD (Greatest Common Divisor) of the two
+    /// sample rates: `rate / gcd(rate_in, rate_out)` for each side.
+    /// For example, a 44100 → 48000 resampler has a GCD of 300, giving minimum blocks of 147
+    /// (input) and 160 (output), so sub-chunk sizes can only be multiples of those values.
+    /// A 48000 → 96000 resampler has a GCD of 48000, giving minimum blocks of 1 and 2,
+    /// so the sub-chunk size can be chosen almost freely.
+    /// A value of `0` is treated as `1`.
     ///
     /// Parameters are:
     /// - `sample_rate_input`: Input sample rate, must be > 0.
@@ -401,10 +420,10 @@ impl<T> Resampler<T> for Fft<T>
 where
     T: Sample,
 {
-    fn process_into_buffer<'a>(
+    fn process_into_buffer<'a, 'b>(
         &mut self,
         buffer_in: &dyn Adapter<'a, T>,
-        buffer_out: &mut dyn AdapterMut<'a, T>,
+        buffer_out: &mut dyn AdapterMut<'b, T>,
         indexing: Option<&Indexing>,
     ) -> ResampleResult<(usize, usize)> {
         // read the optional indexing struct
