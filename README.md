@@ -343,6 +343,10 @@ The `rubato` crate requires rustc version 1.85 or newer.
 ## Changelog
 - v3.0.0
   - Use separate lifetimes for `buffer_in` and `buffer_out` in `process_into_buffer`.
+  - Improve sinc resampler performance with smarter dot product calculation.
+  - Improve SIMD performance (AVX, SSE, NEON) using multiple accumulators.
+  - Switch dot product strategy based on channel count.
+  - More aggressive inlining of hot paths.
 - v2.0.0
   - Update to `audioadapter` 3.0.
   - Add re-export of `audioadapter-buffers`.

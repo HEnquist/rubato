@@ -146,7 +146,7 @@ where
     T: Sample,
 {
     fn process(
-        &self,
+        &mut self,
         idx: f64,
         nbr_frames: usize,
         channel_mask: &[bool],

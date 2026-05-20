@@ -1,152 +1,165 @@
 use crate::error::{CpuFeature, MissingCpuFeature};
 use crate::sinc::make_sincs;
-use crate::sinc_interpolator::SincInterpolator;
+use crate::sinc_interpolator::{AlignedBuf, SincInterpolator};
 use crate::windows::WindowFunction;
 use crate::Sample;
 use core::arch::x86_64::{__m128, __m128d};
 use core::arch::x86_64::{
-    _mm_add_pd, _mm_hadd_pd, _mm_loadu_pd, _mm_mul_pd, _mm_setzero_pd, _mm_store_sd,
+    _mm_add_pd, _mm_hadd_pd, _mm_loadu_pd, _mm_mul_pd, _mm_set1_pd, _mm_setzero_pd,
+    _mm_store_sd, _mm_storeu_pd,
 };
 use core::arch::x86_64::{
-    _mm_add_ps, _mm_hadd_ps, _mm_loadu_ps, _mm_mul_ps, _mm_setzero_ps, _mm_store_ss,
+    _mm_add_ps, _mm_hadd_ps, _mm_loadu_ps, _mm_mul_ps, _mm_set1_ps, _mm_setzero_ps,
+    _mm_store_ss, _mm_storeu_ps,
 };
+use core::arch::x86_64::{_mm_prefetch, _MM_HINT_T0};
+
+/// Runtime-length f32 fallback with 4 accumulators.
+#[target_feature(enable = "sse3")]
+unsafe fn dot_sse_f32_dyn(wave: &[f32], index: usize, sinc: &[f32], length: usize) -> f32 {
+    let wave_cut = &wave[index..(index + length)];
+    let mut acc0 = _mm_setzero_ps();
+    let mut acc1 = _mm_setzero_ps();
+    let mut acc2 = _mm_setzero_ps();
+    let mut acc3 = _mm_setzero_ps();
+    let mut idx = 0;
+    for _ in 0..length / 16 {
+        acc0 = _mm_add_ps(acc0, _mm_mul_ps(_mm_loadu_ps(wave_cut.get_unchecked(idx)),      _mm_loadu_ps(sinc.get_unchecked(idx))));
+        acc1 = _mm_add_ps(acc1, _mm_mul_ps(_mm_loadu_ps(wave_cut.get_unchecked(idx + 4)),  _mm_loadu_ps(sinc.get_unchecked(idx + 4))));
+        acc2 = _mm_add_ps(acc2, _mm_mul_ps(_mm_loadu_ps(wave_cut.get_unchecked(idx + 8)),  _mm_loadu_ps(sinc.get_unchecked(idx + 8))));
+        acc3 = _mm_add_ps(acc3, _mm_mul_ps(_mm_loadu_ps(wave_cut.get_unchecked(idx + 12)), _mm_loadu_ps(sinc.get_unchecked(idx + 12))));
+        idx += 16;
+    }
+    for _ in 0..(length % 16) / 4 {
+        acc0 = _mm_add_ps(acc0, _mm_mul_ps(_mm_loadu_ps(wave_cut.get_unchecked(idx)), _mm_loadu_ps(sinc.get_unchecked(idx))));
+        idx += 4;
+    }
+    let temp4 = _mm_add_ps(_mm_add_ps(acc0, acc1), _mm_add_ps(acc2, acc3));
+    let temp2 = _mm_hadd_ps(temp4, temp4);
+    let temp1 = _mm_hadd_ps(temp2, temp2);
+    let mut result = 0.0f32;
+    _mm_store_ss(&mut result, temp1);
+    result
+}
+
+/// Runtime-length f64 with 8 accumulators; processes 16 f64 per iteration (16 iterations
+/// for the typical length=256), matching the trip count of dot_sse_f32_dyn and dot_avx_f64_dyn.
+#[target_feature(enable = "sse3")]
+unsafe fn dot_sse_f64_dyn(wave: &[f64], index: usize, sinc: &[f64], length: usize) -> f64 {
+    let wave_cut = &wave[index..(index + length)];
+    let mut acc0 = _mm_setzero_pd();
+    let mut acc1 = _mm_setzero_pd();
+    let mut acc2 = _mm_setzero_pd();
+    let mut acc3 = _mm_setzero_pd();
+    let mut acc4 = _mm_setzero_pd();
+    let mut acc5 = _mm_setzero_pd();
+    let mut acc6 = _mm_setzero_pd();
+    let mut acc7 = _mm_setzero_pd();
+    let mut idx = 0;
+    for _ in 0..length / 16 {
+        acc0 = _mm_add_pd(acc0, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx)),      _mm_loadu_pd(sinc.get_unchecked(idx))));
+        acc1 = _mm_add_pd(acc1, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx + 2)),  _mm_loadu_pd(sinc.get_unchecked(idx + 2))));
+        acc2 = _mm_add_pd(acc2, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx + 4)),  _mm_loadu_pd(sinc.get_unchecked(idx + 4))));
+        acc3 = _mm_add_pd(acc3, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx + 6)),  _mm_loadu_pd(sinc.get_unchecked(idx + 6))));
+        acc4 = _mm_add_pd(acc4, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx + 8)),  _mm_loadu_pd(sinc.get_unchecked(idx + 8))));
+        acc5 = _mm_add_pd(acc5, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx + 10)), _mm_loadu_pd(sinc.get_unchecked(idx + 10))));
+        acc6 = _mm_add_pd(acc6, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx + 12)), _mm_loadu_pd(sinc.get_unchecked(idx + 12))));
+        acc7 = _mm_add_pd(acc7, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx + 14)), _mm_loadu_pd(sinc.get_unchecked(idx + 14))));
+        idx += 16;
+    }
+    for _ in 0..(length % 16) / 2 {
+        acc0 = _mm_add_pd(acc0, _mm_mul_pd(_mm_loadu_pd(wave_cut.get_unchecked(idx)), _mm_loadu_pd(sinc.get_unchecked(idx))));
+        idx += 2;
+    }
+    let s01 = _mm_add_pd(acc0, acc1);
+    let s23 = _mm_add_pd(acc2, acc3);
+    let s45 = _mm_add_pd(acc4, acc5);
+    let s67 = _mm_add_pd(acc6, acc7);
+    let temp2 = _mm_hadd_pd(_mm_add_pd(s01, s23), _mm_add_pd(s45, s67));
+    let temp1 = _mm_hadd_pd(temp2, temp2);
+    let mut result = 0.0f64;
+    _mm_store_sd(&mut result, temp1);
+    result
+}
 
 /// Collection of CPU features required for this interpolator.
 static FEATURES: &[CpuFeature] = &[CpuFeature::Sse3];
 
 /// Trait governing what can be done with an SseSample.
 pub trait SseSample: Sized + Send {
-    type Sinc: Send;
-
-    /// Pack sincs into a vector.
+    /// Compute the dot product of `wave[index..]` with `sinc` using SSE instructions.
     ///
     /// # Safety
     ///
-    /// This is unsafe because it uses target_enable dispatching. There are no
-    /// special requirements from the caller.
-    unsafe fn pack_sincs(sincs: Vec<Vec<Self>>) -> Vec<Vec<Self::Sinc>>;
-
-    /// Interpolate a sinc sample.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that the various indexes are not out of bounds
-    /// in the collection of sincs.
-    unsafe fn get_sinc_interpolated_unsafe(
+    /// The caller must ensure that `wave[index..index+length]` and `sinc[..length]` are
+    /// valid, and that `length` is a multiple of 8.
+    unsafe fn get_sinc_dot_product_unsafe(
         wave: &[Self],
         index: usize,
-        subindex: usize,
-        sincs: &[Vec<Self::Sinc>],
+        sinc: &[Self],
         length: usize,
     ) -> Self;
+
+    /// Compute `out[..length] += scale * input[..length]` using SSE instructions.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `out[..length]` and `input[..length]` are valid,
+    /// and that `length` is a multiple of 8.
+    unsafe fn accumulate_scaled_unsafe(out: &mut [Self], scale: Self, input: &[Self], length: usize);
 }
 
 impl SseSample for f32 {
-    type Sinc = __m128;
-
     #[target_feature(enable = "sse3")]
-    unsafe fn pack_sincs(sincs: Vec<Vec<Self>>) -> Vec<Vec<Self::Sinc>> {
-        let mut packed_sincs = Vec::new();
-        for sinc in sincs.iter() {
-            let mut packed = Vec::new();
-            for elements in sinc.chunks(4) {
-                let packed_elems = _mm_loadu_ps(&elements[0]);
-                packed.push(packed_elems);
-            }
-            packed_sincs.push(packed);
+    unsafe fn accumulate_scaled_unsafe(out: &mut [f32], scale: f32, input: &[f32], length: usize) {
+        let scale_vec = _mm_set1_ps(scale);
+        let mut idx = 0;
+        for _ in 0..length / 4 {
+            let x = _mm_loadu_ps(input.get_unchecked(idx));
+            let y = _mm_loadu_ps(out.get_unchecked(idx));
+            _mm_storeu_ps(
+                out.get_unchecked_mut(idx) as *mut f32,
+                _mm_add_ps(y, _mm_mul_ps(scale_vec, x)),
+            );
+            idx += 4;
         }
-        packed_sincs
     }
 
     #[target_feature(enable = "sse3")]
-    unsafe fn get_sinc_interpolated_unsafe(
+    unsafe fn get_sinc_dot_product_unsafe(
         wave: &[f32],
         index: usize,
-        subindex: usize,
-        sincs: &[Vec<Self::Sinc>],
+        sinc: &[f32],
         length: usize,
     ) -> f32 {
-        let sinc = sincs.get_unchecked(subindex);
-        let wave_cut = &wave[index..(index + length)];
-        let mut acc0 = _mm_setzero_ps();
-        let mut acc1 = _mm_setzero_ps();
-        let mut w_idx = 0;
-        let mut s_idx = 0;
-        for _ in 0..wave_cut.len() / 8 {
-            let w0 = _mm_loadu_ps(wave_cut.get_unchecked(w_idx));
-            let w1 = _mm_loadu_ps(wave_cut.get_unchecked(w_idx + 4));
-            let s0 = _mm_mul_ps(w0, *sinc.get_unchecked(s_idx));
-            let s1 = _mm_mul_ps(w1, *sinc.get_unchecked(s_idx + 1));
-            acc0 = _mm_add_ps(acc0, s0);
-            acc1 = _mm_add_ps(acc1, s1);
-            w_idx += 8;
-            s_idx += 2;
-        }
-        let temp4 = _mm_add_ps(acc0, acc1);
-        let temp2 = _mm_hadd_ps(temp4, temp4);
-        let temp1 = _mm_hadd_ps(temp2, temp2);
-        let mut result = 0.0;
-        _mm_store_ss(&mut result, temp1);
-        result
+        dot_sse_f32_dyn(wave, index, sinc, length)
     }
 }
 
 impl SseSample for f64 {
-    type Sinc = __m128d;
-
     #[target_feature(enable = "sse3")]
-    unsafe fn pack_sincs(sincs: Vec<Vec<f64>>) -> Vec<Vec<Self::Sinc>> {
-        let mut packed_sincs = Vec::new();
-        for sinc in sincs.iter() {
-            let mut packed = Vec::new();
-            for elements in sinc.chunks(2) {
-                let packed_elems = _mm_loadu_pd(&elements[0]);
-                packed.push(packed_elems);
-            }
-            packed_sincs.push(packed);
+    unsafe fn accumulate_scaled_unsafe(out: &mut [f64], scale: f64, input: &[f64], length: usize) {
+        let scale_vec = _mm_set1_pd(scale);
+        let mut idx = 0;
+        for _ in 0..length / 2 {
+            let x = _mm_loadu_pd(input.get_unchecked(idx));
+            let y = _mm_loadu_pd(out.get_unchecked(idx));
+            _mm_storeu_pd(
+                out.get_unchecked_mut(idx) as *mut f64,
+                _mm_add_pd(y, _mm_mul_pd(scale_vec, x)),
+            );
+            idx += 2;
         }
-        packed_sincs
     }
 
     #[target_feature(enable = "sse3")]
-    unsafe fn get_sinc_interpolated_unsafe(
+    unsafe fn get_sinc_dot_product_unsafe(
         wave: &[f64],
         index: usize,
-        subindex: usize,
-        sincs: &[Vec<Self::Sinc>],
+        sinc: &[f64],
         length: usize,
     ) -> f64 {
-        let sinc = sincs.get_unchecked(subindex);
-        let wave_cut = &wave[index..(index + length)];
-        let mut acc0 = _mm_setzero_pd();
-        let mut acc1 = _mm_setzero_pd();
-        let mut acc2 = _mm_setzero_pd();
-        let mut acc3 = _mm_setzero_pd();
-        let mut w_idx = 0;
-        let mut s_idx = 0;
-        for _ in 0..wave_cut.len() / 8 {
-            let w0 = _mm_loadu_pd(wave_cut.get_unchecked(w_idx));
-            let w1 = _mm_loadu_pd(wave_cut.get_unchecked(w_idx + 2));
-            let w2 = _mm_loadu_pd(wave_cut.get_unchecked(w_idx + 4));
-            let w3 = _mm_loadu_pd(wave_cut.get_unchecked(w_idx + 6));
-            let s0 = _mm_mul_pd(w0, *sinc.get_unchecked(s_idx));
-            let s1 = _mm_mul_pd(w1, *sinc.get_unchecked(s_idx + 1));
-            let s2 = _mm_mul_pd(w2, *sinc.get_unchecked(s_idx + 2));
-            let s3 = _mm_mul_pd(w3, *sinc.get_unchecked(s_idx + 3));
-            acc0 = _mm_add_pd(acc0, s0);
-            acc1 = _mm_add_pd(acc1, s1);
-            acc2 = _mm_add_pd(acc2, s2);
-            acc3 = _mm_add_pd(acc3, s3);
-            w_idx += 8;
-            s_idx += 4;
-        }
-        let temp2_0 = _mm_add_pd(acc0, acc1);
-        let temp2_1 = _mm_add_pd(acc2, acc3);
-        let temp2 = _mm_hadd_pd(temp2_0, temp2_1);
-        let temp1 = _mm_hadd_pd(temp2, temp2);
-        let mut result = 0.0;
-        _mm_store_sd(&mut result, temp1);
-        result
+        dot_sse_f64_dyn(wave, index, sinc, length)
     }
 }
 
@@ -156,7 +169,7 @@ pub(crate) struct SseInterpolator<T>
 where
     T: SseSample,
 {
-    sincs: Vec<Vec<T::Sinc>>,
+    sincs: Vec<AlignedBuf<T>>,
     length: usize,
     nbr_sincs: usize,
 }
@@ -165,35 +178,74 @@ impl<T> SincInterpolator<T> for SseInterpolator<T>
 where
     T: SseSample,
 {
-    /// Calculate the scalar produt of an input wave and the selected sinc filter.
-    fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T {
-        assert!(
-            (index + self.length) < wave.len(),
-            "Tried to interpolate for index {}, max for the given input is {}",
-            index,
-            wave.len() - self.length - 1
-        );
-        assert!(
-            subindex < self.nbr_sincs,
-            "Tried to use sinc subindex {}, max is {}",
-            subindex,
-            self.nbr_sincs - 1
-        );
-        unsafe { T::get_sinc_interpolated_unsafe(wave, index, subindex, &self.sincs, self.length) }
+    #[inline]
+    fn get_sinc_dot_product(&self, wave: &[T], index: usize, sinc: &[T]) -> T {
+        unsafe { T::get_sinc_dot_product_unsafe(wave, index, sinc, self.length) }
     }
 
+    #[inline]
+    fn get_sincs(&self) -> &[AlignedBuf<T>] {
+        &self.sincs
+    }
+
+    #[inline]
     fn nbr_points(&self) -> usize {
         self.length
     }
 
+    #[inline]
     fn nbr_sincs(&self) -> usize {
         self.nbr_sincs
+    }
+
+    #[inline]
+    fn prefetch_sinc(&self, subindex: usize) {
+        if subindex < self.nbr_sincs {
+            unsafe {
+                let row = self.sincs.get_unchecked(subindex);
+                _mm_prefetch::<_MM_HINT_T0>(row.as_ptr() as *const i8);
+            }
+        }
+    }
+
+    fn make_combined_sinc(
+        &self,
+        nearest: &[(isize, isize)],
+        weights: &[T],
+        combined: &mut [T],
+    ) -> isize
+    where
+        T: crate::Sample,
+    {
+        debug_assert_eq!(
+            combined.len(),
+            self.length + 1,
+            "combined must be nbr_points()+1: the extra element holds any spillover \
+             from nearest points at the higher integer index"
+        );
+        let min_idx = nearest.iter().map(|n| n.0).min().unwrap();
+        // memset to zero — valid for f32/f64 since all-zero bits represent 0.0.
+        unsafe {
+            std::ptr::write_bytes(combined.as_mut_ptr(), 0, combined.len());
+        }
+        for (n, &w) in nearest.iter().zip(weights.iter()) {
+            let shift = (n.0 - min_idx) as usize;
+            unsafe {
+                <T as SseSample>::accumulate_scaled_unsafe(
+                    &mut combined[shift..shift + self.length],
+                    w,
+                    &self.sincs[n.1 as usize],
+                    self.length,
+                );
+            }
+        }
+        min_idx
     }
 }
 
 impl<T> SseInterpolator<T>
 where
-    T: Sample,
+    T: SseSample + Sample,
 {
     /// Create a new SseInterpolator.
     ///
@@ -213,8 +265,11 @@ where
         }
 
         assert!(sinc_len % 8 == 0, "Sinc length must be a multiple of 8.");
-        let sincs = make_sincs(sinc_len, oversampling_factor, f_cutoff, window);
-        let sincs = unsafe { <T as SseSample>::pack_sincs(sincs) };
+        let raw_sincs: Vec<Vec<T>> = make_sincs(sinc_len, oversampling_factor, f_cutoff, window);
+        let sincs = raw_sincs
+            .into_iter()
+            .map(|row| AlignedBuf::from_slice(&row))
+            .collect();
 
         Ok(Self {
             sincs,
@@ -223,6 +278,15 @@ where
         })
     }
 }
+
+// __m128/__m128d are used only inside #[target_feature]-gated functions. The compiler
+// performs dead-code analysis before monomorphising those gates, so it cannot see the
+// uses and would emit an unused-import warning without this suppression.
+#[allow(dead_code)]
+const _: () = {
+    let _ = core::mem::size_of::<__m128>();
+    let _ = core::mem::size_of::<__m128d>();
+};
 
 #[cfg(test)]
 mod tests {
