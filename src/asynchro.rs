@@ -7,7 +7,9 @@ use crate::asynchro_sinc::{
     make_interpolator, InnerSinc, SincInterpolationParameters, SincInterpolationType,
 };
 use crate::error::{ResampleError, ResampleResult, ResamplerConstructionError};
-use crate::sinc_interpolator::SincInterpolator;
+use crate::sinc_interpolator::{
+    AnyInterpolator, AvxSample, NeonSample, SincInterpolator, SseSample,
+};
 use crate::{get_offsets, get_partial_len, update_mask, Indexing};
 use crate::{validate_buffers, Resampler, Sample};
 
@@ -285,11 +287,14 @@ where
         resample_ratio: f64,
         max_resample_ratio_relative: f64,
         interpolation_type: SincInterpolationType,
-        interpolator: Box<dyn SincInterpolator<T>>,
+        interpolator: AnyInterpolator<T>,
         chunk_size: usize,
         nbr_channels: usize,
         fixed: FixedAsync,
-    ) -> Result<Self, ResamplerConstructionError> {
+    ) -> Result<Self, ResamplerConstructionError>
+    where
+        T: AvxSample + SseSample + NeonSample,
+    {
         validate_ratios(resample_ratio, max_resample_ratio_relative)?;
 
         if chunk_size == 0 {
@@ -442,10 +447,10 @@ impl<T> Resampler<T> for Async<T>
 where
     T: Sample,
 {
-    fn process_into_buffer<'a>(
+    fn process_into_buffer<'a, 'b>(
         &mut self,
         buffer_in: &dyn Adapter<'a, T>,
-        buffer_out: &mut dyn AdapterMut<'a, T>,
+        buffer_out: &mut dyn AdapterMut<'b, T>,
         indexing: Option<&Indexing>,
     ) -> ResampleResult<(usize, usize)> {
         // read the optional indexing struct
@@ -902,7 +907,7 @@ mod tests {
     /// Run a 1-channel and a 4-channel sinc resampler with identical per-channel input and
     /// compare their outputs. The 1-channel resampler uses the direct path (separate dot
     /// products per nearest point); the 4-channel resampler uses the combined-sinc path
-    /// (SIMD SAXPY build then one dot product per channel). They must agree within floating-
+    /// (scaled accumulation into a combined filter, then one dot product per channel). They must agree within floating-
     /// point rounding tolerance.
     fn compare_1ch_4ch_sinc_output(
         interpolation: SincInterpolationType,

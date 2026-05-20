@@ -2,6 +2,9 @@ use crate::sinc::make_sincs;
 use crate::windows::WindowFunction;
 use crate::Sample;
 
+pub(crate) mod aligned_buf;
+pub(crate) use aligned_buf::AlignedBuf;
+
 /// Helper macro to define a dummy implementation of the sample trait if a
 /// feature is not supported.
 macro_rules! interpolator {
@@ -55,7 +58,7 @@ pub(crate) trait SincInterpolator<T>: Send {
     fn get_sinc_dot_product(&self, wave: &[T], index: usize, sinc: &[T]) -> T;
 
     /// Expose the raw sinc table for use in combined-sinc building.
-    fn get_sincs(&self) -> &[Vec<T>];
+    fn get_sincs(&self) -> &[AlignedBuf<T>];
 
     /// Get sinc length.
     fn nbr_points(&self) -> usize;
@@ -63,7 +66,13 @@ pub(crate) trait SincInterpolator<T>: Send {
     /// Get number of sincs used for oversampling.
     fn nbr_sincs(&self) -> usize;
 
+    /// Warm the CPU cache with the sinc row at `subindex`.
+    /// The default is a no-op; SIMD backends may override this to hide L2 latency.
+    #[inline]
+    fn prefetch_sinc(&self, _subindex: usize) {}
+
     /// Make the scalar product between the waveform starting at `index` and the sinc of `subindex`.
+    #[inline]
     fn get_sinc_interpolated(&self, wave: &[T], index: usize, subindex: usize) -> T {
         assert!(
             (index + self.nbr_points()) < wave.len(),
@@ -98,8 +107,17 @@ pub(crate) trait SincInterpolator<T>: Send {
     where
         T: Sample,
     {
+        debug_assert_eq!(
+            combined.len(),
+            self.nbr_points() + 1,
+            "combined must be nbr_points()+1: the extra element holds any spillover \
+             from nearest points at the higher integer index"
+        );
         let min_idx = nearest.iter().map(|n| n.0).min().unwrap();
-        combined.iter_mut().for_each(|x| *x = T::zero());
+        // memset to zero — valid for f32/f64 since all-zero bits represent 0.0.
+        unsafe {
+            std::ptr::write_bytes(combined.as_mut_ptr(), 0, combined.len());
+        }
         for (n, &w) in nearest.iter().zip(weights.iter()) {
             let shift = (n.0 - min_idx) as usize;
             for (k, &s) in self.get_sincs()[n.1 as usize].iter().enumerate() {
@@ -110,10 +128,90 @@ pub(crate) trait SincInterpolator<T>: Send {
     }
 }
 
+/// A concrete enum over every sinc-interpolator implementation.
+///
+/// Replaces `Box<dyn SincInterpolator<T>>` so the hot path can dispatch via a
+/// `match` on a small closed set of variants, enabling the compiler to inline
+/// `get_sinc_dot_product` and fully unroll the inner FMA loop.
+///
+/// The bounds `T: AvxSample + SseSample + NeonSample` collapse to `T: Sample`
+/// on each platform because the non-native SIMD traits have blanket impls.
+#[cfg_attr(feature = "bench_asyncro", visibility::make(pub))]
+pub(crate) enum AnyInterpolator<T>
+where
+    T: AvxSample + SseSample + NeonSample + Sample,
+{
+    #[cfg(target_arch = "x86_64")]
+    Avx(sinc_interpolator_avx::AvxInterpolator<T>),
+    #[cfg(target_arch = "x86_64")]
+    Sse(sinc_interpolator_sse::SseInterpolator<T>),
+    #[cfg(target_arch = "aarch64")]
+    Neon(sinc_interpolator_neon::NeonInterpolator<T>),
+    Scalar(ScalarInterpolator<T>),
+}
+
+/// Dispatch a method call to the active interpolator variant.
+macro_rules! dispatch {
+    ($self:expr, $method:ident ($($arg:expr),*)) => {
+        match $self {
+            #[cfg(target_arch = "x86_64")]
+            AnyInterpolator::Avx(i) => i.$method($($arg),*),
+            #[cfg(target_arch = "x86_64")]
+            AnyInterpolator::Sse(i) => i.$method($($arg),*),
+            #[cfg(target_arch = "aarch64")]
+            AnyInterpolator::Neon(i) => i.$method($($arg),*),
+            AnyInterpolator::Scalar(i) => i.$method($($arg),*),
+        }
+    };
+}
+
+impl<T> SincInterpolator<T> for AnyInterpolator<T>
+where
+    T: AvxSample + SseSample + NeonSample + Sample,
+{
+    #[inline]
+    fn get_sinc_dot_product(&self, wave: &[T], index: usize, sinc: &[T]) -> T {
+        dispatch!(self, get_sinc_dot_product(wave, index, sinc))
+    }
+
+    #[inline]
+    fn get_sincs(&self) -> &[AlignedBuf<T>] {
+        dispatch!(self, get_sincs())
+    }
+
+    #[inline]
+    fn nbr_points(&self) -> usize {
+        dispatch!(self, nbr_points())
+    }
+
+    #[inline]
+    fn nbr_sincs(&self) -> usize {
+        dispatch!(self, nbr_sincs())
+    }
+
+    #[inline]
+    fn prefetch_sinc(&self, subindex: usize) {
+        dispatch!(self, prefetch_sinc(subindex))
+    }
+
+    #[inline]
+    fn make_combined_sinc(
+        &self,
+        nearest: &[(isize, isize)],
+        weights: &[T],
+        combined: &mut [T],
+    ) -> isize
+    where
+        T: Sample,
+    {
+        dispatch!(self, make_combined_sinc(nearest, weights, combined))
+    }
+}
+
 /// A plain scalar interpolator.
 #[cfg_attr(feature = "bench_asyncro", visibility::make(pub))]
 pub(crate) struct ScalarInterpolator<T> {
-    sincs: Vec<Vec<T>>,
+    sincs: Vec<AlignedBuf<T>>,
     length: usize,
     nbr_sincs: usize,
 }
@@ -149,7 +247,7 @@ where
         }
     }
 
-    fn get_sincs(&self) -> &[Vec<T>] {
+    fn get_sincs(&self) -> &[AlignedBuf<T>] {
         &self.sincs
     }
 
@@ -180,7 +278,11 @@ where
         window: WindowFunction,
     ) -> Self {
         assert!(sinc_len % 8 == 0, "Sinc length must be a multiple of 8");
-        let sincs = make_sincs(sinc_len, oversampling_factor, f_cutoff, window);
+        let raw_sincs: Vec<Vec<T>> = make_sincs(sinc_len, oversampling_factor, f_cutoff, window);
+        let sincs = raw_sincs
+            .into_iter()
+            .map(|row| AlignedBuf::from_slice(&row))
+            .collect();
         Self {
             sincs,
             length: sinc_len,

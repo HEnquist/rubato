@@ -60,9 +60,12 @@ For example, converting a file from 44.1 kHz to 48 kHz.
 The ratio, 48 kHz / 44.1 kHz (equivalent to 160 / 147),
 is fixed and constant throughout the process.
 
-Synchronous resampling is implemented via FFT. The data is FFT:ed, the spectrum modified,
-and then inverse FFT:ed to get the resampled data.
-This type of resampler is considerably faster but doesn't support changing the resampling ratio.
+Synchronous resampling is implemented via FFT (Fast Fourier Transform).
+The audio data is transformed into the frequency domain,
+the spectrum is scaled to match the target sample rate,
+and then transformed back to produce the resampled output.
+This type of resampler is considerably faster than sinc-based approaches
+but doesn't support changing the resampling ratio.
 
 ## Usage
 The resamplers provided by this library are intended to support processing streams of audio.
@@ -74,21 +77,28 @@ This gives a good compromise between efficiency and memory usage.
 ### Chunk size and fixed size options
 
 Rubato processes audio in chunks.
-The size of these chunks is determined by the chunk size parameter given to the resampler constructor.
-Depending on the configuration, this parameter determines
-the number of frames in the input or output chunk, or both.
+The `chunk_size` parameter given to the resampler constructor sets the target size
+for the **fixed side** — the side that always has the same number of frames per call.
+The other side is variable and will differ from call to call.
 
 The resamplers allow specifying which side should have a fixed size.
 
-*   **Fixed input**: The input chunk size is fixed to the given value.
-    The output chunk size will vary depending on how many samples can be calculated using the available input data.
-    This is convenient to use for resampling data from a source that delivers data in fixed size chunks.
-*   **Fixed output**: The output chunk size is fixed to the given value.
-    The input chunk size will vary depending on how many new samples the resampler needs to calculate the output.
-    This is meant to be used for resampling data that will be sent to some target that requires fixed size chunks.
-*   **Both input and output fixed**: Both input and output chunk sizes are fixed.
+*   **Fixed input** (`FixedAsync::Input` / `FixedSync::Input`):
+    The input chunk size is fixed to `chunk_size` frames per call.
+    The output chunk size varies depending on how many samples can be calculated
+    from the available input data.
+    This is convenient when the audio source delivers data in fixed-size chunks
+    (e.g. a hardware capture callback).
+*   **Fixed output** (`FixedAsync::Output` / `FixedSync::Output`):
+    The output chunk size is fixed to `chunk_size` frames per call.
+    The input chunk size varies depending on how many new samples the resampler
+    needs to fill the output.
+    This is useful when the audio destination consumes fixed-size chunks
+    (e.g. a hardware playback callback).
+*   **Both input and output fixed** (`FixedSync::Both`):
+    Both input and output chunk sizes are fixed.
     This mode is only available for the synchronous resampler.
-    In this mode, the chunk size parameter is used as a hint,
+    In this mode, the `chunk_size` parameter is used as a hint,
     and the actual chunk sizes are calculated to fit the resampling ratio exactly.
     For example, a 44.1 kHz to 48 kHz resampler must use an input chunk size that is a multiple of 147,
     and an output chunk size that is a multiple of 160, in order to maintain the correct resampling ratio.
@@ -98,6 +108,24 @@ The resamplers allow specifying which side should have a fixed size.
 
     For asynchronous resamplers, fixing both input and output chunk sizes is not possible
     since the resampling ratio can change, requiring at least one side to be variable.
+
+### Input and output sizes per call
+
+The `chunk_size` constructor parameter is only the *target* size for the fixed side.
+Always call `input_frames_next()` before providing data to `process_into_buffer`
+to find out the exact number of input frames required for that call.
+Similarly, call `output_frames_next()` to find the exact number of output frames that will be written.
+
+*   With fixed input, `input_frames_next()` always returns `chunk_size`.
+    `output_frames_next()` varies and must be checked each call.
+*   With fixed output, `output_frames_next()` always returns `chunk_size`.
+    `input_frames_next()` varies and must be checked each call.
+*   With `FixedSync::Both`, both values are fixed, but they may differ from `chunk_size`
+    because they are rounded to fit the exact sample-rate ratio.
+
+The input and output buffers must be large enough to hold at least the number of frames
+reported by `input_frames_next()` and `output_frames_next()` respectively.
+Both buffers may be larger than required — only the needed frames are read or written.
 
 ### Resampling quality
 The synchronous resampler has no quality settings, it always delivers the best quality.
@@ -313,6 +341,12 @@ Many audio editors, for example Audacity, are also able to directly import and e
 The `rubato` crate requires rustc version 1.85 or newer.
 
 ## Changelog
+- v3.0.0
+  - Use separate lifetimes for `buffer_in` and `buffer_out` in `process_into_buffer`.
+  - Improve sinc resampler performance with smarter dot product calculation.
+  - Improve SIMD performance (AVX, SSE, NEON) using multiple accumulators.
+  - Switch dot product strategy based on channel count.
+  - More aggressive inlining of hot paths.
 - v2.0.0
   - Update to `audioadapter` 3.0.
   - Add re-export of `audioadapter-buffers`.
