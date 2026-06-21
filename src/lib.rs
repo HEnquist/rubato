@@ -70,7 +70,7 @@ pub use crate::windows::{calculate_cutoff, WindowFunction};
 ///
 /// All fields have sensible defaults: zero offsets, no partial length, and all channels active.
 /// Pass `None` as the `indexing` argument to use these defaults without constructing the struct.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Indexing {
     /// Number of frames to skip at the beginning of the input buffer before reading.
     /// Use this to process a sub-region of a larger buffer without copying data.
@@ -103,6 +103,48 @@ pub struct Indexing {
     /// `false` means the channel is skipped and its output is left unchanged.
     /// When `None`, all channels are processed.
     pub active_channels_mask: Option<Vec<bool>>,
+}
+
+impl Indexing {
+    /// Create an [Indexing] with all fields at their defaults:
+    /// zero offsets, no partial length, and all channels active.
+    ///
+    /// Chain the setters to configure only the fields you need:
+    ///
+    /// ```
+    /// use rubato::Indexing;
+    ///
+    /// let indexing = Indexing::new()
+    ///     .input_offset(128)
+    ///     .partial_len(64);
+    /// ```
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the number of frames to skip at the start of the input buffer.
+    pub fn input_offset(mut self, frames: usize) -> Self {
+        self.input_offset = frames;
+        self
+    }
+
+    /// Set the number of frames to skip at the start of the output buffer.
+    pub fn output_offset(mut self, frames: usize) -> Self {
+        self.output_offset = frames;
+        self
+    }
+
+    /// Set the number of valid input frames available for a partial (final) chunk.
+    pub fn partial_len(mut self, frames: usize) -> Self {
+        self.partial_len = Some(frames);
+        self
+    }
+
+    /// Set the per-channel processing mask.
+    pub fn active_channels_mask(mut self, mask: Vec<bool>) -> Self {
+        self.active_channels_mask = Some(mask);
+        self
+    }
 }
 
 pub(crate) fn get_offsets(indexing: &Option<&Indexing>) -> (usize, usize) {

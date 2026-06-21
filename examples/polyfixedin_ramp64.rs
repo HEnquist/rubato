@@ -120,12 +120,7 @@ fn main() {
     let mut output_time = 0.0;
 
     let input_adapter = InterleavedSlice::new(&indata, channels, nbr_input_frames).unwrap();
-    let mut indexing = Indexing {
-        input_offset: 0,
-        output_offset: 0,
-        active_channels_mask: None,
-        partial_len: None,
-    };
+    let mut indexing = Indexing::new();
 
     let start = Instant::now();
 

@@ -10,7 +10,7 @@ use crate::sinc_interpolator::{
     AlignedBuf, AnyInterpolator, AvxSample, NeonSample, ScalarInterpolator, SincInterpolator,
     SseSample,
 };
-use crate::windows::WindowFunction;
+use crate::windows::{calculate_cutoff, WindowFunction};
 use crate::Sample;
 use audioadapter::AdapterMut;
 
@@ -42,6 +42,71 @@ pub struct SincInterpolationParameters {
     pub interpolation: SincInterpolationType,
     /// Window function to use.
     pub window: WindowFunction,
+}
+
+impl SincInterpolationParameters {
+    /// Create a [SincInterpolationParameters] from the two parameters that determine the
+    /// filter's frequency response: the filter length `sinc_len` and the `window` function.
+    /// The `f_cutoff` field is computed from these with [calculate_cutoff], which picks the
+    /// highest cutoff that keeps aliasing below the window's sidelobe level.
+    ///
+    /// The remaining fields start at sensible defaults: `oversampling_factor` 128 and
+    /// [Cubic](SincInterpolationType::Cubic) interpolation.
+    /// Chain the setters to adjust them:
+    ///
+    /// ```
+    /// use rubato::{SincInterpolationParameters, SincInterpolationType, WindowFunction};
+    ///
+    /// let params = SincInterpolationParameters::new(256, WindowFunction::Blackman2)
+    ///     .oversampling_factor(256)
+    ///     .interpolation(SincInterpolationType::Linear);
+    /// ```
+    pub fn new(sinc_len: usize, window: WindowFunction) -> Self {
+        SincInterpolationParameters {
+            sinc_len,
+            f_cutoff: calculate_cutoff(sinc_len, window),
+            oversampling_factor: 128,
+            interpolation: SincInterpolationType::Cubic,
+            window,
+        }
+    }
+
+    /// Set the length of the windowed sinc interpolation filter, and recompute `f_cutoff`
+    /// from the new length and the current window with [calculate_cutoff].
+    pub fn sinc_len(mut self, sinc_len: usize) -> Self {
+        self.sinc_len = sinc_len;
+        self.f_cutoff = calculate_cutoff(sinc_len, self.window);
+        self
+    }
+
+    /// Set the window function, and recompute `f_cutoff` from the current `sinc_len`
+    /// and the new window with [calculate_cutoff].
+    pub fn window(mut self, window: WindowFunction) -> Self {
+        self.window = window;
+        self.f_cutoff = calculate_cutoff(self.sinc_len, window);
+        self
+    }
+
+    /// Override the relative cutoff frequency of the sinc interpolation filter.
+    /// By default it is derived from `sinc_len` and `window`; only set it explicitly if you
+    /// have a specific value in mind. Call this last, since [sinc_len](Self::sinc_len) and
+    /// [window](Self::window) recompute the cutoff and would overwrite an earlier override.
+    pub fn f_cutoff(mut self, f_cutoff: f32) -> Self {
+        self.f_cutoff = f_cutoff;
+        self
+    }
+
+    /// Set the number of intermediate points to use for interpolation.
+    pub fn oversampling_factor(mut self, oversampling_factor: usize) -> Self {
+        self.oversampling_factor = oversampling_factor;
+        self
+    }
+
+    /// Set the interpolation type.
+    pub fn interpolation(mut self, interpolation: SincInterpolationType) -> Self {
+        self.interpolation = interpolation;
+        self
+    }
 }
 
 /// Interpolation methods that can be selected. For asynchronous interpolation where the

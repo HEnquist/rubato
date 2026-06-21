@@ -287,12 +287,7 @@ let mut output_adapter =
     InterleavedSlice::new_mut(&mut outdata, 2, outdata_capacity).unwrap();
 
 // Preparations
-let mut indexing = Indexing {
-    input_offset: 0,
-    output_offset: 0,
-    active_channels_mask: None,
-    partial_len: None,
-};
+let mut indexing = Indexing::new();
 
 let mut input_frames_left = nbr_input_frames;
 let mut input_frames_next = resampler.input_frames_next();
@@ -344,6 +339,11 @@ The `rubato` crate requires rustc version 1.85 or newer.
 - v4.0.0
   - Update to `audioadapter` 4.0, which removes the lifetime parameter from the
     `Adapter` and `AdapterMut` traits.
+  - Add a fluent way to construct an `Indexing`: `Indexing::new` plus chainable setters,
+    and implement `Default` for `Indexing`.
+  - Add a fluent way to construct `SincInterpolationParameters`:
+    `SincInterpolationParameters::new(sinc_len, window)` derives `f_cutoff` with
+    `calculate_cutoff` and defaults the rest, with chainable setters to adjust them.
 - v3.0.0
   - Use separate lifetimes for `buffer_in` and `buffer_out` in `process_into_buffer`.
   - Improve sinc resampler performance with smarter dot product calculation.

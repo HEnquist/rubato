@@ -1,7 +1,7 @@
 extern crate rubato;
 use audioadapter_buffers::direct::InterleavedSlice;
 use rubato::{
-    calculate_cutoff, Async, FixedAsync, Indexing, Resampler, SincInterpolationParameters,
+    Async, FixedAsync, Indexing, Resampler, SincInterpolationParameters,
     SincInterpolationType, WindowFunction,
 };
 use std::convert::TryInto;
@@ -113,14 +113,9 @@ fn main() {
     let interpolation = SincInterpolationType::Linear;
     let window = WindowFunction::Blackman2;
 
-    let f_cutoff = calculate_cutoff(sinc_len, window);
-    let params = SincInterpolationParameters {
-        sinc_len,
-        f_cutoff,
-        interpolation,
-        oversampling_factor,
-        window,
-    };
+    let params = SincInterpolationParameters::new(sinc_len, window)
+        .oversampling_factor(oversampling_factor)
+        .interpolation(interpolation);
 
     let chunksize = 1024;
     let target_ratio = final_ratio / 100.0;
@@ -135,12 +130,7 @@ fn main() {
     .unwrap();
 
     let input_adapter = InterleavedSlice::new(&indata, channels, nbr_input_frames).unwrap();
-    let mut indexing = Indexing {
-        input_offset: 0,
-        output_offset: 0,
-        active_channels_mask: None,
-        partial_len: None,
-    };
+    let mut indexing = Indexing::new();
 
     let start = Instant::now();
     let mut output_time = 0.0;

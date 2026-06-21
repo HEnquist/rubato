@@ -3,7 +3,7 @@ use audioadapter_buffers::number_to_float::InterleavedNumbers;
 use audioadapter_sample::sample::I16_LE;
 
 use rubato::{
-    calculate_cutoff, Async, FixedAsync, Indexing, Resampler, SincInterpolationParameters,
+    Async, FixedAsync, Indexing, Resampler, SincInterpolationParameters,
     SincInterpolationType, WindowFunction,
 };
 use std::env;
@@ -88,14 +88,9 @@ fn main() {
     let oversampling_factor = 256;
     let interpolation = SincInterpolationType::Quadratic;
     let window = WindowFunction::Blackman2;
-    let f_cutoff = calculate_cutoff(sinc_len, window);
-    let params = SincInterpolationParameters {
-        sinc_len,
-        f_cutoff,
-        interpolation,
-        oversampling_factor,
-        window,
-    };
+    let params = SincInterpolationParameters::new(sinc_len, window)
+        .oversampling_factor(oversampling_factor)
+        .interpolation(interpolation);
     let mut resampler =
         Async::<f32>::new_sinc(f_ratio, 1.1, &params, 1024, channels, FixedAsync::Input).unwrap();
 
@@ -116,12 +111,7 @@ fn main() {
 
     println!("Process all full chunks");
     let start = Instant::now();
-    let mut indexing = Indexing {
-        input_offset: 0,
-        output_offset: 0,
-        active_channels_mask: None,
-        partial_len: None,
-    };
+    let mut indexing = Indexing::new();
     let mut input_frames_left = nbr_input_frames;
 
     while input_frames_left >= input_frames_next {
