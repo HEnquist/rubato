@@ -153,7 +153,7 @@ where
         t_ratio: f64,
         t_ratio_increment: f64,
         wave_in: &[Vec<T>],
-        wave_out: &mut dyn AdapterMut<'_, T>,
+        wave_out: &mut dyn AdapterMut<T>,
         output_offset: usize,
     ) -> f64 {
         let interpolator_len = self.nbr_points();

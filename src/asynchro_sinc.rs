@@ -299,7 +299,7 @@ where
         interpolator_len: usize,
         channel_mask: &[bool],
         wave_in: &[Vec<T>],
-        wave_out: &mut dyn AdapterMut<'_, T>,
+        wave_out: &mut dyn AdapterMut<T>,
         frame: usize,
         output_offset: usize,
     ) {
@@ -334,7 +334,7 @@ where
         interpolator_len: usize,
         channel_mask: &[bool],
         wave_in: &[Vec<T>],
-        wave_out: &mut dyn AdapterMut<'_, T>,
+        wave_out: &mut dyn AdapterMut<T>,
         frame: usize,
         output_offset: usize,
         interp: impl Fn(&[T]) -> T,
@@ -369,7 +369,7 @@ where
         t_ratio: f64,
         t_ratio_increment: f64,
         wave_in: &[Vec<T>],
-        wave_out: &mut dyn AdapterMut<'_, T>,
+        wave_out: &mut dyn AdapterMut<T>,
         output_offset: usize,
     ) -> f64 {
         let mut t_ratio = t_ratio;

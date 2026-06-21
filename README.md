@@ -341,6 +341,9 @@ Many audio editors, for example Audacity, are also able to directly import and e
 The `rubato` crate requires rustc version 1.85 or newer.
 
 ## Changelog
+- v4.0.0
+  - Update to `audioadapter` 4.0, which removes the lifetime parameter from the
+    `Adapter` and `AdapterMut` traits.
 - v3.0.0
   - Use separate lifetimes for `buffer_in` and `buffer_out` in `process_into_buffer`.
   - Improve sinc resampler performance with smarter dot product calculation.

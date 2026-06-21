@@ -145,7 +145,7 @@ where
     /// [process_into_buffer](Resampler::process_into_buffer).
     fn process(
         &mut self,
-        buffer_in: &dyn Adapter<'_, T>,
+        buffer_in: &dyn Adapter<T>,
         input_offset: usize,
         active_channels_mask: Option<&[bool]>,
     ) -> ResampleResult<InterleavedOwned<T>> {
@@ -194,10 +194,10 @@ where
     /// Both input and output are allowed to be longer than required.
     /// The number of input samples consumed and the number output samples written
     /// per channel is returned in a tuple, `(input_frames, output_frames)`.
-    fn process_into_buffer<'a, 'b>(
+    fn process_into_buffer(
         &mut self,
-        buffer_in: &dyn Adapter<'a, T>,
-        buffer_out: &mut dyn AdapterMut<'b, T>,
+        buffer_in: &dyn Adapter<T>,
+        buffer_out: &mut dyn AdapterMut<T>,
         indexing: Option<&Indexing>,
     ) -> ResampleResult<(usize, usize)>;
 
@@ -216,10 +216,10 @@ where
     /// [process_into_buffer](Resampler::process_into_buffer).
     ///
     /// Returns the lengths of the original input and the resampled output.
-    fn process_all_into_buffer<'a, 'b>(
+    fn process_all_into_buffer(
         &mut self,
-        buffer_in: &dyn Adapter<'a, T>,
-        buffer_out: &mut dyn AdapterMut<'b, T>,
+        buffer_in: &dyn Adapter<T>,
+        buffer_out: &mut dyn AdapterMut<T>,
         input_len: usize,
         active_channels_mask: Option<&[bool]>,
     ) -> ResampleResult<(usize, usize)> {
@@ -371,9 +371,9 @@ where
     }
 }
 
-pub(crate) fn validate_buffers<'a, 'b, T: 'a + 'b>(
-    wave_in: &dyn Adapter<'a, T>,
-    wave_out: &dyn AdapterMut<'b, T>,
+pub(crate) fn validate_buffers<T>(
+    wave_in: &dyn Adapter<T>,
+    wave_out: &dyn AdapterMut<T>,
     mask: &[bool],
     channels: usize,
     min_input_len: usize,

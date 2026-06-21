@@ -37,7 +37,7 @@ pub trait InnerResampler<T>: Send {
         t_ratio: f64,
         t_ratio_increment: f64,
         wave_in: &[Vec<T>],
-        wave_out: &mut dyn AdapterMut<'_, T>,
+        wave_out: &mut dyn AdapterMut<T>,
         output_offset: usize,
     ) -> f64;
 
@@ -447,10 +447,10 @@ impl<T> Resampler<T> for Async<T>
 where
     T: Sample,
 {
-    fn process_into_buffer<'a, 'b>(
+    fn process_into_buffer(
         &mut self,
-        buffer_in: &dyn Adapter<'a, T>,
-        buffer_out: &mut dyn AdapterMut<'b, T>,
+        buffer_in: &dyn Adapter<T>,
+        buffer_out: &mut dyn AdapterMut<T>,
         indexing: Option<&Indexing>,
     ) -> ResampleResult<(usize, usize)> {
         // read the optional indexing struct
