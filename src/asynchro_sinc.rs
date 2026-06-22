@@ -78,12 +78,14 @@ impl SincInterpolationParameters {
     }
 
     /// Set the length of the windowed sinc interpolation filter.
+    #[must_use]
     pub fn sinc_len(mut self, sinc_len: usize) -> Self {
         self.sinc_len = sinc_len;
         self
     }
 
     /// Set the window function.
+    #[must_use]
     pub fn window(mut self, window: WindowFunction) -> Self {
         self.window = window;
         self
@@ -92,18 +94,21 @@ impl SincInterpolationParameters {
     /// Override the relative cutoff frequency of the sinc interpolation filter.
     /// By default (see [new](Self::new)) the cutoff is derived from `sinc_len` and `window`;
     /// only set it explicitly if you have a specific value in mind.
+    #[must_use]
     pub fn f_cutoff(mut self, f_cutoff: f32) -> Self {
         self.f_cutoff = Some(f_cutoff);
         self
     }
 
     /// Set the number of intermediate points to use for interpolation.
+    #[must_use]
     pub fn oversampling_factor(mut self, oversampling_factor: usize) -> Self {
         self.oversampling_factor = oversampling_factor;
         self
     }
 
     /// Set the interpolation type.
+    #[must_use]
     pub fn interpolation(mut self, interpolation: SincInterpolationType) -> Self {
         self.interpolation = interpolation;
         self

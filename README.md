@@ -349,6 +349,8 @@ The `rubato` crate requires rustc version 1.85 or newer.
   - Let the synchronous `Fft` resampler choose the anti-aliasing window. `Fft::new` is
     simplified (it drops `sub_chunks`, picking a value automatically, and uses a default
     window), and a new `Fft::new_custom` exposes both `sub_chunks` and the window function.
+  - Derive `Clone`, `Copy` and `PartialEq` for `ResampleError` and
+    `ResamplerConstructionError`, and mark both `#[non_exhaustive]`.
 - v3.0.0
   - Use separate lifetimes for `buffer_in` and `buffer_out` in `process_into_buffer`.
   - Improve sinc resampler performance with smarter dot product calculation.

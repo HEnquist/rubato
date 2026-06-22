@@ -123,24 +123,28 @@ impl Indexing {
     }
 
     /// Set the number of frames to skip at the start of the input buffer.
+    #[must_use]
     pub fn input_offset(mut self, frames: usize) -> Self {
         self.input_offset = frames;
         self
     }
 
     /// Set the number of frames to skip at the start of the output buffer.
+    #[must_use]
     pub fn output_offset(mut self, frames: usize) -> Self {
         self.output_offset = frames;
         self
     }
 
     /// Set the number of valid input frames available for a partial (final) chunk.
+    #[must_use]
     pub fn partial_len(mut self, frames: usize) -> Self {
         self.partial_len = Some(frames);
         self
     }
 
     /// Set the per-channel processing mask.
+    #[must_use]
     pub fn active_channels_mask(mut self, mask: Vec<bool>) -> Self {
         self.active_channels_mask = Some(mask);
         self

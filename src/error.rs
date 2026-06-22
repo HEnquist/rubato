@@ -79,6 +79,8 @@ impl fmt::Display for MissingCpuFeature {
 impl error::Error for MissingCpuFeature {}
 
 /// The error type returned when constructing [Resampler](crate::Resampler).
+#[derive(Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub enum ResamplerConstructionError {
     InvalidSampleRate { input: usize, output: usize },
     InvalidRelativeRatio(f64),
@@ -114,6 +116,8 @@ impl fmt::Debug for ResamplerConstructionError {
 impl error::Error for ResamplerConstructionError {}
 
 /// The error type used by `rubato`.
+#[derive(Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub enum ResampleError {
     /// Error raised when [Resampler::set_resample_ratio](crate::Resampler::set_resample_ratio)
     /// is called with a ratio outside the maximum range specified when
