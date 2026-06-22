@@ -648,7 +648,7 @@ mod tests {
     fn basic_params() -> SincInterpolationParameters {
         SincInterpolationParameters {
             sinc_len: 64,
-            f_cutoff: 0.95,
+            f_cutoff: Some(0.95),
             interpolation: SincInterpolationType::Cubic,
             oversampling_factor: 16,
             window: WindowFunction::BlackmanHarris2,
@@ -916,7 +916,7 @@ mod tests {
     ) {
         let params = SincInterpolationParameters {
             sinc_len: 64,
-            f_cutoff: 0.95,
+            f_cutoff: Some(0.95),
             interpolation,
             oversampling_factor: 16,
             window: WindowFunction::BlackmanHarris2,

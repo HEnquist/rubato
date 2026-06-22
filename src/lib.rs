@@ -472,7 +472,7 @@ pub mod tests {
             1.1,
             &SincInterpolationParameters {
                 sinc_len: 64,
-                f_cutoff: 0.95,
+                f_cutoff: Some(0.95),
                 interpolation: SincInterpolationType::Cubic,
                 oversampling_factor: 16,
                 window: WindowFunction::BlackmanHarris2,
@@ -533,7 +533,7 @@ pub mod tests {
                 1.1,
                 &SincInterpolationParameters {
                     sinc_len: 64,
-                    f_cutoff: 0.95,
+                    f_cutoff: Some(0.95),
                     interpolation: SincInterpolationType::Cubic,
                     oversampling_factor: 16,
                     window: WindowFunction::BlackmanHarris2,

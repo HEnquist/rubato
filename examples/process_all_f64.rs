@@ -118,15 +118,15 @@ fn main() {
         }
         #[cfg(feature = "fft_resampler")]
         "FftFixedInput" => {
-            Box::new(Fft::<f64>::new(fs_in, fs_out, 1024, 2, channels, FixedSync::Input).unwrap())
+            Box::new(Fft::<f64>::new(fs_in, fs_out, 1024, channels, FixedSync::Input).unwrap())
         }
         #[cfg(feature = "fft_resampler")]
         "FftFixedOutput" => {
-            Box::new(Fft::<f64>::new(fs_in, fs_out, 1024, 2, channels, FixedSync::Output).unwrap())
+            Box::new(Fft::<f64>::new(fs_in, fs_out, 1024, channels, FixedSync::Output).unwrap())
         }
         #[cfg(feature = "fft_resampler")]
         "FftFixedBoth" => {
-            Box::new(Fft::<f64>::new(fs_in, fs_out, 1024, 1, channels, FixedSync::Both).unwrap())
+            Box::new(Fft::<f64>::new(fs_in, fs_out, 1024, channels, FixedSync::Both).unwrap())
         }
         _ => panic!("Unknown resampler type {}\nMust be one of SincFixedInput, SincFixedOutput, PolyFixedInput, PolyFixedOutput, FftFixedInput, FftFixedOutput, FftFixedBoth", resampler_type),
     };

@@ -271,7 +271,7 @@ use rubato::{
 };
 use audioadapter_buffers::direct::InterleavedSlice;
 
-let mut resampler = Fft::<f64>::new(48000, 44100, 1024, 2, 2, FixedSync::Both).unwrap();
+let mut resampler = Fft::<f64>::new(48000, 44100, 1024, 2, FixedSync::Both).unwrap();
 
 // create a short dummy audio clip, assuming it's stereo stored as interleaved f64 values
 let audio_clip = vec![0.0; 2*10000];
@@ -342,8 +342,13 @@ The `rubato` crate requires rustc version 1.85 or newer.
   - Add a fluent way to construct an `Indexing`: `Indexing::new` plus chainable setters,
     and implement `Default` for `Indexing`.
   - Add a fluent way to construct `SincInterpolationParameters`:
-    `SincInterpolationParameters::new(sinc_len, window)` derives `f_cutoff` with
-    `calculate_cutoff` and defaults the rest, with chainable setters to adjust them.
+    `SincInterpolationParameters::new(sinc_len, window)` plus chainable setters.
+  - Change `SincInterpolationParameters::f_cutoff` to an `Option<f32>`. Leave it `None`
+    (the default) to let the resampler derive the cutoff from `sinc_len` and `window` with
+    `calculate_cutoff`, or set `Some(value)` to override it.
+  - Let the synchronous `Fft` resampler choose the anti-aliasing window. `Fft::new` is
+    simplified (it drops `sub_chunks`, picking a value automatically, and uses a default
+    window), and a new `Fft::new_custom` exposes both `sub_chunks` and the window function.
 - v3.0.0
   - Use separate lifetimes for `buffer_in` and `buffer_out` in `process_into_buffer`.
   - Improve sinc resampler performance with smarter dot product calculation.

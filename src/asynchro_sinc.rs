@@ -30,8 +30,15 @@ pub struct SincInterpolationParameters {
     /// The value will be rounded up to the nearest multiple of 8.
     pub sinc_len: usize,
     /// Relative cutoff frequency of the sinc interpolation filter
-    /// (relative to the lowest one of fs_in/2 or fs_out/2). Start at 0.95, and increase if needed.
-    pub f_cutoff: f32,
+    /// (relative to the lowest one of fs_in/2 or fs_out/2).
+    ///
+    /// `None` (the default) lets the resampler choose the cutoff automatically with
+    /// [calculate_cutoff], which picks the highest cutoff that keeps aliasing below the
+    /// window's sidelobe level for the given filter length. This is the recommended setting.
+    ///
+    /// Set `Some(value)` only to override the automatic choice, for example to roll off
+    /// earlier for more guard band, or to push the cutoff higher to preserve more high end.
+    pub f_cutoff: Option<f32>,
     /// The number of intermediate points to use for interpolation.
     /// Higher values use more memory for storing the sinc filters.
     /// Only the points actually needed are calculated during processing
@@ -47,12 +54,11 @@ pub struct SincInterpolationParameters {
 impl SincInterpolationParameters {
     /// Create a [SincInterpolationParameters] from the two parameters that determine the
     /// filter's frequency response: the filter length `sinc_len` and the `window` function.
-    /// The `f_cutoff` field is computed from these with [calculate_cutoff], which picks the
-    /// highest cutoff that keeps aliasing below the window's sidelobe level.
     ///
-    /// The remaining fields start at sensible defaults: `oversampling_factor` 128 and
-    /// [Cubic](SincInterpolationType::Cubic) interpolation.
-    /// Chain the setters to adjust them:
+    /// The cutoff frequency is left automatic (`f_cutoff` is `None`), so the resampler derives
+    /// it from `sinc_len` and `window` with [calculate_cutoff]. The remaining fields start at
+    /// sensible defaults: `oversampling_factor` 128 and [Cubic](SincInterpolationType::Cubic)
+    /// interpolation. Chain the setters to adjust them:
     ///
     /// ```
     /// use rubato::{SincInterpolationParameters, SincInterpolationType, WindowFunction};
@@ -64,35 +70,30 @@ impl SincInterpolationParameters {
     pub fn new(sinc_len: usize, window: WindowFunction) -> Self {
         SincInterpolationParameters {
             sinc_len,
-            f_cutoff: calculate_cutoff(sinc_len, window),
+            f_cutoff: None,
             oversampling_factor: 128,
             interpolation: SincInterpolationType::Cubic,
             window,
         }
     }
 
-    /// Set the length of the windowed sinc interpolation filter, and recompute `f_cutoff`
-    /// from the new length and the current window with [calculate_cutoff].
+    /// Set the length of the windowed sinc interpolation filter.
     pub fn sinc_len(mut self, sinc_len: usize) -> Self {
         self.sinc_len = sinc_len;
-        self.f_cutoff = calculate_cutoff(sinc_len, self.window);
         self
     }
 
-    /// Set the window function, and recompute `f_cutoff` from the current `sinc_len`
-    /// and the new window with [calculate_cutoff].
+    /// Set the window function.
     pub fn window(mut self, window: WindowFunction) -> Self {
         self.window = window;
-        self.f_cutoff = calculate_cutoff(self.sinc_len, window);
         self
     }
 
     /// Override the relative cutoff frequency of the sinc interpolation filter.
-    /// By default it is derived from `sinc_len` and `window`; only set it explicitly if you
-    /// have a specific value in mind. Call this last, since [sinc_len](Self::sinc_len) and
-    /// [window](Self::window) recompute the cutoff and would overwrite an earlier override.
+    /// By default (see [new](Self::new)) the cutoff is derived from `sinc_len` and `window`;
+    /// only set it explicitly if you have a specific value in mind.
     pub fn f_cutoff(mut self, f_cutoff: f32) -> Self {
-        self.f_cutoff = f_cutoff;
+        self.f_cutoff = Some(f_cutoff);
         self
     }
 
@@ -198,7 +199,7 @@ pub enum SincInterpolationType {
 pub fn make_interpolator<T>(
     sinc_len: usize,
     resample_ratio: f64,
-    f_cutoff: f32,
+    f_cutoff: Option<f32>,
     oversampling_factor: usize,
     window: WindowFunction,
 ) -> AnyInterpolator<T>
@@ -206,6 +207,9 @@ where
     T: AvxSample + SseSample + NeonSample + Sample,
 {
     let sinc_len = 8 * (((sinc_len as f32) / 8.0).ceil() as usize);
+    // Resolve an automatic cutoff against the rounded filter length, so it matches the
+    // filter that is actually built.
+    let f_cutoff = f_cutoff.unwrap_or_else(|| calculate_cutoff(sinc_len, window));
     let f_cutoff = if resample_ratio >= 1.0 {
         f_cutoff
     } else {
