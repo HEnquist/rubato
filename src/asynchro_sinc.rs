@@ -51,6 +51,15 @@ pub struct SincInterpolationParameters {
     pub window: WindowFunction,
 }
 
+impl Default for SincInterpolationParameters {
+    /// The defaults match [new](SincInterpolationParameters::new) called with a `sinc_len`
+    /// of 256 and a [BlackmanHarris2](WindowFunction::BlackmanHarris2) window: an automatic
+    /// cutoff, `oversampling_factor` 128 and [Cubic](SincInterpolationType::Cubic) interpolation.
+    fn default() -> Self {
+        Self::new(256, WindowFunction::BlackmanHarris2)
+    }
+}
+
 impl SincInterpolationParameters {
     /// Create a [SincInterpolationParameters] from the two parameters that determine the
     /// filter's frequency response: the filter length `sinc_len` and the `window` function.

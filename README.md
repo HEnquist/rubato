@@ -346,6 +346,8 @@ The `rubato` crate requires rustc version 1.85 or newer.
   - Change `SincInterpolationParameters::f_cutoff` to an `Option<f32>`. Leave it `None`
     (the default) to let the resampler derive the cutoff from `sinc_len` and `window` with
     `calculate_cutoff`, or set `Some(value)` to override it.
+  - Implement `Default` for `SincInterpolationParameters` (`sinc_len` 256, automatic cutoff,
+    `oversampling_factor` 128, `Cubic` interpolation, `BlackmanHarris2` window).
   - Let the synchronous `Fft` resampler choose the anti-aliasing window. `Fft::new` is
     simplified (it drops `sub_chunks`, picking a value automatically, and uses a default
     window), and a new `Fft::new_custom` exposes both `sub_chunks` and the window function.
