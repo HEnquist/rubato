@@ -34,7 +34,7 @@ struct FftResampler<T> {
 /// This is similar to [FixedAsync](crate::FixedAsync) that is used for the asynchronous resamplers.
 /// The difference is asynchronous resamplers must allow one side to vary,
 /// and can therefore not support the `Both` option.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FixedSync {
     /// Input size is fixed, output size varies.
     Input,

@@ -172,7 +172,7 @@ impl SincInterpolationParameters {
 ///   to choose Quadratic over Cubic for stereo content.
 /// - **Upgrading from Linear to Cubic** above the threshold costs the same as adding
 ///   two more channels at the current mode — a fixed overhead, not a multiplier.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SincInterpolationType {
     /// Cubic interpolation using the four nearest intermediate sinc points.
     /// A cubic polynomial is fitted to these points to compute each output sample.

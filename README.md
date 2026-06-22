@@ -158,21 +158,30 @@ The [log feature](#log-enable-logging) feature is disabled by default,
 and should not be enabled for real-time use.
 
 ### Resampling a given audio clip
-The resampler trait provides the `Resampler::process_all_into_buffer()` method
-for resampling a full audio clip of arbitrary length.
-To use this, create a resampler of suitable type, for example `Fft` which is fast and gives good quality.
+To resample a full audio clip that is already in memory, use either
+`Resampler::process_all()` or `Resampler::process_all_into_buffer()`.
+Both process the clip in suitably sized chunks internally and trim off the
+startup delay, so the result lines up with the input.
+Create a resampler of a suitable type, for example `Fft` which is fast and gives good quality.
 The chunk size can be chosen arbitrarily. Start with a chunk size of for example 1024.
 In this application, the exact input or output chunk sizes are not important
 and therefore the `FixedSync::Both` setting can be used for the `Fft` resampler.
-After creating the resampler, call `Resampler::process_all_needed_output_len()`
-to find out the minimum length of the needed output buffer.
-Create a suitable output buffer, and then call `Resampler::process_all_into_buffer()`.
+
+- `process_all()` is the simplest option. It allocates the output, trims the delay,
+  and returns an `InterleavedOwned` holding exactly the resampled frames.
+- `process_all_into_buffer()` writes into a buffer you provide, avoiding the allocation.
+  Call `Resampler::process_all_needed_output_len()` first to size the output buffer.
+
+> **Do not** create a resampler with the chunk size set to the whole clip length and
+> call `Resampler::process()` once. `process()` is meant for a single chunk and does not
+> trim the startup delay, so the output would start with silence and be missing the tail.
+> Use `process_all()` for whole clips instead.
 
 If there is more than one clip to resample from and to the same sample rates,
 the same resampler should be reused.
 Creating a new resampler is an expensive task and should be avoided when possible.
-Start the procedure from the start, but instead of creating a new resampler,
-call `Resampler::reset()` on the existing one to prepare it for a new job.
+`process_all()` resets the resampler for you; with `process_all_into_buffer()`,
+call `Resampler::reset()` between clips to prepare it for a new job.
 
 ### Resampling a stream
 When resampling a stream, the process is normally performed in real time,
@@ -335,6 +344,73 @@ Many audio editors, for example Audacity, are also able to directly import and e
 
 The `rubato` crate requires rustc version 1.85 or newer.
 
+## Migrating from 3.x to 4.0
+
+Version 4.0 has a handful of breaking changes. The common ones, with before/after:
+
+**`audioadapter` 4.0.** The `Adapter` and `AdapterMut` traits no longer carry a lifetime
+parameter. Update any explicit uses, and bump your own `audioadapter` / `audioadapter-buffers`
+dependencies to `4.0` to match the versions `rubato` re-exports.
+
+```rust,ignore
+// before
+fn resample(buf: &dyn Adapter<'_, f32>) { /* ... */ }
+// after
+fn resample(buf: &dyn Adapter<f32>) { /* ... */ }
+```
+
+**`Resampler::process` takes an `Option<&Indexing>`** instead of separate `input_offset` and
+`active_channels_mask` arguments, matching `process_into_buffer`.
+
+```rust,ignore
+// before
+let out = resampler.process(&input, 0, None)?;
+// after
+let out = resampler.process(&input, None)?;
+
+// before: with an offset and mask
+let out = resampler.process(&input, offset, Some(&mask))?;
+// after
+let indexing = Indexing::new().input_offset(offset).active_channels_mask(mask);
+let out = resampler.process(&input, Some(&indexing))?;
+```
+
+**`SincInterpolationParameters::f_cutoff` is now an `Option<f32>`.** Prefer
+`SincInterpolationParameters::new(sinc_len, window)`, which derives the cutoff automatically.
+When building the struct directly, use `None` for the automatic cutoff or wrap a manual value
+in `Some`.
+
+```rust,ignore
+// before
+let params = SincInterpolationParameters {
+    sinc_len: 256,
+    f_cutoff: 0.95,
+    oversampling_factor: 128,
+    interpolation: SincInterpolationType::Cubic,
+    window: WindowFunction::BlackmanHarris2,
+};
+// after (recommended): cutoff derived from sinc_len and window
+let params = SincInterpolationParameters::new(256, WindowFunction::BlackmanHarris2);
+// after (struct form): None for automatic, or Some(value) to override
+let params = SincInterpolationParameters { f_cutoff: None, ..params };
+```
+
+**`Fft::new` no longer takes `sub_chunks`.** It picks a value automatically and uses a default
+window. For control over either, use the new `Fft::new_custom`.
+
+```rust,ignore
+// before
+let r = Fft::<f64>::new(rate_in, rate_out, chunk_size, sub_chunks, channels, fixed)?;
+// after
+let r = Fft::<f64>::new(rate_in, rate_out, chunk_size, channels, fixed)?;
+// or, with explicit sub_chunks and window:
+let r = Fft::<f64>::new_custom(rate_in, rate_out, chunk_size, sub_chunks, channels,
+    WindowFunction::BlackmanHarris2, fixed)?;
+```
+
+**The error enums are now `#[non_exhaustive]`.** If you `match` on `ResampleError` or
+`ResamplerConstructionError`, add a `_ => ...` arm.
+
 ## Changelog
 - v4.0.0
   - Update to `audioadapter` 4.0, which removes the lifetime parameter from the
@@ -360,6 +436,8 @@ The `rubato` crate requires rustc version 1.85 or newer.
     window), and a new `Fft::new_custom` exposes both `sub_chunks` and the window function.
   - Derive `Clone`, `Copy` and `PartialEq` for `ResampleError` and
     `ResamplerConstructionError`, and mark both `#[non_exhaustive]`.
+  - Derive `PartialEq`, `Eq` and `Hash` for the configuration enums `WindowFunction`,
+    `SincInterpolationType`, `PolynomialDegree`, `FixedSync` and `FixedAsync`.
 - v3.0.0
   - Use separate lifetimes for `buffer_in` and `buffer_out` in `process_into_buffer`.
   - Improve sinc resampler performance with smarter dot product calculation.

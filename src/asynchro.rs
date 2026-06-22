@@ -17,7 +17,7 @@ use crate::{validate_buffers, Resampler, Sample};
 /// This is similar to [FixedSync](crate::FixedSync) that is used for the synchronous resamplers.
 /// The difference is asynchronous resamplers must allow one side to vary,
 /// and can therefore not support the `Both` option.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum FixedAsync {
     /// Input size is fixed, output size varies.
     Input,

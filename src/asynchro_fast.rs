@@ -12,7 +12,7 @@ macro_rules! t {
 
 /// Degree of the polynomial used for interpolation.
 /// A higher degree gives a higher quality result, while taking longer to compute.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PolynomialDegree {
     /// Septic polynomial, fitted using 8 sample points.
     Septic,
