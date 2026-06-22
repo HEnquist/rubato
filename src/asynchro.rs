@@ -11,7 +11,7 @@ use crate::sinc_interpolator::{
     AnyInterpolator, AvxSample, NeonSample, SincInterpolator, SseSample,
 };
 use crate::{get_offsets, get_partial_len, update_mask, Indexing};
-use crate::{validate_buffers, Resampler, Sample};
+use crate::{validate_buffers, Adjustable, Resampler, Resizable, Sample};
 
 /// An enum for specifying which side of an asynchronous resampler should be fixed size.
 /// This is similar to [FixedSync](crate::FixedSync) that is used for the synchronous resamplers.
@@ -155,7 +155,7 @@ where
     ///
     /// Parameters are:
     /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
-    /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Resampler::set_resample_ratio] relative to `resample_ratio`, must be >= 1.0. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio * 10.0` and `resample_ratio / 10.0`.
+    /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Adjustable::set_resample_ratio](crate::Adjustable::set_resample_ratio) relative to `resample_ratio`, must be >= 1.0. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio * 10.0` and `resample_ratio / 10.0`.
     /// - `interpolation_type`: Degree of polynomial used for interpolation, see [PolynomialDegree].
     /// - `chunk_size`: Size of input data in frames.
     /// - `nbr_channels`: Number of channels in input/output.
@@ -237,7 +237,7 @@ where
     ///
     /// Parameters are:
     /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
-    /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Resampler::set_resample_ratio] relative to `resample_ratio`, must be >= 1.0. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio * 10.0` and `resample_ratio / 10.0`.
+    /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Adjustable::set_resample_ratio](crate::Adjustable::set_resample_ratio) relative to `resample_ratio`, must be >= 1.0. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio * 10.0` and `resample_ratio / 10.0`.
     /// - `parameters`: Parameters for interpolation, see [SincInterpolationParameters].
     /// - `chunk_size`: Size of input data in frames.
     /// - `nbr_channels`: Number of channels in input/output.
@@ -277,7 +277,7 @@ where
     ///
     /// Parameters are:
     /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
-    /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Resampler::set_resample_ratio] relative to `resample_ratio`, must be >= 1.0. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio` * 10.0 and `resample_ratio` / 10.0.
+    /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Adjustable::set_resample_ratio](crate::Adjustable::set_resample_ratio) relative to `resample_ratio`, must be >= 1.0. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio` * 10.0 and `resample_ratio` / 10.0.
     /// - `interpolation_type`: Parameters for interpolation, see `SincInterpolationParameters`.
     /// - `interpolator`: The interpolator to use.
     /// - `chunk_size`: Size of output data in frames.
@@ -573,6 +573,35 @@ where
         self.needed_input_size
     }
 
+    fn resample_ratio(&self) -> f64 {
+        self.resample_ratio
+    }
+
+    fn reset(&mut self) {
+        self.buffer
+            .iter_mut()
+            .for_each(|ch| ch.iter_mut().for_each(|s| *s = T::zero()));
+        self.channel_mask.iter_mut().for_each(|val| *val = true);
+        self.last_index = self.inner_resampler.init_last_index();
+        self.resample_ratio = self.resample_ratio_original;
+        self.target_ratio = self.resample_ratio_original;
+        self.chunk_size = self.max_chunk_size;
+        self.update_lengths();
+    }
+
+    fn as_adjustable(&mut self) -> Option<&mut dyn Adjustable<T>> {
+        Some(self)
+    }
+
+    fn as_resizable(&mut self) -> Option<&mut dyn Resizable<T>> {
+        Some(self)
+    }
+}
+
+impl<T> Adjustable<T> for Async<T>
+where
+    T: Sample,
+{
     fn set_resample_ratio(&mut self, new_ratio: f64, ramp: bool) -> ResampleResult<()> {
         trace!("Change resample ratio to {}", new_ratio);
         if (new_ratio / self.resample_ratio_original >= 1.0 / self.max_relative_ratio)
@@ -593,27 +622,16 @@ where
         }
     }
 
-    fn resample_ratio(&self) -> f64 {
-        self.resample_ratio
-    }
-
     fn set_resample_ratio_relative(&mut self, rel_ratio: f64, ramp: bool) -> ResampleResult<()> {
         let new_ratio = self.resample_ratio_original * rel_ratio;
         self.set_resample_ratio(new_ratio, ramp)
     }
+}
 
-    fn reset(&mut self) {
-        self.buffer
-            .iter_mut()
-            .for_each(|ch| ch.iter_mut().for_each(|s| *s = T::zero()));
-        self.channel_mask.iter_mut().for_each(|val| *val = true);
-        self.last_index = self.inner_resampler.init_last_index();
-        self.resample_ratio = self.resample_ratio_original;
-        self.target_ratio = self.resample_ratio_original;
-        self.chunk_size = self.max_chunk_size;
-        self.update_lengths();
-    }
-
+impl<T> Resizable<T> for Async<T>
+where
+    T: Sample,
+{
     fn set_chunk_size(&mut self, chunksize: usize) -> ResampleResult<()> {
         if chunksize > self.max_chunk_size || chunksize == 0 {
             return Err(ResampleError::InvalidChunkSize {
@@ -632,7 +650,6 @@ mod tests {
     use crate::tests::expected_output_value;
     use crate::Indexing;
     use crate::PolynomialDegree;
-    use crate::Resampler;
     use crate::SincInterpolationParameters;
     use crate::SincInterpolationType;
     use crate::WindowFunction;
@@ -640,6 +657,7 @@ mod tests {
         assert_fi_len, assert_fo_len, check_input_offset, check_masked, check_output,
         check_output_offset, check_ratio, check_reset,
     };
+    use crate::{Adjustable, Resampler, Resizable};
     use crate::{Async, FixedAsync};
     use audioadapter_buffers::direct::SequentialSliceOfVecs;
     use test_case::test_matrix;

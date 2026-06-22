@@ -1,6 +1,6 @@
 extern crate rubato;
 use audioadapter_buffers::direct::InterleavedSlice;
-use rubato::{Async, FixedAsync, Indexing, PolynomialDegree, Resampler};
+use rubato::{Adjustable, Async, FixedAsync, Indexing, PolynomialDegree, Resampler};
 use std::convert::TryInto;
 use std::env;
 use std::fs::File;
