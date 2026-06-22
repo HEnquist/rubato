@@ -348,6 +348,13 @@ The `rubato` crate requires rustc version 1.85 or newer.
     `calculate_cutoff`, or set `Some(value)` to override it.
   - Implement `Default` for `SincInterpolationParameters` (`sinc_len` 256, automatic cutoff,
     `oversampling_factor` 128, `Cubic` interpolation, `BlackmanHarris2` window).
+  - Add `Resampler::process_all`, an allocating one-shot method for resampling a whole clip.
+    It resets the resampler, trims the startup delay, and returns an `InterleavedOwned` holding
+    exactly the resampled frames. This is the convenient counterpart to `process_all_into_buffer`.
+  - Change `Resampler::process` to take an `Option<&Indexing>` instead of separate
+    `input_offset` and `active_channels_mask` arguments, matching `process_into_buffer`. This
+    adds `partial_len` support (for a short final chunk) and makes the common call
+    `process(&input, None)`. The `Indexing` `output_offset` field is ignored here.
   - Let the synchronous `Fft` resampler choose the anti-aliasing window. `Fft::new` is
     simplified (it drops `sub_chunks`, picking a value automatically, and uses a default
     window), and a new `Fft::new_custom` exposes both `sub_chunks` and the window function.

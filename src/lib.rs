@@ -184,26 +184,36 @@ where
     /// [process_into_buffer](Resampler::process_into_buffer) with a pre-allocated buffer
     /// instead of this function.
     ///
+    /// This resamples a single chunk of [input_frames_next](Resampler::input_frames_next)
+    /// frames. To resample a whole clip that is already in memory, use
+    /// [process_all](Resampler::process_all) instead. Do not size the resampler to the clip
+    /// length and call this once: that wastes memory and leaves the resampler's startup delay
+    /// as leading silence in the output.
+    ///
     /// The output is returned as an [InterleavedOwned] struct that wraps a `Vec<T>`
     /// of interleaved samples.
     ///
-    /// The `input_offset` and `active_channels_mask` parameters have the same meaning as in
-    /// [process_into_buffer](Resampler::process_into_buffer).
+    /// The optional `indexing` parameter has the same meaning as in
+    /// [process_into_buffer](Resampler::process_into_buffer), with one exception: since the
+    /// output buffer is allocated here, its `output_offset` field is ignored (the output always
+    /// starts at frame zero). Use `input_offset` to start reading partway into a larger input
+    /// buffer, `partial_len` to feed a final chunk that is shorter than
+    /// [input_frames_next](Resampler::input_frames_next), and `active_channels_mask` to skip
+    /// channels.
     fn process(
         &mut self,
         buffer_in: &dyn Adapter<T>,
-        input_offset: usize,
-        active_channels_mask: Option<&[bool]>,
+        indexing: Option<&Indexing>,
     ) -> ResampleResult<InterleavedOwned<T>> {
         let frames = self.output_frames_next();
         let channels = self.nbr_channels();
         let mut buffer_out = InterleavedOwned::<T>::new(T::coerce_from(0.0), channels, frames);
 
         let indexing = Indexing {
-            input_offset,
+            input_offset: get_offsets(&indexing).0,
             output_offset: 0,
-            partial_len: None,
-            active_channels_mask: active_channels_mask.map(|m| m.to_vec()),
+            partial_len: get_partial_len(&indexing),
+            active_channels_mask: indexing.and_then(|idx| idx.active_channels_mask.clone()),
         };
         self.process_into_buffer(buffer_in, &mut buffer_out, Some(&indexing))?;
         Ok(buffer_out)
@@ -328,6 +338,51 @@ where
             indexing.output_offset += nbr_out;
         }
         Ok((input_len, expected_output_len))
+    }
+
+    /// Resample a whole audio clip in a single call, returning the result in a freshly
+    /// allocated buffer.
+    ///
+    /// This is the allocating counterpart to
+    /// [process_all_into_buffer](Resampler::process_all_into_buffer), and the right method
+    /// for resampling a complete clip that is already in memory. It repeatedly calls
+    /// [process_into_buffer](Resampler::process_into_buffer) under the hood, trims the
+    /// resampler's startup delay, and returns an [InterleavedOwned] holding exactly the
+    /// resampled frames (no leading silence and no trailing padding).
+    ///
+    /// Prefer this over a single [process](Resampler::process) call: `process` resamples one
+    /// fixed-size chunk, so using it for a whole clip means oversizing the resampler to the
+    /// clip length and leaves the startup delay untrimmed.
+    ///
+    /// For realtime use, where allocating on each call can cause glitches, use
+    /// [process_all_into_buffer](Resampler::process_all_into_buffer) with a pre-allocated
+    /// buffer instead.
+    ///
+    /// The resampler is [reset](Resampler::reset) first, so the clip is always resampled from
+    /// a clean state regardless of any previous use.
+    ///
+    /// `input_len` is the length of the clip in frames. The `active_channels_mask` parameter
+    /// has the same meaning as in [process_into_buffer](Resampler::process_into_buffer).
+    fn process_all(
+        &mut self,
+        buffer_in: &dyn Adapter<T>,
+        input_len: usize,
+        active_channels_mask: Option<&[bool]>,
+    ) -> ResampleResult<InterleavedOwned<T>> {
+        self.reset();
+        let channels = self.nbr_channels();
+        let needed_len = self.process_all_needed_output_len(input_len);
+        let mut buffer_out = InterleavedOwned::<T>::new(T::coerce_from(0.0), channels, needed_len);
+        let (_input_len, output_len) =
+            self.process_all_into_buffer(buffer_in, &mut buffer_out, input_len, active_channels_mask)?;
+
+        // The valid output is the first `output_len` frames; the rest is padding. Trim it off.
+        // The buffer is interleaved, so `output_len` frames are the first `output_len * channels`
+        // samples.
+        let mut data = buffer_out.take_data();
+        data.truncate(output_len * channels);
+        Ok(InterleavedOwned::new_from(data, channels, output_len)
+            .expect("trimmed length is consistent with the channel count"))
     }
 
     /// Calculate the minimal length of the output buffer
@@ -464,10 +519,52 @@ pub mod tests {
     use crate::Fft;
     use crate::Resampler;
     use crate::{
-        Async, FixedAsync, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+        Async, FixedAsync, Indexing, SincInterpolationParameters, SincInterpolationType,
+        WindowFunction,
     };
     use audioadapter::Adapter;
     use audioadapter_buffers::direct::SequentialSliceOfVecs;
+
+    fn test_sinc_resampler() -> Async<f64> {
+        Async::<f64>::new_sinc(
+            88200.0 / 44100.0,
+            1.1,
+            &SincInterpolationParameters {
+                sinc_len: 64,
+                f_cutoff: Some(0.95),
+                interpolation: SincInterpolationType::Cubic,
+                oversampling_factor: 16,
+                window: WindowFunction::BlackmanHarris2,
+            },
+            1024,
+            2,
+            FixedAsync::Input,
+        )
+        .unwrap()
+    }
+
+    #[test_log::test]
+    fn process_single_chunk() {
+        let mut resampler = test_sinc_resampler();
+        let in_len = resampler.input_frames_next();
+        let samples: Vec<f64> = (0..in_len).map(|v| v as f64 / 10.0).collect();
+        let input_data = vec![samples; 2];
+        let input = SequentialSliceOfVecs::new(&input_data, 2, in_len).unwrap();
+
+        // A full chunk with no indexing returns output_frames_next frames.
+        let expected = resampler.output_frames_next();
+        let out = resampler.process(&input, None).unwrap();
+        assert_eq!(out.channels(), 2);
+        assert_eq!(out.frames(), expected);
+
+        // A final partial chunk fed via Indexing.partial_len still returns a full output chunk
+        // (process does not trim); the missing input frames are treated as silence.
+        let expected = resampler.output_frames_next();
+        let out = resampler
+            .process(&input, Some(&Indexing::new().partial_len(in_len / 2)))
+            .unwrap();
+        assert_eq!(out.frames(), expected);
+    }
 
     #[test_log::test]
     fn process_all() {
@@ -525,6 +622,65 @@ pub mod tests {
                 );
             }
             expected += increment;
+        }
+    }
+
+    #[test_log::test]
+    fn process_all_allocating() {
+        let mut resampler = Async::<f64>::new_sinc(
+            88200.0 / 44100.0,
+            1.1,
+            &SincInterpolationParameters {
+                sinc_len: 64,
+                f_cutoff: Some(0.95),
+                interpolation: SincInterpolationType::Cubic,
+                oversampling_factor: 16,
+                window: WindowFunction::BlackmanHarris2,
+            },
+            1024,
+            2,
+            FixedAsync::Input,
+        )
+        .unwrap();
+        let input_len = 12345;
+        let samples: Vec<f64> = (0..input_len).map(|v| v as f64 / 10.0).collect();
+        let input_data = vec![samples; 2];
+        let input = SequentialSliceOfVecs::new(&input_data, 2, input_len).unwrap();
+
+        let output = resampler.process_all(&input, input_len, None).unwrap();
+        // 2x upsampling, and the result must be trimmed to exactly the resampled length
+        // (not the oversized internal buffer).
+        let expected_len = 2 * input_len;
+        assert_eq!(output.channels(), 2);
+        assert_eq!(output.frames(), expected_len);
+
+        // The delay is trimmed, so output frame f follows input position f / ratio.
+        let increment = 0.1 / resampler.resample_ratio();
+        let margin = (resampler.output_delay() as f64 * resampler.resample_ratio()) as usize;
+        for frame in margin..(expected_len - margin) {
+            let expected = frame as f64 * increment;
+            for chan in 0..2 {
+                let val = output.read_sample(chan, frame).unwrap();
+                assert!(
+                    (val - expected).abs() < 100.0 * increment,
+                    "frame: {}, value: {}, expected: {}",
+                    frame,
+                    val,
+                    expected
+                );
+            }
+        }
+
+        // A second call must reset internally and produce an identical result.
+        let output2 = resampler.process_all(&input, input_len, None).unwrap();
+        assert_eq!(output2.frames(), expected_len);
+        for frame in 0..expected_len {
+            for chan in 0..2 {
+                assert_eq!(
+                    output.read_sample(chan, frame),
+                    output2.read_sample(chan, frame)
+                );
+            }
         }
     }
 
