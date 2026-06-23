@@ -733,8 +733,7 @@ mod tests {
     ))]
     fn fft_output(chunksize: usize, rates: (usize, usize), fixed: FixedSync) {
         let (input_rate, output_rate) = rates;
-        let mut resampler =
-            Fft::<f64>::new(input_rate, output_rate, chunksize, 2, fixed).unwrap();
+        let mut resampler = Fft::<f64>::new(input_rate, output_rate, chunksize, 2, fixed).unwrap();
         check_output!(resampler, f64);
     }
 
@@ -745,8 +744,7 @@ mod tests {
     ))]
     fn fft_ratio(chunksize: usize, rates: (usize, usize), fixed: FixedSync) {
         let (input_rate, output_rate) = rates;
-        let mut resampler =
-            Fft::<f64>::new(input_rate, output_rate, chunksize, 2, fixed).unwrap();
+        let mut resampler = Fft::<f64>::new(input_rate, output_rate, chunksize, 2, fixed).unwrap();
         check_ratio!(resampler, 100000 / chunksize, 0.05, f64);
     }
     #[test_log::test(test_matrix(
@@ -777,8 +775,7 @@ mod tests {
     ))]
     fn fft_reset(chunksize: usize, rates: (usize, usize), fixed: FixedSync) {
         let (input_rate, output_rate) = rates;
-        let mut resampler =
-            Fft::<f64>::new(input_rate, output_rate, chunksize, 2, fixed).unwrap();
+        let mut resampler = Fft::<f64>::new(input_rate, output_rate, chunksize, 2, fixed).unwrap();
         check_reset!(resampler);
     }
 
@@ -789,8 +786,7 @@ mod tests {
     ))]
     fn fft_input_offset(chunksize: usize, rates: (usize, usize), fixed: FixedSync) {
         let (input_rate, output_rate) = rates;
-        let mut resampler =
-            Fft::<f64>::new(input_rate, output_rate, chunksize, 2, fixed).unwrap();
+        let mut resampler = Fft::<f64>::new(input_rate, output_rate, chunksize, 2, fixed).unwrap();
         check_input_offset!(resampler);
     }
 
@@ -801,8 +797,7 @@ mod tests {
     ))]
     fn fft_output_offset(chunksize: usize, rates: (usize, usize), fixed: FixedSync) {
         let (input_rate, output_rate) = rates;
-        let mut resampler =
-            Fft::<f64>::new(input_rate, output_rate, chunksize, 2, fixed).unwrap();
+        let mut resampler = Fft::<f64>::new(input_rate, output_rate, chunksize, 2, fixed).unwrap();
         check_output_offset!(resampler);
     }
 

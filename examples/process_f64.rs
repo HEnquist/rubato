@@ -1,8 +1,8 @@
 extern crate rubato;
 use audioadapter_buffers::direct::InterleavedSlice;
 use rubato::{
-    Async, FixedAsync, Indexing, PolynomialDegree, Resampler,
-    SincInterpolationParameters, SincInterpolationType, WindowFunction,
+    Async, FixedAsync, Indexing, PolynomialDegree, Resampler, SincInterpolationParameters,
+    SincInterpolationType, WindowFunction,
 };
 #[cfg(feature = "fft_resampler")]
 use rubato::{Fft, FixedSync};

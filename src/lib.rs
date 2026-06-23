@@ -373,8 +373,12 @@ where
         let channels = self.nbr_channels();
         let needed_len = self.process_all_needed_output_len(input_len);
         let mut buffer_out = InterleavedOwned::<T>::new(T::coerce_from(0.0), channels, needed_len);
-        let (_input_len, output_len) =
-            self.process_all_into_buffer(buffer_in, &mut buffer_out, input_len, active_channels_mask)?;
+        let (_input_len, output_len) = self.process_all_into_buffer(
+            buffer_in,
+            &mut buffer_out,
+            input_len,
+            active_channels_mask,
+        )?;
 
         // The valid output is the first `output_len` frames; the rest is padding. Trim it off.
         // The buffer is interleaved, so `output_len` frames are the first `output_len * channels`

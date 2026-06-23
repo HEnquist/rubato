@@ -3,8 +3,8 @@ use audioadapter_buffers::number_to_float::InterleavedNumbers;
 use audioadapter_sample::sample::I16_LE;
 
 use rubato::{
-    Async, FixedAsync, Indexing, Resampler, SincInterpolationParameters,
-    SincInterpolationType, WindowFunction,
+    Async, FixedAsync, Indexing, Resampler, SincInterpolationParameters, SincInterpolationType,
+    WindowFunction,
 };
 use std::env;
 use std::fs::File;
