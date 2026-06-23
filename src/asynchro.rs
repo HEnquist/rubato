@@ -454,7 +454,7 @@ where
         indexing: Option<&Indexing>,
     ) -> ResampleResult<(usize, usize)> {
         // read the optional indexing struct
-        update_mask(&indexing, &mut self.channel_mask);
+        update_mask(&indexing, &mut self.channel_mask)?;
         let (input_offset, output_offset) = get_offsets(&indexing);
 
         // figure out how many frames to read
@@ -470,7 +470,6 @@ where
         validate_buffers(
             buffer_in,
             buffer_out,
-            &self.channel_mask,
             self.nbr_channels,
             frames_to_read + input_offset,
             self.needed_output_size + output_offset,

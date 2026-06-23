@@ -438,6 +438,8 @@ let r = Fft::<f64>::new_custom(rate_in, rate_out, chunk_size, sub_chunks, channe
     `ResamplerConstructionError`, and mark both `#[non_exhaustive]`.
   - Derive `PartialEq`, `Eq` and `Hash` for the configuration enums `WindowFunction`,
     `SincInterpolationType`, `PolynomialDegree`, `FixedSync` and `FixedAsync`.
+  - Return `WrongNumberOfMaskChannels` instead of panicking when the
+    `active_channels_mask` passed to a process method has the wrong length.
 - v3.0.0
   - Use separate lifetimes for `buffer_in` and `buffer_out` in `process_into_buffer`.
   - Improve sinc resampler performance with smarter dot product calculation.

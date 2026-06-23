@@ -162,15 +162,23 @@ pub(crate) fn get_partial_len(indexing: &Option<&Indexing>) -> Option<usize> {
     indexing.as_ref().and_then(|idx| idx.partial_len)
 }
 
-/// Helper to update the mask from an optional Indexing struct
-pub(crate) fn update_mask(indexing: &Option<&Indexing>, mask: &mut [bool]) {
+/// Helper to update the mask from an optional Indexing struct.
+/// Returns [ResampleError::WrongNumberOfMaskChannels] if the provided mask has the wrong length.
+pub(crate) fn update_mask(indexing: &Option<&Indexing>, mask: &mut [bool]) -> ResampleResult<()> {
     if let Some(idx) = indexing {
         if let Some(new_mask) = &idx.active_channels_mask {
+            if new_mask.len() != mask.len() {
+                return Err(ResampleError::WrongNumberOfMaskChannels {
+                    expected: mask.len(),
+                    actual: new_mask.len(),
+                });
+            }
             mask.copy_from_slice(new_mask);
-            return;
+            return Ok(());
         }
     }
     mask.iter_mut().for_each(|v| *v = true);
+    Ok(())
 }
 
 /// A resampler that is used to resample a chunk of audio to a new sample rate.
@@ -479,7 +487,6 @@ where
 pub(crate) fn validate_buffers<T>(
     wave_in: &dyn Adapter<T>,
     wave_out: &dyn AdapterMut<T>,
-    mask: &[bool],
     channels: usize,
     min_input_len: usize,
     min_output_len: usize,
@@ -488,12 +495,6 @@ pub(crate) fn validate_buffers<T>(
         return Err(ResampleError::WrongNumberOfInputChannels {
             expected: channels,
             actual: wave_in.channels(),
-        });
-    }
-    if mask.len() != channels {
-        return Err(ResampleError::WrongNumberOfMaskChannels {
-            expected: channels,
-            actual: mask.len(),
         });
     }
     if wave_in.frames() < min_input_len {
@@ -523,8 +524,8 @@ pub mod tests {
     use crate::Fft;
     use crate::Resampler;
     use crate::{
-        Async, FixedAsync, Indexing, SincInterpolationParameters, SincInterpolationType,
-        WindowFunction,
+        Async, FixedAsync, Indexing, ResampleError, SincInterpolationParameters,
+        SincInterpolationType, WindowFunction,
     };
     use audioadapter::Adapter;
     use audioadapter_buffers::direct::SequentialSliceOfVecs;
@@ -568,6 +569,25 @@ pub mod tests {
             .process(&input, Some(&Indexing::new().partial_len(in_len / 2)))
             .unwrap();
         assert_eq!(out.frames(), expected);
+    }
+
+    #[test_log::test]
+    fn wrong_length_mask_returns_error() {
+        // A mask with the wrong number of channels must return an error, not panic.
+        let mut resampler = test_sinc_resampler();
+        let in_len = resampler.input_frames_next();
+        let input_data = vec![vec![0.0f64; in_len]; 2];
+        let input = SequentialSliceOfVecs::new(&input_data, 2, in_len).unwrap();
+
+        let indexing = Indexing::new().active_channels_mask(vec![true, true, true]);
+        let result = resampler.process(&input, Some(&indexing));
+        assert!(matches!(
+            result,
+            Err(ResampleError::WrongNumberOfMaskChannels {
+                expected: 2,
+                actual: 3
+            })
+        ));
     }
 
     #[test_log::test]
