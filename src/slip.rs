@@ -577,7 +577,10 @@ mod tests {
     fn fade_table_is_valid() {
         let fade = FADE;
         let n = fade.len();
-        assert!(fade[0] > 0.0 && fade[0] < 0.02, "should ease in from near 0");
+        assert!(
+            fade[0] > 0.0 && fade[0] < 0.02,
+            "should ease in from near 0"
+        );
         assert!(
             fade[n - 1] > 0.98 && fade[n - 1] < 1.0,
             "should ease out to near 1"
