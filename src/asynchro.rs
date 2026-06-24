@@ -93,6 +93,9 @@ pub trait InnerResampler<T>: Send {
 /// The resampling ratio can be freely adjusted within the range specified to the constructor.
 /// Higher maximum ratios require more memory to be allocated by an internal buffer,
 /// and increase the maximum length of the variable length input or output buffer.
+///
+/// When the ratio is steered by a clock-drift feedback loop, [Slip](crate::Slip) carries a complete
+/// worked example of such a loop that applies here too.
 pub struct Async<T> {
     nbr_channels: usize,
     chunk_size: usize,

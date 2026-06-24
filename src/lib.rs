@@ -48,6 +48,7 @@ mod error;
 mod interpolation;
 mod sample;
 mod sinc;
+mod slip;
 #[cfg(feature = "fft_resampler")]
 mod synchro;
 mod windows;
@@ -61,6 +62,7 @@ pub use crate::error::{
     CpuFeature, MissingCpuFeature, ResampleError, ResampleResult, ResamplerConstructionError,
 };
 pub use crate::sample::Sample;
+pub use crate::slip::Slip;
 #[cfg(feature = "fft_resampler")]
 pub use crate::synchro::{Fft, FixedSync};
 pub use crate::windows::{calculate_cutoff, WindowFunction};
@@ -489,6 +491,10 @@ where
 ///
 /// Implemented by the asynchronous resamplers. From a `&mut dyn Resampler` it can be recovered
 /// with [Resampler::as_adjustable].
+///
+/// The ratio is typically driven by a feedback loop that measures a buffer fill and nudges it to
+/// track a small clock difference. [Slip] carries a complete worked example of such a loop; the
+/// same pattern applies to any `Adjustable` resampler, including [Async].
 pub trait Adjustable<T>: Resampler<T>
 where
     T: Sample,
@@ -572,7 +578,7 @@ pub mod tests {
     use crate::Resampler;
     use crate::{
         Async, FixedAsync, Indexing, ResampleError, SincInterpolationParameters,
-        SincInterpolationType, WindowFunction,
+        SincInterpolationType, Slip, WindowFunction,
     };
     #[cfg(feature = "fft_resampler")]
     use crate::{Fft, FixedSync};
@@ -830,6 +836,7 @@ pub mod tests {
     fn impl_send<T: Send>() {
         fn is_send<T: Send>() {}
         is_send::<Async<T>>();
+        is_send::<Slip<T>>();
         #[cfg(feature = "fft_resampler")]
         {
             is_send::<Fft<T>>();

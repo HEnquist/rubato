@@ -127,6 +127,13 @@ pub enum ResampleError {
         original: f64,
         max_relative_ratio: f64,
     },
+    /// Error raised when [Adjustable::set_resample_ratio](crate::Adjustable::set_resample_ratio)
+    /// is called with a ratio outside the range the resampler can sustain.
+    RatioOutsideRange {
+        provided: f64,
+        min: f64,
+        max: f64,
+    },
     /// Error raised when the number of channels in the input buffer doesn't match the value expected.
     WrongNumberOfInputChannels {
         expected: usize,
@@ -170,6 +177,13 @@ impl fmt::Display for ResampleError {
             } => {
                 write!(f, "New resample ratio out of bounds. Provided ratio {}, original resample ratio {}, maximum relative ratio {}, allowed absolute range {} to {}",
                 provided, original, max_relative_ratio, original / max_relative_ratio, original * max_relative_ratio)
+            }
+            Self::RatioOutsideRange { provided, min, max } => {
+                write!(
+                    f,
+                    "New resample ratio {} is outside the supported range {} to {}",
+                    provided, min, max
+                )
             }
             Self::WrongNumberOfInputChannels { expected, actual } => {
                 write!(
