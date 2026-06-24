@@ -575,21 +575,19 @@ mod tests {
     /// from ~0 to ~1, and symmetric so a slip preserves the signal level across the splice.
     #[test]
     fn fade_table_is_valid() {
-        let n = FADE.len();
+        let fade = FADE;
+        let n = fade.len();
+        assert!(fade[0] > 0.0 && fade[0] < 0.02, "should ease in from near 0");
         assert!(
-            FADE[0] > 0.0 && FADE[0] < 0.02,
-            "should ease in from near 0"
-        );
-        assert!(
-            FADE[n - 1] > 0.98 && FADE[n - 1] < 1.0,
+            fade[n - 1] > 0.98 && fade[n - 1] < 1.0,
             "should ease out to near 1"
         );
-        for pair in FADE.windows(2) {
+        for pair in fade.windows(2) {
             assert!(pair[1] > pair[0], "must be strictly increasing");
         }
         // Symmetric: w(k) + w(N-1-k) == 1, so blended levels stay constant.
         for k in 0..n {
-            assert!((FADE[k] + FADE[n - 1 - k] - 1.0).abs() < 1e-12);
+            assert!((fade[k] + fade[n - 1 - k] - 1.0).abs() < 1e-12);
         }
     }
 
