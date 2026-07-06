@@ -273,8 +273,9 @@ RUST_LOG=trace cargo test --features log
 ## Example
 
 Resample a dummy audio file from 44100 to 48000 Hz.
+This uses the `Fft` resampler, which requires the `fft_resampler` feature (enabled by default).
 See also the "process_f64" example that can be used to process a file from disk.
-```rust
+```rust,ignore
 use rubato::{
     Resampler, Fft, FixedSync, Indexing
 };
