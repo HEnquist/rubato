@@ -438,7 +438,8 @@ where
     /// Reset the resampler state and clear all internal buffers.
     fn reset(&mut self);
 
-    /// If this resampler can change its resample ratio, borrow it as an [Adjustable].
+    /// If this resampler can change its resample ratio, borrow it as an [Adjustable],
+    /// otherwise return `None`.
     ///
     /// Asynchronous resamplers return `Some`, synchronous resamplers return `None`. This lets
     /// you recover the adjust-ratio capability from a `&mut dyn Resampler` without knowing the
@@ -449,14 +450,38 @@ where
     ///     adjustable.set_resample_ratio(new_ratio, true)?;
     /// }
     /// ```
-    fn as_adjustable(&mut self) -> Option<&mut dyn Adjustable<T>> {
-        None
+    ///
+    /// Any implementor of [Adjustable] must return `Some(self)` here, otherwise the capability
+    /// is invisible through a trait object. This method is intentionally required rather than
+    /// defaulted so that implementing [Adjustable] and advertising it cannot drift apart.
+    fn as_adjustable(&mut self) -> Option<&mut dyn Adjustable<T>>;
+
+    /// Returns `true` if this resampler is [Adjustable], meaning that
+    /// [as_adjustable](Resampler::as_adjustable) returns `Some`.
+    ///
+    /// Unlike [as_adjustable](Resampler::as_adjustable) this takes a shared reference, so the
+    /// capability can be queried through a `&dyn Resampler`. Implementors of [Adjustable] must
+    /// override this to return `true`.
+    fn is_adjustable(&self) -> bool {
+        false
     }
 
     /// If this resampler can change its chunk size, borrow it as a [Resizable], otherwise
     /// return `None`.
-    fn as_resizable(&mut self) -> Option<&mut dyn Resizable<T>> {
-        None
+    ///
+    /// Any implementor of [Resizable] must return `Some(self)` here, otherwise the capability
+    /// is invisible through a trait object. This method is intentionally required rather than
+    /// defaulted so that implementing [Resizable] and advertising it cannot drift apart.
+    fn as_resizable(&mut self) -> Option<&mut dyn Resizable<T>>;
+
+    /// Returns `true` if this resampler is [Resizable], meaning that
+    /// [as_resizable](Resampler::as_resizable) returns `Some`.
+    ///
+    /// Unlike [as_resizable](Resampler::as_resizable) this takes a shared reference, so the
+    /// capability can be queried through a `&dyn Resampler`. Implementors of [Resizable] must
+    /// override this to return `true`.
+    fn is_resizable(&self) -> bool {
+        false
     }
 }
 
@@ -736,6 +761,8 @@ pub mod tests {
     fn capability_queries() {
         // Async resamplers are adjustable and resizable.
         let mut resampler = test_sinc_resampler();
+        assert!(resampler.is_adjustable());
+        assert!(resampler.is_resizable());
         resampler
             .as_adjustable()
             .expect("Async should be adjustable")
@@ -743,8 +770,12 @@ pub mod tests {
             .unwrap();
         assert!(resampler.as_resizable().is_some());
 
-        // The capability is reachable through a trait object too.
+        // The capability is reachable through a trait object too, including through a shared
+        // reference via the `is_*` probes.
         let mut boxed: Box<dyn Resampler<f64>> = Box::new(test_sinc_resampler());
+        let shared: &dyn Resampler<f64> = boxed.as_ref();
+        assert!(shared.is_adjustable());
+        assert!(shared.is_resizable());
         assert!(boxed.as_adjustable().is_some());
         assert!(boxed.as_resizable().is_some());
 
@@ -752,6 +783,8 @@ pub mod tests {
         #[cfg(feature = "fft_resampler")]
         {
             let mut fft = Fft::<f64>::new(44100, 48000, 1024, 2, FixedSync::Both).unwrap();
+            assert!(!fft.is_adjustable());
+            assert!(!fft.is_resizable());
             assert!(fft.as_adjustable().is_none());
             assert!(fft.as_resizable().is_none());
         }

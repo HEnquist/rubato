@@ -412,7 +412,8 @@ let r = Fft::<f64>::new_custom(rate_in, rate_out, chunk_size, sub_chunks, channe
 `set_resample_ratio_relative` are now on the `Adjustable` trait, and `set_chunk_size` is on
 `Resizable`. On a concrete resampler, just bring the trait into scope. On a `dyn Resampler`,
 recover the capability with `as_adjustable()` / `as_resizable()` (this replaces the old
-`SyncNotAdjustable` / `ChunkSizeNotAdjustable` errors, which are removed).
+`SyncNotAdjustable` / `ChunkSizeNotAdjustable` errors, which are removed). To query the
+capability through a shared `&dyn Resampler`, use `is_adjustable()` / `is_resizable()`.
 
 ```rust,ignore
 // before: on a Box<dyn Resampler>, with a runtime error for synchronous resamplers
@@ -464,7 +465,8 @@ async_resampler.set_resample_ratio_relative(0.95, true)?;
   - Split the capability-specific methods out of `Resampler` into the `Adjustable` trait
     (`set_resample_ratio`, `set_resample_ratio_relative`) and the `Resizable` trait
     (`set_chunk_size`). `Resampler` gains `as_adjustable()` and `as_resizable()` to recover
-    these capabilities from a trait object. The `SyncNotAdjustable` and `ChunkSizeNotAdjustable`
+    these capabilities from a trait object, and `is_adjustable()` / `is_resizable()` to query
+    them through a shared reference. The `SyncNotAdjustable` and `ChunkSizeNotAdjustable`
     error variants are removed, since calling these methods is now a compile-time capability.
 - v3.0.0
   - Use separate lifetimes for `buffer_in` and `buffer_out` in `process_into_buffer`.

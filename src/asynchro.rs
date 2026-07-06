@@ -55,8 +55,8 @@ pub trait InnerResampler<T>: Send {
 /// and when output size is fixed, the input size varies.
 ///
 /// The number of frames on the fixed side is determined by the chunk size argument to the constructor.
-/// This value can be changed by the `set_chunk_size()` method,
-/// to let the resampler process smaller chunks of audio data.
+/// This value can be changed by the [set_chunk_size](Resizable::set_chunk_size) method of the
+/// [Resizable] trait (which must be in scope), to let the resampler process smaller chunks of audio data.
 /// Note that the chunk size cannot exceed the value given at creation time.
 ///
 /// When the input size is fixed, the maximum value can be retrieved using the `input_size_max()` method,
@@ -441,6 +441,23 @@ where
             self.needed_output_size
         );
     }
+
+    /// Check whether a ratio, expressed relative to the original ratio, is within the
+    /// allowed `1 / max` to `max` range. Checking the relative ratio directly avoids the
+    /// rounding error that a `(original * rel) / original` round-trip would introduce at
+    /// the exact bounds.
+    fn relative_ratio_in_bounds(&self, rel_ratio: f64) -> bool {
+        rel_ratio >= 1.0 / self.max_relative_ratio && rel_ratio <= self.max_relative_ratio
+    }
+
+    /// Apply an already validated resample ratio to the internal state.
+    fn apply_ratio(&mut self, new_ratio: f64, ramp: bool) {
+        if !ramp {
+            self.resample_ratio = new_ratio;
+        }
+        self.target_ratio = new_ratio;
+        self.update_lengths();
+    }
 }
 
 impl<T> Resampler<T> for Async<T>
@@ -593,8 +610,16 @@ where
         Some(self)
     }
 
+    fn is_adjustable(&self) -> bool {
+        true
+    }
+
     fn as_resizable(&mut self) -> Option<&mut dyn Resizable<T>> {
         Some(self)
+    }
+
+    fn is_resizable(&self) -> bool {
+        true
     }
 }
 
@@ -604,14 +629,8 @@ where
 {
     fn set_resample_ratio(&mut self, new_ratio: f64, ramp: bool) -> ResampleResult<()> {
         trace!("Change resample ratio to {}", new_ratio);
-        if (new_ratio / self.resample_ratio_original >= 1.0 / self.max_relative_ratio)
-            && (new_ratio / self.resample_ratio_original <= self.max_relative_ratio)
-        {
-            if !ramp {
-                self.resample_ratio = new_ratio;
-            }
-            self.target_ratio = new_ratio;
-            self.update_lengths();
+        if self.relative_ratio_in_bounds(new_ratio / self.resample_ratio_original) {
+            self.apply_ratio(new_ratio, ramp);
             Ok(())
         } else {
             Err(ResampleError::RatioOutOfBounds {
@@ -624,7 +643,16 @@ where
 
     fn set_resample_ratio_relative(&mut self, rel_ratio: f64, ramp: bool) -> ResampleResult<()> {
         let new_ratio = self.resample_ratio_original * rel_ratio;
-        self.set_resample_ratio(new_ratio, ramp)
+        if self.relative_ratio_in_bounds(rel_ratio) {
+            self.apply_ratio(new_ratio, ramp);
+            Ok(())
+        } else {
+            Err(ResampleError::RatioOutOfBounds {
+                provided: new_ratio,
+                original: self.resample_ratio_original,
+                max_relative_ratio: self.max_relative_ratio,
+            })
+        }
     }
 }
 
@@ -832,6 +860,37 @@ mod tests {
         let mut resampler = Async::<f64>::new_sinc(ratio, 1.0, &params, 1024, 2, fixed).unwrap();
         resampler.set_chunk_size(600).unwrap();
         check_output!(resampler, f64);
+    }
+
+    // The exact relative bounds `1 / max` and `max` must be accepted. The pair below is chosen
+    // so that the old `(original * rel) / original` round-trip rounds the lower bound just outside
+    // the range and wrongly rejected it; checking the relative ratio directly must not.
+    #[test_log::test]
+    fn async_relative_ratio_exact_bounds() {
+        let params = basic_params();
+        let original_ratio = 44100.0 / 48000.0;
+        let max = 1.0161;
+        let mut resampler =
+            Async::<f64>::new_sinc(original_ratio, max, &params, 1024, 2, FixedAsync::Input)
+                .unwrap();
+
+        assert!(
+            resampler.set_resample_ratio_relative(max, false).is_ok(),
+            "exact upper bound must be accepted"
+        );
+        assert!(
+            resampler
+                .set_resample_ratio_relative(1.0 / max, false)
+                .is_ok(),
+            "exact lower bound must be accepted"
+        );
+        // Just outside the range must still be rejected.
+        assert!(resampler
+            .set_resample_ratio_relative(max * 1.0001, false)
+            .is_err());
+        assert!(resampler
+            .set_resample_ratio_relative(1.0 / max * 0.9999, false)
+            .is_err());
     }
 
     fn process_and_get_frame_counts(resampler: &mut Async<f64>) -> (usize, usize) {
