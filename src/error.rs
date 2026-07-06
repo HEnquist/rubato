@@ -119,7 +119,7 @@ impl error::Error for ResamplerConstructionError {}
 #[derive(Clone, Copy, PartialEq)]
 #[non_exhaustive]
 pub enum ResampleError {
-    /// Error raised when [Resampler::set_resample_ratio](crate::Resampler::set_resample_ratio)
+    /// Error raised when [Adjustable::set_resample_ratio](crate::Adjustable::set_resample_ratio)
     /// is called with a ratio outside the maximum range specified when
     /// the resampler was constructed.
     RatioOutOfBounds {
@@ -127,9 +127,6 @@ pub enum ResampleError {
         original: f64,
         max_relative_ratio: f64,
     },
-    /// Error raised when calling [Resampler::set_resample_ratio](crate::Resampler::set_resample_ratio)
-    /// on a synchronous resampler.
-    SyncNotAdjustable,
     /// Error raised when the number of channels in the input buffer doesn't match the value expected.
     WrongNumberOfInputChannels {
         expected: usize,
@@ -161,7 +158,6 @@ pub enum ResampleError {
         max: usize,
         requested: usize,
     },
-    ChunkSizeNotAdjustable,
 }
 
 impl fmt::Display for ResampleError {
@@ -174,9 +170,6 @@ impl fmt::Display for ResampleError {
             } => {
                 write!(f, "New resample ratio out of bounds. Provided ratio {}, original resample ratio {}, maximum relative ratio {}, allowed absolute range {} to {}",
                 provided, original, max_relative_ratio, original / max_relative_ratio, original * max_relative_ratio)
-            }
-            Self::SyncNotAdjustable { .. } => {
-                write!(f, "Not possible to adjust a synchronous resampler")
             }
             Self::WrongNumberOfInputChannels { expected, actual } => {
                 write!(
@@ -219,9 +212,6 @@ impl fmt::Display for ResampleError {
                     "Invalid chunk size {}, value must be non-zero and cannot exceed {}",
                     requested, max
                 )
-            }
-            Self::ChunkSizeNotAdjustable { .. } => {
-                write!(f, "This resampler does not support changing the chunk size")
             }
         }
     }

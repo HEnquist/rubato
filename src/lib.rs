@@ -432,43 +432,97 @@ where
     /// This gives how many frames any event in the input is delayed before it appears in the output.
     fn output_delay(&self) -> usize;
 
+    /// Get the current resample ratio, defined as output sample rate divided by input sample rate.
+    fn resample_ratio(&self) -> f64;
+
+    /// Reset the resampler state and clear all internal buffers.
+    fn reset(&mut self);
+
+    /// If this resampler can change its resample ratio, borrow it as an [Adjustable],
+    /// otherwise return `None`.
+    ///
+    /// Asynchronous resamplers return `Some`, synchronous resamplers return `None`. This lets
+    /// you recover the adjust-ratio capability from a `&mut dyn Resampler` without knowing the
+    /// concrete type:
+    ///
+    /// ```ignore
+    /// if let Some(adjustable) = resampler.as_adjustable() {
+    ///     adjustable.set_resample_ratio(new_ratio, true)?;
+    /// }
+    /// ```
+    ///
+    /// Any implementor of [Adjustable] must return `Some(self)` here, otherwise the capability
+    /// is invisible through a trait object. This method is intentionally required rather than
+    /// defaulted so that implementing [Adjustable] and advertising it cannot drift apart.
+    fn as_adjustable(&mut self) -> Option<&mut dyn Adjustable<T>>;
+
+    /// Returns `true` if this resampler is [Adjustable], meaning that
+    /// [as_adjustable](Resampler::as_adjustable) returns `Some`.
+    ///
+    /// Unlike [as_adjustable](Resampler::as_adjustable) this takes a shared reference, so the
+    /// capability can be queried through a `&dyn Resampler`. Implementors of [Adjustable] must
+    /// override this to return `true`.
+    fn is_adjustable(&self) -> bool {
+        false
+    }
+
+    /// If this resampler can change its chunk size, borrow it as a [Resizable], otherwise
+    /// return `None`.
+    ///
+    /// Any implementor of [Resizable] must return `Some(self)` here, otherwise the capability
+    /// is invisible through a trait object. This method is intentionally required rather than
+    /// defaulted so that implementing [Resizable] and advertising it cannot drift apart.
+    fn as_resizable(&mut self) -> Option<&mut dyn Resizable<T>>;
+
+    /// Returns `true` if this resampler is [Resizable], meaning that
+    /// [as_resizable](Resampler::as_resizable) returns `Some`.
+    ///
+    /// Unlike [as_resizable](Resampler::as_resizable) this takes a shared reference, so the
+    /// capability can be queried through a `&dyn Resampler`. Implementors of [Resizable] must
+    /// override this to return `true`.
+    fn is_resizable(&self) -> bool {
+        false
+    }
+}
+
+/// A [Resampler] whose resample ratio can be changed after construction.
+///
+/// Implemented by the asynchronous resamplers. From a `&mut dyn Resampler` it can be recovered
+/// with [Resampler::as_adjustable].
+pub trait Adjustable<T>: Resampler<T>
+where
+    T: Sample,
+{
     /// Update the resample ratio.
     ///
-    /// For asynchronous resamplers, the ratio must be within
-    /// `original / maximum` to `original * maximum`, where the original and maximum are the
-    /// resampling ratios that were provided to the constructor.
-    /// Trying to set the ratio
-    /// outside these bounds will return [ResampleError::RatioOutOfBounds].
-    ///
-    /// For synchronous resamplers, this will always return [ResampleError::SyncNotAdjustable].
+    /// The ratio must be within `original / maximum` to `original * maximum`, where the original
+    /// and maximum are the resampling ratios that were provided to the constructor. Trying to set
+    /// the ratio outside these bounds will return [ResampleError::RatioOutOfBounds].
     ///
     /// If the argument `ramp` is set to true, the ratio will be ramped from the old to the new value
     /// during processing of the next chunk. This allows smooth transitions from one ratio to another.
     /// If `ramp` is false, the new ratio will be applied from the start of the next chunk.
     fn set_resample_ratio(&mut self, new_ratio: f64, ramp: bool) -> ResampleResult<()>;
 
-    /// Get the current resample ratio, defined as output sample rate divided by input sample rate.
-    fn resample_ratio(&self) -> f64;
-
     /// Update the resample ratio as a factor relative to the original one.
     ///
-    /// For asynchronous resamplers, the relative ratio must be within
-    /// `1 / maximum` to `maximum`, where `maximum` is the maximum
-    /// resampling ratio that was provided to the constructor.
-    /// Trying to set the ratio outside these bounds
-    /// will return [ResampleError::RatioOutOfBounds].
+    /// The relative ratio must be within `1 / maximum` to `maximum`, where `maximum` is the maximum
+    /// resampling ratio that was provided to the constructor. Trying to set the ratio outside these
+    /// bounds will return [ResampleError::RatioOutOfBounds].
     ///
     /// Ratios above 1.0 slow down the output and lower the pitch, while ratios
     /// below 1.0 speed up the output and raise the pitch.
-    ///
-    /// For synchronous resamplers, this will always return [ResampleError::SyncNotAdjustable].
     fn set_resample_ratio_relative(&mut self, rel_ratio: f64, ramp: bool) -> ResampleResult<()>;
+}
 
-    /// Reset the resampler state and clear all internal buffers.
-    fn reset(&mut self);
-
+/// A [Resampler] whose chunk size can be changed after construction.
+///
+/// From a `&mut dyn Resampler` it can be recovered with [Resampler::as_resizable].
+pub trait Resizable<T>: Resampler<T>
+where
+    T: Sample,
+{
     /// Change the chunk size for the resampler.
-    /// This is not supported by all resampler types.
     /// The value must be equal to or smaller than the chunk size value
     /// that the resampler was created with.
     /// [ResampleError::InvalidChunkSize] is returned if the value is zero or too large.
@@ -476,12 +530,7 @@ where
     /// The meaning of chunk size depends on the resampler,
     /// it refers to the input size for resamplers with fixed input size,
     /// and output size for resamplers with fixed output size.
-    ///
-    /// Resamplers that do not support changing the chunk size
-    /// return [ResampleError::ChunkSizeNotAdjustable].
-    fn set_chunk_size(&mut self, _chunksize: usize) -> ResampleResult<()> {
-        Err(ResampleError::ChunkSizeNotAdjustable)
-    }
+    fn set_chunk_size(&mut self, chunksize: usize) -> ResampleResult<()>;
 }
 
 pub(crate) fn validate_buffers<T>(
@@ -520,13 +569,13 @@ pub(crate) fn validate_buffers<T>(
 
 #[cfg(test)]
 pub mod tests {
-    #[cfg(feature = "fft_resampler")]
-    use crate::Fft;
     use crate::Resampler;
     use crate::{
         Async, FixedAsync, Indexing, ResampleError, SincInterpolationParameters,
         SincInterpolationType, WindowFunction,
     };
+    #[cfg(feature = "fft_resampler")]
+    use crate::{Fft, FixedSync};
     use audioadapter::Adapter;
     use audioadapter_buffers::direct::SequentialSliceOfVecs;
 
@@ -705,6 +754,39 @@ pub mod tests {
                     output2.read_sample(chan, frame)
                 );
             }
+        }
+    }
+
+    #[test_log::test]
+    fn capability_queries() {
+        // Async resamplers are adjustable and resizable.
+        let mut resampler = test_sinc_resampler();
+        assert!(resampler.is_adjustable());
+        assert!(resampler.is_resizable());
+        resampler
+            .as_adjustable()
+            .expect("Async should be adjustable")
+            .set_resample_ratio_relative(1.05, false)
+            .unwrap();
+        assert!(resampler.as_resizable().is_some());
+
+        // The capability is reachable through a trait object too, including through a shared
+        // reference via the `is_*` probes.
+        let mut boxed: Box<dyn Resampler<f64>> = Box::new(test_sinc_resampler());
+        let shared: &dyn Resampler<f64> = boxed.as_ref();
+        assert!(shared.is_adjustable());
+        assert!(shared.is_resizable());
+        assert!(boxed.as_adjustable().is_some());
+        assert!(boxed.as_resizable().is_some());
+
+        // Synchronous Fft resamplers are neither.
+        #[cfg(feature = "fft_resampler")]
+        {
+            let mut fft = Fft::<f64>::new(44100, 48000, 1024, 2, FixedSync::Both).unwrap();
+            assert!(!fft.is_adjustable());
+            assert!(!fft.is_resizable());
+            assert!(fft.as_adjustable().is_none());
+            assert!(fft.as_resizable().is_none());
         }
     }
 

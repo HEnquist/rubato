@@ -11,8 +11,8 @@ use audioadapter::{Adapter, AdapterMut};
 
 use crate::{get_offsets, get_partial_len, update_mask, Indexing};
 
-use crate::error::{ResampleError, ResampleResult};
-use crate::{calculate_cutoff, validate_buffers, Resampler, Sample};
+use crate::error::ResampleResult;
+use crate::{calculate_cutoff, validate_buffers, Adjustable, Resampler, Resizable, Sample};
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 
 /// A helper for resampling a single chunk of data.
@@ -657,20 +657,8 @@ where
         self.fft_size_out / 2
     }
 
-    /// Update the resample ratio. This is not supported by this resampler and
-    /// always returns [ResampleError::SyncNotAdjustable].
-    fn set_resample_ratio(&mut self, _new_ratio: f64, _ramp: bool) -> ResampleResult<()> {
-        Err(ResampleError::SyncNotAdjustable)
-    }
-
     fn resample_ratio(&self) -> f64 {
         self.fft_size_out as f64 / self.fft_size_in as f64
-    }
-
-    /// Update the resample ratio relative to the original one. This is not
-    /// supported by this resampler and always returns [ResampleError::SyncNotAdjustable].
-    fn set_resample_ratio_relative(&mut self, _rel_ratio: f64, _ramp: bool) -> ResampleResult<()> {
-        Err(ResampleError::SyncNotAdjustable)
     }
 
     fn reset(&mut self) {
@@ -686,6 +674,14 @@ where
         self.channel_mask.iter_mut().for_each(|val| *val = true);
         self.saved_frames = 0;
         self.update_chunk_sizes();
+    }
+
+    fn as_adjustable(&mut self) -> Option<&mut dyn Adjustable<T>> {
+        None
+    }
+
+    fn as_resizable(&mut self) -> Option<&mut dyn Resizable<T>> {
+        None
     }
 }
 

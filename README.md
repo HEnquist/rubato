@@ -273,8 +273,9 @@ RUST_LOG=trace cargo test --features log
 ## Example
 
 Resample a dummy audio file from 44100 to 48000 Hz.
+This uses the `Fft` resampler, which requires the `fft_resampler` feature (enabled by default).
 See also the "process_f64" example that can be used to process a file from disk.
-```rust
+```rust,ignore
 use rubato::{
     Resampler, Fft, FixedSync, Indexing
 };
@@ -408,6 +409,28 @@ let r = Fft::<f64>::new_custom(rate_in, rate_out, chunk_size, sub_chunks, channe
     WindowFunction::BlackmanHarris2, fixed)?;
 ```
 
+**Ratio and chunk-size changes moved to capability traits.** `set_resample_ratio`,
+`set_resample_ratio_relative` are now on the `Adjustable` trait, and `set_chunk_size` is on
+`Resizable`. On a concrete resampler, just bring the trait into scope. On a `dyn Resampler`,
+recover the capability with `as_adjustable()` / `as_resizable()` (this replaces the old
+`SyncNotAdjustable` / `ChunkSizeNotAdjustable` errors, which are removed). To query the
+capability through a shared `&dyn Resampler`, use `is_adjustable()` / `is_resizable()`.
+
+```rust,ignore
+// before: on a Box<dyn Resampler>, with a runtime error for synchronous resamplers
+resampler.set_resample_ratio(new_ratio, true)?;
+// after: None means "synchronous, nothing to adjust"
+if let Some(adjustable) = resampler.as_adjustable() {
+    adjustable.set_resample_ratio(new_ratio, true)?;
+}
+
+// before: on a concrete Async resampler
+async_resampler.set_resample_ratio_relative(0.95, true)?;
+// after: same call, but the Adjustable trait must be in scope
+use rubato::Adjustable;
+async_resampler.set_resample_ratio_relative(0.95, true)?;
+```
+
 **The error enums are now `#[non_exhaustive]`.** If you `match` on `ResampleError` or
 `ResamplerConstructionError`, add a `_ => ...` arm.
 
@@ -440,6 +463,12 @@ let r = Fft::<f64>::new_custom(rate_in, rate_out, chunk_size, sub_chunks, channe
     `SincInterpolationType`, `PolynomialDegree`, `FixedSync` and `FixedAsync`.
   - Return `WrongNumberOfMaskChannels` instead of panicking when the
     `active_channels_mask` passed to a process method has the wrong length.
+  - Split the capability-specific methods out of `Resampler` into the `Adjustable` trait
+    (`set_resample_ratio`, `set_resample_ratio_relative`) and the `Resizable` trait
+    (`set_chunk_size`). `Resampler` gains `as_adjustable()` and `as_resizable()` to recover
+    these capabilities from a trait object, and `is_adjustable()` / `is_resizable()` to query
+    them through a shared reference. The `SyncNotAdjustable` and `ChunkSizeNotAdjustable`
+    error variants are removed, since calling these methods is now a compile-time capability.
 - v3.0.0
   - Use separate lifetimes for `buffer_in` and `buffer_out` in `process_into_buffer`.
   - Improve sinc resampler performance with smarter dot product calculation.
