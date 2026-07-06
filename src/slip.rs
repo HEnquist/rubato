@@ -499,8 +499,16 @@ where
         Some(self)
     }
 
+    fn is_adjustable(&self) -> bool {
+        true
+    }
+
     fn as_resizable(&mut self) -> Option<&mut dyn Resizable<T>> {
         Some(self)
+    }
+
+    fn is_resizable(&self) -> bool {
+        true
     }
 }
 

@@ -785,6 +785,13 @@ pub mod tests {
         assert!(boxed.as_adjustable().is_some());
         assert!(boxed.as_resizable().is_some());
 
+        // Slip resamplers are adjustable and resizable, like the async resamplers.
+        let mut slip = Slip::<f64>::new(1024, 2, FixedAsync::Output).unwrap();
+        assert!(slip.is_adjustable());
+        assert!(slip.is_resizable());
+        assert!(slip.as_adjustable().is_some());
+        assert!(slip.as_resizable().is_some());
+
         // Synchronous Fft resamplers are neither.
         #[cfg(feature = "fft_resampler")]
         {
