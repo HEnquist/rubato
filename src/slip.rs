@@ -6,17 +6,21 @@ use crate::error::{ResampleError, ResampleResult, ResamplerConstructionError};
 use crate::{get_offsets, get_partial_len, update_mask, Indexing};
 use crate::{validate_buffers, Adjustable, Resampler, Resizable, Sample};
 
-/// Length in frames of the crossfade that hides each slip.
+/// Target length in frames of the crossfade that hides each slip.
 ///
-/// During the crossfade the signal is blended with a one-sample-shifted copy of itself, which acts
-/// as a mild comb filter (a gentle notch up near Nyquist), so the fade is kept short to keep that
-/// coloration brief. Going much shorter (one or two frames) would approach a hard cut and bring back
-/// an audible click, while a longer fade would only spread the coloration over more of the signal.
-/// A handful of frames is the sweet spot, and the result is insensitive to the exact value, so it is
-/// fixed rather than exposed as a parameter. It also sets how densely slips can be packed, and thus
-/// the maximum drift the resampler can absorb, which works out to far more than any realistic clock
-/// drift.
-const CROSSFADE_LEN: usize = 8;
+/// Each slip retimes the stream by one frame, and the crossfade spreads that one-frame shift over
+/// several frames rather than applying it as a hard cut. During the fade the signal is blended with
+/// a one-sample-shifted copy of itself: a linear-interpolation retiming that moves the read position
+/// at a constant rate (plus a mild comb notch up near Nyquist from the two-tap blend). The
+/// disturbance a slip injects is a short burst centred on the signal's own frequencies, and its
+/// spectral spread scales with the peak retiming rate, i.e. with `1 / len`. A longer fade therefore
+/// lowers that peak, keeping the disturbance narrow and close to (so masked by) the signal; a hard
+/// cut is a broadband click, while a few tens of frames is already inaudible even on worst-case
+/// sustained pure tones. Longer is better up to diminishing returns, so this is the length used once
+/// the chunk is big enough to hold it. It is a target, not a hard value: [crossfade_len_for] shrinks
+/// it for small chunks so they stay usable instead of being rejected. 128 is comfortably transparent
+/// and leaves ample drift margin.
+const MAX_CROSSFADE_LEN: usize = 128;
 
 /// A clutch for matching two almost-equal sample rates, slipping a frame when needed.
 ///
@@ -70,8 +74,9 @@ const CROSSFADE_LEN: usize = 8;
 ///
 /// # Correction rate limit
 /// Several frames can be inserted or dropped within a single chunk, as long as their crossfades do
-/// not overlap. With the short crossfade used internally this puts the ceiling at about 10% drift,
-/// essentially independent of the chunk size and far more than any realistic clock drift. The
+/// not overlap. At the full crossfade length this puts the ceiling at roughly 0.8% of drift; smaller
+/// chunks use a shorter fade and can pack corrections more densely, so they absorb even more. Either
+/// way it is far beyond any realistic clock drift. The
 /// ratio starts at 1.0 and is adjusted through [Adjustable::set_resample_ratio], which clamps to
 /// this range and applies the nearest limit but still returns an error, so a feedback loop runs at
 /// the best achievable rate and can tell when it has saturated. The ratio is intended to be adjusted
@@ -141,6 +146,7 @@ pub struct Slip<T> {
     nbr_channels: usize,
     chunk_size: usize,
     max_chunk_size: usize,
+    crossfade_len: usize,
     max_correction: usize,
     needed_input_size: usize,
     needed_output_size: usize,
@@ -159,6 +165,7 @@ impl<T> fmt::Debug for Slip<T> {
             .field("nbr_channels", &self.nbr_channels)
             .field("chunk_size", &self.chunk_size)
             .field("max_chunk_size", &self.max_chunk_size)
+            .field("crossfade_len", &self.crossfade_len)
             .field("max_correction", &self.max_correction)
             .field("needed_input_size", &self.needed_input_size)
             .field("needed_output_size", &self.needed_output_size)
@@ -171,25 +178,22 @@ impl<T> fmt::Debug for Slip<T> {
     }
 }
 
-/// Crossfade weights, a smootherstep S-curve going from 0 to 1.
+/// Crossfade length actually used for a given chunk size.
 ///
-/// smootherstep (`6x^5 - 15x^4 + 10x^3`) has zero first and second derivative at both ends, so the
-/// fade eases into and out of the surrounding straight-copy regions with no slope kink that would
-/// reintroduce a click. The two blended signals differ by only a single sample, so the amplitude
-/// complementary (`w` and `1 - w`) weighting preserves the level across the splice. Being a plain
-/// polynomial it needs no transcendental, so the whole table is evaluated at compile time.
+/// A correction needs its fade plus a one-frame gap on either side to fit inside the chunk without
+/// the fades of adjacent corrections overlapping, i.e. `chunk >= 2 * len + 2`. We use the largest
+/// `len` up to [MAX_CROSSFADE_LEN] that satisfies this, so large chunks get the full, most
+/// transparent fade while small chunks shrink it gracefully rather than being rejected. Returns 0
+/// for a chunk too small to hold even a one-frame fade (`chunk < 4`), which the callers reject.
 ///
-/// See <https://en.wikipedia.org/wiki/Smoothstep#Variations> for the smootherstep polynomial.
-const FADE: [f64; CROSSFADE_LEN] = {
-    let mut fade = [0.0; CROSSFADE_LEN];
-    let mut k = 0;
-    while k < CROSSFADE_LEN {
-        let x = (k as f64 + 0.5) / CROSSFADE_LEN as f64;
-        fade[k] = x * x * x * (x * (x * 6.0 - 15.0) + 10.0);
-        k += 1;
-    }
-    fade
-};
+/// The fade itself is a plain linear ramp `w = (j + 0.5) / len`, computed inline in
+/// [place_correction]. Among monotonic `0 -> 1` fades of a given length the linear ramp has the
+/// lowest peak rate (it never exceeds the average) and injects the least energy, so it produces the
+/// narrowest, least audible disturbance; smooth S-curves and end-loaded shapes concentrate the
+/// retiming and were audibly worse in listening tests.
+fn crossfade_len_for(chunk_size: usize) -> usize {
+    (chunk_size.saturating_sub(2) / 2).min(MAX_CROSSFADE_LEN)
+}
 
 /// Largest number of corrections that fit in one chunk without the crossfades overlapping.
 ///
@@ -230,11 +234,16 @@ fn ratio_range(max_correction: usize, chunk_size: usize, fixed: FixedAsync) -> (
 /// `correction` is `0` for a straight copy (`output.len() == input.len()`), positive to insert that
 /// many frames (output that much longer than input), or negative to drop that many (output shorter).
 /// The splices are spread evenly across the chunk and each one is hidden by crossfading over
-/// `CROSSFADE_LEN` frames. The regions never overlap, which the caller guarantees by keeping
-/// `correction` within [max_corrections].
-fn place_correction<T: Sample>(input: &[T], output: &mut [T], correction: i32) {
+/// `crossfade_len` frames. The regions never overlap, which the caller guarantees by keeping
+/// `correction` within [max_corrections] for the same `crossfade_len`.
+fn place_correction<T: Sample>(
+    input: &[T],
+    output: &mut [T],
+    correction: i32,
+    crossfade_len: usize,
+) {
     let out_len = output.len();
-    let l = CROSSFADE_LEN;
+    let l = crossfade_len;
     let n = correction.unsigned_abs() as usize;
     if n == 0 {
         output.copy_from_slice(&input[..out_len]);
@@ -258,9 +267,9 @@ fn place_correction<T: Sample>(input: &[T], output: &mut [T], correction: i32) {
         let src = (pos as isize + offset) as usize;
         output[pos..pos + gap].copy_from_slice(&input[src..src + gap]);
         pos += gap;
-        // Crossfade from the current read offset to the next one.
-        for &wf in &FADE {
-            let w = T::coerce(wf);
+        // Crossfade from the current read offset to the next one, over a linear ramp.
+        for j in 0..l {
+            let w = T::coerce((j as f64 + 0.5) / l as f64);
             let i = (pos as isize + offset) as usize;
             let a = input[i];
             let b = input[(i as isize + step) as usize];
@@ -286,7 +295,8 @@ where
     ///
     /// Parameters are:
     /// - `chunk_size`: Size of the fixed side (input or output, see `fixed`) in frames. Must be at
-    ///   least 18 frames (twice the internal crossfade plus a margin).
+    ///   least 4. The internal crossfade grows with the chunk up to [MAX_CROSSFADE_LEN] frames
+    ///   (reached at `2 * MAX_CROSSFADE_LEN + 2` = 258 and above) and shrinks for smaller chunks.
     /// - `nbr_channels`: Number of channels in input/output.
     /// - `fixed`: Whether the input or the output chunk size is fixed.
     pub fn new(
@@ -299,11 +309,12 @@ where
             fixed, chunk_size, nbr_channels,
         );
 
-        if chunk_size < 2 * CROSSFADE_LEN + 2 {
+        let crossfade_len = crossfade_len_for(chunk_size);
+        if crossfade_len == 0 {
             return Err(ResamplerConstructionError::InvalidChunkSize(chunk_size));
         }
 
-        let max_correction = max_corrections(chunk_size, CROSSFADE_LEN);
+        let max_correction = max_corrections(chunk_size, crossfade_len);
         // The variable side can be up to `max_correction` frames larger than the fixed side.
         let scratch_len = chunk_size + max_correction;
 
@@ -311,6 +322,7 @@ where
             nbr_channels,
             chunk_size,
             max_chunk_size: chunk_size,
+            crossfade_len,
             max_correction,
             needed_input_size: chunk_size,
             needed_output_size: chunk_size,
@@ -329,7 +341,7 @@ where
     /// The range of resample ratios the resampler can sustain with the current chunk size.
     fn current_ratio_range(&self) -> (f64, f64) {
         ratio_range(
-            max_corrections(self.chunk_size, CROSSFADE_LEN),
+            max_corrections(self.chunk_size, self.crossfade_len),
             self.chunk_size,
             self.fixed,
         )
@@ -346,7 +358,7 @@ where
         // Take as many whole frames of correction as the projected error calls for, capped at what
         // fits in this chunk without the crossfades overlapping. Any remainder stays in the
         // accumulator and is applied on a later chunk.
-        let cap = max_corrections(self.chunk_size, CROSSFADE_LEN) as i32;
+        let cap = max_corrections(self.chunk_size, self.crossfade_len) as i32;
         self.correction = (projected.trunc() as i32).clamp(-cap, cap);
         match self.fixed {
             FixedAsync::Input => {
@@ -429,6 +441,7 @@ where
                     &self.input_scratch[..input_len],
                     &mut self.output_scratch[..output_len],
                     self.correction,
+                    self.crossfade_len,
                 );
             }
             buffer_out.copy_from_slice_to_channel(
@@ -492,6 +505,7 @@ where
         // Back to the nominal rate; the feedback loop re-tunes from there.
         self.resample_ratio = 1.0;
         self.chunk_size = self.max_chunk_size;
+        self.crossfade_len = crossfade_len_for(self.max_chunk_size);
         self.replan();
     }
 
@@ -556,13 +570,15 @@ where
     T: Sample,
 {
     fn set_chunk_size(&mut self, chunksize: usize) -> ResampleResult<()> {
-        if chunksize > self.max_chunk_size || chunksize == 0 || chunksize < 2 * CROSSFADE_LEN + 2 {
+        let crossfade_len = crossfade_len_for(chunksize);
+        if chunksize > self.max_chunk_size || crossfade_len == 0 {
             return Err(ResampleError::InvalidChunkSize {
                 max: self.max_chunk_size,
                 requested: chunksize,
             });
         }
         self.chunk_size = chunksize;
+        self.crossfade_len = crossfade_len;
         self.replan();
         Ok(())
     }
@@ -570,7 +586,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{Slip, FADE};
+    use super::{crossfade_len_for, Slip, MAX_CROSSFADE_LEN};
     use crate::tests::expected_output_value;
     use crate::FixedAsync;
     use crate::Indexing;
@@ -579,27 +595,24 @@ mod tests {
     use audioadapter_buffers::direct::SequentialSliceOfVecs;
     use test_case::test_matrix;
 
-    /// The compile-time fade table must be a valid amplitude-complementary crossfade: monotonic
-    /// from ~0 to ~1, and symmetric so a slip preserves the signal level across the splice.
+    /// The crossfade caps at the target for big chunks and shrinks to fit small ones, always
+    /// leaving room for a correction (`chunk >= 2 * len + 2`).
     #[test]
-    fn fade_table_is_valid() {
-        let fade = FADE;
-        let n = fade.len();
-        assert!(
-            fade[0] > 0.0 && fade[0] < 0.02,
-            "should ease in from near 0"
+    fn crossfade_len_scales_with_chunk() {
+        // Capped at the target once the chunk is big enough to hold it.
+        assert_eq!(crossfade_len_for(4096), MAX_CROSSFADE_LEN);
+        assert_eq!(
+            crossfade_len_for(2 * MAX_CROSSFADE_LEN + 2),
+            MAX_CROSSFADE_LEN
         );
-        assert!(
-            fade[n - 1] > 0.98 && fade[n - 1] < 1.0,
-            "should ease out to near 1"
-        );
-        for pair in fade.windows(2) {
-            assert!(pair[1] > pair[0], "must be strictly increasing");
+        // Shrinks below the target for smaller chunks, always keeping chunk >= 2 * len + 2.
+        assert!(crossfade_len_for(100) < MAX_CROSSFADE_LEN);
+        for &chunk in &[4usize, 5, 17, 50, 100, 257] {
+            let l = crossfade_len_for(chunk);
+            assert!(l >= 1 && 2 * l + 2 <= chunk, "chunk {} -> len {}", chunk, l);
         }
-        // Symmetric: w(k) + w(N-1-k) == 1, so blended levels stay constant.
-        for k in 0..n {
-            assert!((fade[k] + fade[n - 1 - k] - 1.0).abs() < 1e-12);
-        }
+        // Too small to hold even a one-frame fade.
+        assert_eq!(crossfade_len_for(3), 0);
     }
 
     #[test_log::test(test_matrix(
@@ -648,9 +661,9 @@ mod tests {
 
     #[test]
     fn rejects_short_chunk() {
-        // chunk_size must be at least 2 * CROSSFADE_LEN + 2 (18).
-        assert!(Slip::<f64>::new(17, 1, FixedAsync::Input).is_err());
-        assert!(Slip::<f64>::new(18, 1, FixedAsync::Input).is_ok());
+        // chunk_size must be at least 2 * 1 + 2 = 4 (room for the shortest possible fade).
+        assert!(Slip::<f64>::new(3, 1, FixedAsync::Input).is_err());
+        assert!(Slip::<f64>::new(4, 1, FixedAsync::Input).is_ok());
     }
 
     /// At the default ratio of 1.0 the output must be a bit-exact copy of the input.
@@ -674,7 +687,7 @@ mod tests {
     fn dc_stays_flat_across_correction() {
         let chunk = 64;
         let mut resampler = Slip::<f64>::new(chunk, 1, FixedAsync::Input).unwrap();
-        resampler.set_resample_ratio(1.02, false).unwrap();
+        resampler.set_resample_ratio(1.01, false).unwrap();
         let mut corrected = false;
         for _ in 0..10 {
             let out_len = resampler.output_frames_next();
@@ -699,7 +712,7 @@ mod tests {
     /// ratio must still track, and a strictly increasing ramp must stay monotonic through every
     /// splice (which would break if any crossfade read from the wrong place).
     #[test_log::test(test_matrix(
-        [1.01, 0.99],
+        [1.005, 0.995],
         [FixedAsync::Input, FixedAsync::Output]
     ))]
     fn multiple_corrections_per_chunk(ratio: f64, fixed: FixedAsync) {
@@ -795,9 +808,10 @@ mod tests {
     fn set_ratio_respects_range() {
         let mut resampler = Slip::<f64>::new(1024, 2, FixedAsync::Input).unwrap();
         let (min, max) = resampler.current_ratio_range();
-        // A ratio within the supported range (about 1 +/- 0.1 here) is accepted and applied.
-        assert!(resampler.set_resample_ratio(1.05, false).is_ok());
-        assert_eq!(resampler.resample_ratio(), 1.05);
+        // A ratio inside the supported range is accepted and applied unchanged.
+        let in_range = 1.0 + (max - 1.0) * 0.5;
+        assert!(resampler.set_resample_ratio(in_range, false).is_ok());
+        assert_eq!(resampler.resample_ratio(), in_range);
         // A ratio above the range is clamped to the maximum, applied, and still returns an error.
         assert!(resampler.set_resample_ratio(2.0, false).is_err());
         assert_eq!(resampler.resample_ratio(), max);
