@@ -469,6 +469,11 @@ async_resampler.set_resample_ratio_relative(0.95, true)?;
     these capabilities from a trait object, and `is_adjustable()` / `is_resizable()` to query
     them through a shared reference. The `SyncNotAdjustable` and `ChunkSizeNotAdjustable`
     error variants are removed, since calling these methods is now a compile-time capability.
+  - Add `Slip`, a very cheap resampler for matching two almost-equal sample rates by occasionally
+    slipping (inserting or dropping) a frame, hidden by a short crossfade, rather than running a
+    full resampler. It is meant for compensating small clock differences: it adds no delay and no
+    high-frequency roll-off, and its ratio is meant to be adjusted at runtime through `Adjustable`
+    by a feedback loop.
 - v3.0.0
   - Use separate lifetimes for `buffer_in` and `buffer_out` in `process_into_buffer`.
   - Improve sinc resampler performance with smarter dot product calculation.
