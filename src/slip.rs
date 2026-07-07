@@ -413,11 +413,12 @@ where
             }
             if self.correction == 0 {
                 // No slip this chunk: read straight into the output scratch, skipping the
-                // input scratch and the redundant scratch-to-scratch copy.
+                // input scratch and the redundant scratch-to-scratch copy. Only `frames_to_read`
+                // frames are guaranteed present in `buffer_in` (see `validate_buffers`).
                 buffer_in.copy_from_channel_to_slice(
                     chan,
                     input_offset,
-                    &mut self.output_scratch[..output_len],
+                    &mut self.output_scratch[..frames_to_read],
                 );
                 // Zero pad if this is a short final chunk.
                 if frames_to_read < output_len {
@@ -426,10 +427,11 @@ where
                     }
                 }
             } else {
+                // Only `frames_to_read` frames are guaranteed present in `buffer_in`.
                 buffer_in.copy_from_channel_to_slice(
                     chan,
                     input_offset,
-                    &mut self.input_scratch[..input_len],
+                    &mut self.input_scratch[..frames_to_read],
                 );
                 // Zero pad if this is a short final chunk.
                 if frames_to_read < input_len {
