@@ -272,51 +272,65 @@ RUST_LOG=trace cargo test --features log
 
 ## Example
 
-Resample a dummy audio file from 44100 to 48000 Hz.
-This uses the `Fft` resampler, which requires the `fft_resampler` feature (enabled by default).
+Resample stereo audio from 44100 to 48000 Hz, one chunk at a time.
+The input is processed in a loop and can come from anywhere: a file read
+chunk by chunk, or a live stream that keeps running indefinitely.
+This uses the `Async` resampler with polynomial interpolation,
+which is always available and needs no optional features.
 See also the "process_f64" example that can be used to process a file from disk.
-```rust,ignore
+```rust
 use rubato::{
-    Resampler, Fft, FixedSync, Indexing
+    Resampler, Async, FixedAsync, PolynomialDegree, Indexing
 };
 use audioadapter_buffers::direct::InterleavedSlice;
 
-let mut resampler = Fft::<f64>::new(48000, 44100, 1024, 2, FixedSync::Both).unwrap();
+let channels = 2;
+let chunk_size = 1024;
 
-// create a short dummy audio clip, assuming it's stereo stored as interleaved f64 values
-let audio_clip = vec![0.0; 2*10000];
+let mut resampler = Async::<f64>::new_poly(
+    48000.0 / 44100.0,
+    1.1,
+    PolynomialDegree::Cubic,
+    chunk_size,
+    channels,
+    FixedAsync::Input,
+).unwrap();
 
-// wrap it with an InterleavedSlice Adapter
-let nbr_input_frames = audio_clip.len() / 2;
-let input_adapter = InterleavedSlice::new(&audio_clip, 2, nbr_input_frames).unwrap();
+// Reusable buffers for a single chunk, assuming interleaved f64 samples.
+// With `FixedAsync::Input` every call consumes `chunk_size` input frames and
+// produces at most `output_frames_max()` output frames.
+let mut indata = vec![0.0; channels * chunk_size];
+let mut outdata = vec![0.0; channels * resampler.output_frames_max()];
+let outdata_capacity = outdata.len() / channels;
 
-// create a buffer for the output
-let mut outdata = vec![0.0; 2*2*10000];
-let outdata_capacity = outdata.len() / 2;
-let mut output_adapter =
-    InterleavedSlice::new_mut(&mut outdata, 2, outdata_capacity).unwrap();
+let indexing = Indexing::new();
 
-// Preparations
-let mut indexing = Indexing::new();
+// Keep processing for as long as there is more audio to handle.
+// Here the source is a dummy counter that stops after a few chunks;
+// in a real application this stands in for "is there more data?".
+let mut chunks_left = 10;
+loop {
+    // Fetch the next `input_frames_next()` frames from the source into `indata`.
+    // For a file, break out of the loop once the end is reached (a shorter final
+    // chunk is handled by setting `partial_len` on the indexing struct, see the
+    // `process_f64` example). For an endless stream, simply never break.
+    if chunks_left == 0 {
+        break;
+    }
+    chunks_left -= 1;
+    let frames_to_read = resampler.input_frames_next();
+    // (read `frames_to_read` frames from the file or stream into `indata` here)
 
-let mut input_frames_left = nbr_input_frames;
-let mut input_frames_next = resampler.input_frames_next();
+    let input_adapter = InterleavedSlice::new(&indata, channels, frames_to_read).unwrap();
+    let mut output_adapter =
+        InterleavedSlice::new_mut(&mut outdata, channels, outdata_capacity).unwrap();
 
-// Loop over all full chunks.
-// There will be some unprocessed input frames left after the last full chunk.
-// see the `process_f64` example for how to handle those
-// using `partial_len` of the indexing struct.
-// It is also possible to use the `process_all_into_buffer` method
-// to process the entire file (including any last partial chunk) with a single call.
-while input_frames_left >= input_frames_next {
-    let (frames_read, frames_written) = resampler
+    let (_frames_read, frames_written) = resampler
         .process_into_buffer(&input_adapter, &mut output_adapter, Some(&indexing))
         .unwrap();
 
-    indexing.input_offset += frames_read;
-    indexing.output_offset += frames_written;
-    input_frames_left -= frames_read;
-    input_frames_next = resampler.input_frames_next();
+    // Write the `frames_written` output frames to the destination file or stream.
+    let _ = frames_written;
 }
 ```
 
