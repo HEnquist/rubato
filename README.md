@@ -18,8 +18,8 @@ See [Real-time considerations](#real-time-considerations) for more details.
 ## Input and output data format
 
 Input and output data is handled via
-[`Adapter`](https://docs.rs/audioadapter/2.0.0/audioadapter/trait.Adapter.html)
-and [`AdapterMut`](https://docs.rs/audioadapter/2.0.0/audioadapter/trait.AdapterMut.html)
+[`Adapter`](https://docs.rs/audioadapter/4.0.0/audioadapter/trait.Adapter.html)
+and [`AdapterMut`](https://docs.rs/audioadapter/4.0.0/audioadapter/trait.AdapterMut.html)
 objects from the [audioadapter](https://crates.io/crates/audioadapter) crate.
 By using a suitable adapter, any sample layout and format can be used.
 
@@ -29,7 +29,7 @@ and the `audioadapter` traits are kept simple in order to make it easy to implem
 for new structures if needed.
 
 For projects migrating from a previous version of `rubato`, the
-[`SequentialSliceOfVecs`](https://docs.rs/audioadapter-buffers/2.0.0/audioadapter_buffers/direct/struct.SequentialSliceOfVecs.html)
+[`SequentialSliceOfVecs`](https://docs.rs/audioadapter-buffers/4.0.0/audioadapter_buffers/direct/struct.SequentialSliceOfVecs.html)
 adapter is a good starting point, since it wraps the vector of vectors
 commonly used with `rubato` v0.16 and earlier.
 
@@ -66,6 +66,54 @@ the spectrum is scaled to match the target sample rate,
 and then transformed back to produce the resampled output.
 This type of resampler is considerably faster than sinc-based approaches
 but doesn't support changing the resampling ratio.
+
+## Choosing a resampler
+
+Rubato provides two true resampler types. The synchronous `Fft` resampler is for
+a fixed ratio, while the asynchronous `Async` resampler allows the ratio to vary
+over time and comes in two interpolation modes. Which one to pick depends mainly
+on whether the ratio is fixed, and on how you want to trade CPU time for quality.
+In addition, the lightweight `Slip` clutch handles the special case of matching
+two rates that are almost identical.
+
+Some common tasks and a suitable resampler for each:
+
+- **Convert an audio file from one fixed rate to another**, for example 44.1 to 48 kHz
+  as an offline batch job: use `Fft` with `process_all()`.
+- **Resample a real-time stream between two devices whose clocks drift**, such as a
+  capture card feeding a sound card: use `Async::new_sinc` for the same high quality as `Fft`,
+  and adjust the ratio to track the drift.
+- **Do the same on a tight CPU budget** where a little aliasing is acceptable, for example in a
+  game, a voice application such as a video call, or on an embedded target: use `Async::new_poly`.
+- **Change playback speed or pitch on the fly** by sweeping the ratio while running: use an
+  `Async` resampler, sinc for quality or polynomial for speed. The ratio is not limited to small
+  adjustments; it can be swept over a wide range, up to the `max_resample_ratio_relative` factor
+  chosen at construction.
+- **Keep a stream aligned to a sound card that is a few ppm off**, without truly resampling:
+  use `Slip`.
+- **Feed a downstream stage where quality barely matters**, such as driving a VU meter or level
+  display, or downsampling to a low rate to cut the cost of later processing: use `Async::new_poly`
+  for the cheapest conversion.
+
+A few notes to guide the choice:
+
+- The `Fft` resampler requires the `fft_resampler` feature, which is enabled by default.
+  It is both fast and high quality, so it is the natural choice whenever the ratio is fixed.
+- Use an `Async` resampler when the input and output clocks may drift relative to each other,
+  or when you otherwise need to adjust the ratio while running (see [Asynchronous resampling](#asynchronous-resampling)).
+- `Async::new_sinc` matches the quality of the `Fft` resampler but is the most CPU-heavy option.
+  `Async::new_poly` is much faster because it skips the sinc anti-aliasing filter; the quality
+  loss is often subtle. See [Resampling quality](#resampling-quality) for the settings that tune
+  each mode.
+- `Slip` is **not** a true sample rate converter. It does not interpolate or filter; it just
+  passes samples through and occasionally inserts or drops a single frame to keep two
+  near-identical clocks in step, hiding each correction behind a short crossfade. In return it
+  uses very little CPU, adds no delay, and leaves the passband untouched. Use it only for tracking
+  tiny clock drift (a few ppm, ratio very close to `1.0`); for any real ratio change, use an
+  `Async` resampler instead.
+
+If you are unsure, `Fft` is a good default for offline or fixed-rate work,
+and `Async::new_sinc` is a good default for real-time streams with clock drift.
 
 ## Usage
 The resamplers provided by this library are intended to support processing streams of audio.
@@ -128,7 +176,7 @@ reported by `input_frames_next()` and `output_frames_next()` respectively.
 Both buffers may be larger than required — only the needed frames are read or written.
 
 ### Resampling quality
-The synchronous resampler has no quality settings, it always delivers the best quality.
+The synchronous resampler has no quality settings; it always delivers the best quality.
 
 When using cubic sinc interpolation, the quality of the asynchronous resampler
 is equivalent to the synchronous resampler.
@@ -138,14 +186,14 @@ that can be used when a different balance between speed and quality is required.
 When using sinc interpolation, the length of the sinc function can be reduced.
 Each halving of the sinc function length nearly doubles the speed,
 at the cost of increased roll-off at high frequencies.
-It is also posible to lower the polynomial degree to quadratic or linear,
+It is also possible to lower the polynomial degree to quadratic or linear,
 which also increases the speed while producing higher amounts of distortion.
 
 The fastest option is to use plain polynomial interpolation.
 This is significantly faster as it avoids the expensive sinc interpolation,
 but does not provide any anti-alias filtering.
 The effect of this is often subtle, and many applications can use this mode
-to save a significant amount of CPU time with little or no percieved quality loss.
+to save a significant amount of CPU time with little or no perceived quality loss.
 
 ### Real-time considerations
 Rubato is suitable for real-time applications when using the `Resampler::process_into_buffer()` method.
@@ -154,7 +202,7 @@ operations that may block the thread.
 Ensure that the resampler instance and any needed input and output buffers are created
 before entering time-sensitive parts of the application.
 
-The [log feature](#log-enable-logging) feature is disabled by default,
+The [log feature](#log-enable-logging) is disabled by default,
 and should not be enabled for real-time use.
 
 ### Resampling a given audio clip
@@ -221,7 +269,7 @@ the chunk sizes of the audio API and the resampler.
 A good starting point for the resampler chunk size is to use an "easy" value,
 for example a power of two, near the average chunk size of the audio API.
 Make sure that the shared buffer is large enough to not get full
-in case for the loop gets blocked waiting for example for disk access.
+in case the loop gets blocked waiting, for example for disk access.
 
 The output of the resampler is then written to a file.
 The [hound](https://crates.io/crates/hound) crate is a popular choice
@@ -257,7 +305,7 @@ This is intended for debugging purposes, when working on `rubato` itself or inve
 Applications using this library should normally keep this feature disabled to avoid
 cluttering logs with unnecessary messages.
 
-Note that outputting a log message allocates a [std::string::String],
+Note that outputting a log message allocates a `String`,
 and most logging implementations involve various other system calls.
 These calls may take some (unpredictable) time to return, during which the application is blocked.
 This means that logging should be avoided if using this library in a realtime application.
@@ -339,7 +387,7 @@ loop {
 The `examples` directory contains a few sample applications for testing the resamplers.
 There are also Python scripts for generating simple test signals as well as analyzing the resampled results.
 
-The examples read and write raw audio data in either 64-bit float of 16-bit integer format.
+The examples read and write raw audio data in either 64-bit float or 16-bit integer format.
 They can be used to process .wav files if the files are first converted to the right format.
 Example, use `sox` to convert a .wav to 64-bit float raw samples:
 ```sh
