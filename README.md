@@ -593,4 +593,11 @@ async_resampler.set_resample_ratio_relative(0.95, true)?;
   - Accept any AsRef<\[T\]> as input.
 
 
-License: MIT
+## License
+
+Licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+- MIT license ([LICENSE-MIT](LICENSE-MIT))
+
+at your option.
