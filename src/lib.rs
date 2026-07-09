@@ -48,6 +48,7 @@ mod error;
 mod interpolation;
 mod sample;
 mod sinc;
+mod slip;
 #[cfg(feature = "fft_resampler")]
 mod synchro;
 mod windows;
@@ -61,6 +62,7 @@ pub use crate::error::{
     CpuFeature, MissingCpuFeature, ResampleError, ResampleResult, ResamplerConstructionError,
 };
 pub use crate::sample::Sample;
+pub use crate::slip::Slip;
 #[cfg(feature = "fft_resampler")]
 pub use crate::synchro::{Fft, FixedSync};
 pub use crate::windows::{calculate_cutoff, WindowFunction};
@@ -70,7 +72,7 @@ pub use crate::windows::{calculate_cutoff, WindowFunction};
 ///
 /// All fields have sensible defaults: zero offsets, no partial length, and all channels active.
 /// Pass `None` as the `indexing` argument to use these defaults without constructing the struct.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Indexing {
     /// Number of frames to skip at the beginning of the input buffer before reading.
     /// Use this to process a sub-region of a larger buffer without copying data.
@@ -105,6 +107,52 @@ pub struct Indexing {
     pub active_channels_mask: Option<Vec<bool>>,
 }
 
+impl Indexing {
+    /// Create an [Indexing] with all fields at their defaults:
+    /// zero offsets, no partial length, and all channels active.
+    ///
+    /// Chain the setters to configure only the fields you need:
+    ///
+    /// ```
+    /// use rubato::Indexing;
+    ///
+    /// let indexing = Indexing::new()
+    ///     .input_offset(128)
+    ///     .partial_len(64);
+    /// ```
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the number of frames to skip at the start of the input buffer.
+    #[must_use]
+    pub fn input_offset(mut self, frames: usize) -> Self {
+        self.input_offset = frames;
+        self
+    }
+
+    /// Set the number of frames to skip at the start of the output buffer.
+    #[must_use]
+    pub fn output_offset(mut self, frames: usize) -> Self {
+        self.output_offset = frames;
+        self
+    }
+
+    /// Set the number of valid input frames available for a partial (final) chunk.
+    #[must_use]
+    pub fn partial_len(mut self, frames: usize) -> Self {
+        self.partial_len = Some(frames);
+        self
+    }
+
+    /// Set the per-channel processing mask.
+    #[must_use]
+    pub fn active_channels_mask(mut self, mask: Vec<bool>) -> Self {
+        self.active_channels_mask = Some(mask);
+        self
+    }
+}
+
 pub(crate) fn get_offsets(indexing: &Option<&Indexing>) -> (usize, usize) {
     indexing
         .as_ref()
@@ -116,15 +164,23 @@ pub(crate) fn get_partial_len(indexing: &Option<&Indexing>) -> Option<usize> {
     indexing.as_ref().and_then(|idx| idx.partial_len)
 }
 
-/// Helper to update the mask from an optional Indexing struct
-pub(crate) fn update_mask(indexing: &Option<&Indexing>, mask: &mut [bool]) {
+/// Helper to update the mask from an optional Indexing struct.
+/// Returns [ResampleError::WrongNumberOfMaskChannels] if the provided mask has the wrong length.
+pub(crate) fn update_mask(indexing: &Option<&Indexing>, mask: &mut [bool]) -> ResampleResult<()> {
     if let Some(idx) = indexing {
         if let Some(new_mask) = &idx.active_channels_mask {
+            if new_mask.len() != mask.len() {
+                return Err(ResampleError::WrongNumberOfMaskChannels {
+                    expected: mask.len(),
+                    actual: new_mask.len(),
+                });
+            }
             mask.copy_from_slice(new_mask);
-            return;
+            return Ok(());
         }
     }
     mask.iter_mut().for_each(|v| *v = true);
+    Ok(())
 }
 
 /// A resampler that is used to resample a chunk of audio to a new sample rate.
@@ -138,26 +194,36 @@ where
     /// [process_into_buffer](Resampler::process_into_buffer) with a pre-allocated buffer
     /// instead of this function.
     ///
+    /// This resamples a single chunk of [input_frames_next](Resampler::input_frames_next)
+    /// frames. To resample a whole clip that is already in memory, use
+    /// [process_all](Resampler::process_all) instead. Do not size the resampler to the clip
+    /// length and call this once: that wastes memory and leaves the resampler's startup delay
+    /// as leading silence in the output.
+    ///
     /// The output is returned as an [InterleavedOwned] struct that wraps a `Vec<T>`
     /// of interleaved samples.
     ///
-    /// The `input_offset` and `active_channels_mask` parameters have the same meaning as in
-    /// [process_into_buffer](Resampler::process_into_buffer).
+    /// The optional `indexing` parameter has the same meaning as in
+    /// [process_into_buffer](Resampler::process_into_buffer), with one exception: since the
+    /// output buffer is allocated here, its `output_offset` field is ignored (the output always
+    /// starts at frame zero). Use `input_offset` to start reading partway into a larger input
+    /// buffer, `partial_len` to feed a final chunk that is shorter than
+    /// [input_frames_next](Resampler::input_frames_next), and `active_channels_mask` to skip
+    /// channels.
     fn process(
         &mut self,
-        buffer_in: &dyn Adapter<'_, T>,
-        input_offset: usize,
-        active_channels_mask: Option<&[bool]>,
+        buffer_in: &dyn Adapter<T>,
+        indexing: Option<&Indexing>,
     ) -> ResampleResult<InterleavedOwned<T>> {
         let frames = self.output_frames_next();
         let channels = self.nbr_channels();
         let mut buffer_out = InterleavedOwned::<T>::new(T::coerce_from(0.0), channels, frames);
 
         let indexing = Indexing {
-            input_offset,
+            input_offset: get_offsets(&indexing).0,
             output_offset: 0,
-            partial_len: None,
-            active_channels_mask: active_channels_mask.map(|m| m.to_vec()),
+            partial_len: get_partial_len(&indexing),
+            active_channels_mask: indexing.and_then(|idx| idx.active_channels_mask.clone()),
         };
         self.process_into_buffer(buffer_in, &mut buffer_out, Some(&indexing))?;
         Ok(buffer_out)
@@ -194,10 +260,10 @@ where
     /// Both input and output are allowed to be longer than required.
     /// The number of input samples consumed and the number output samples written
     /// per channel is returned in a tuple, `(input_frames, output_frames)`.
-    fn process_into_buffer<'a, 'b>(
+    fn process_into_buffer(
         &mut self,
-        buffer_in: &dyn Adapter<'a, T>,
-        buffer_out: &mut dyn AdapterMut<'b, T>,
+        buffer_in: &dyn Adapter<T>,
+        buffer_out: &mut dyn AdapterMut<T>,
         indexing: Option<&Indexing>,
     ) -> ResampleResult<(usize, usize)>;
 
@@ -216,10 +282,10 @@ where
     /// [process_into_buffer](Resampler::process_into_buffer).
     ///
     /// Returns the lengths of the original input and the resampled output.
-    fn process_all_into_buffer<'a, 'b>(
+    fn process_all_into_buffer(
         &mut self,
-        buffer_in: &dyn Adapter<'a, T>,
-        buffer_out: &mut dyn AdapterMut<'b, T>,
+        buffer_in: &dyn Adapter<T>,
+        buffer_out: &mut dyn AdapterMut<T>,
         input_len: usize,
         active_channels_mask: Option<&[bool]>,
     ) -> ResampleResult<(usize, usize)> {
@@ -284,6 +350,55 @@ where
         Ok((input_len, expected_output_len))
     }
 
+    /// Resample a whole audio clip in a single call, returning the result in a freshly
+    /// allocated buffer.
+    ///
+    /// This is the allocating counterpart to
+    /// [process_all_into_buffer](Resampler::process_all_into_buffer), and the right method
+    /// for resampling a complete clip that is already in memory. It repeatedly calls
+    /// [process_into_buffer](Resampler::process_into_buffer) under the hood, trims the
+    /// resampler's startup delay, and returns an [InterleavedOwned] holding exactly the
+    /// resampled frames (no leading silence and no trailing padding).
+    ///
+    /// Prefer this over a single [process](Resampler::process) call: `process` resamples one
+    /// fixed-size chunk, so using it for a whole clip means oversizing the resampler to the
+    /// clip length and leaves the startup delay untrimmed.
+    ///
+    /// For realtime use, where allocating on each call can cause glitches, use
+    /// [process_all_into_buffer](Resampler::process_all_into_buffer) with a pre-allocated
+    /// buffer instead.
+    ///
+    /// The resampler is [reset](Resampler::reset) first, so the clip is always resampled from
+    /// a clean state regardless of any previous use.
+    ///
+    /// `input_len` is the length of the clip in frames. The `active_channels_mask` parameter
+    /// has the same meaning as in [process_into_buffer](Resampler::process_into_buffer).
+    fn process_all(
+        &mut self,
+        buffer_in: &dyn Adapter<T>,
+        input_len: usize,
+        active_channels_mask: Option<&[bool]>,
+    ) -> ResampleResult<InterleavedOwned<T>> {
+        self.reset();
+        let channels = self.nbr_channels();
+        let needed_len = self.process_all_needed_output_len(input_len);
+        let mut buffer_out = InterleavedOwned::<T>::new(T::coerce_from(0.0), channels, needed_len);
+        let (_input_len, output_len) = self.process_all_into_buffer(
+            buffer_in,
+            &mut buffer_out,
+            input_len,
+            active_channels_mask,
+        )?;
+
+        // The valid output is the first `output_len` frames; the rest is padding. Trim it off.
+        // The buffer is interleaved, so `output_len` frames are the first `output_len * channels`
+        // samples.
+        let mut data = buffer_out.take_data();
+        data.truncate(output_len * channels);
+        Ok(InterleavedOwned::new_from(data, channels, output_len)
+            .expect("trimmed length is consistent with the channel count"))
+    }
+
     /// Calculate the minimal length of the output buffer
     /// needed to process a clip of length `input_len` using the
     /// [process_all_into_buffer](Resampler::process_all_into_buffer) method.
@@ -319,43 +434,101 @@ where
     /// This gives how many frames any event in the input is delayed before it appears in the output.
     fn output_delay(&self) -> usize;
 
+    /// Get the current resample ratio, defined as output sample rate divided by input sample rate.
+    fn resample_ratio(&self) -> f64;
+
+    /// Reset the resampler state and clear all internal buffers.
+    fn reset(&mut self);
+
+    /// If this resampler can change its resample ratio, borrow it as an [Adjustable],
+    /// otherwise return `None`.
+    ///
+    /// Asynchronous resamplers return `Some`, synchronous resamplers return `None`. This lets
+    /// you recover the adjust-ratio capability from a `&mut dyn Resampler` without knowing the
+    /// concrete type:
+    ///
+    /// ```ignore
+    /// if let Some(adjustable) = resampler.as_adjustable() {
+    ///     adjustable.set_resample_ratio(new_ratio, true)?;
+    /// }
+    /// ```
+    ///
+    /// Any implementor of [Adjustable] must return `Some(self)` here, otherwise the capability
+    /// is invisible through a trait object. This method is intentionally required rather than
+    /// defaulted so that implementing [Adjustable] and advertising it cannot drift apart.
+    fn as_adjustable(&mut self) -> Option<&mut dyn Adjustable<T>>;
+
+    /// Returns `true` if this resampler is [Adjustable], meaning that
+    /// [as_adjustable](Resampler::as_adjustable) returns `Some`.
+    ///
+    /// Unlike [as_adjustable](Resampler::as_adjustable) this takes a shared reference, so the
+    /// capability can be queried through a `&dyn Resampler`. Implementors of [Adjustable] must
+    /// override this to return `true`.
+    fn is_adjustable(&self) -> bool {
+        false
+    }
+
+    /// If this resampler can change its chunk size, borrow it as a [Resizable], otherwise
+    /// return `None`.
+    ///
+    /// Any implementor of [Resizable] must return `Some(self)` here, otherwise the capability
+    /// is invisible through a trait object. This method is intentionally required rather than
+    /// defaulted so that implementing [Resizable] and advertising it cannot drift apart.
+    fn as_resizable(&mut self) -> Option<&mut dyn Resizable<T>>;
+
+    /// Returns `true` if this resampler is [Resizable], meaning that
+    /// [as_resizable](Resampler::as_resizable) returns `Some`.
+    ///
+    /// Unlike [as_resizable](Resampler::as_resizable) this takes a shared reference, so the
+    /// capability can be queried through a `&dyn Resampler`. Implementors of [Resizable] must
+    /// override this to return `true`.
+    fn is_resizable(&self) -> bool {
+        false
+    }
+}
+
+/// A [Resampler] whose resample ratio can be changed after construction.
+///
+/// Implemented by the asynchronous resamplers. From a `&mut dyn Resampler` it can be recovered
+/// with [Resampler::as_adjustable].
+///
+/// The ratio is typically driven by a feedback loop that measures a buffer fill and nudges it to
+/// track a small clock difference. [Slip] carries a complete worked example of such a loop; the
+/// same pattern applies to any `Adjustable` resampler, including [Async].
+pub trait Adjustable<T>: Resampler<T>
+where
+    T: Sample,
+{
     /// Update the resample ratio.
     ///
-    /// For asynchronous resamplers, the ratio must be within
-    /// `original / maximum` to `original * maximum`, where the original and maximum are the
-    /// resampling ratios that were provided to the constructor.
-    /// Trying to set the ratio
-    /// outside these bounds will return [ResampleError::RatioOutOfBounds].
-    ///
-    /// For synchronous resamplers, this will always return [ResampleError::SyncNotAdjustable].
+    /// The ratio must be within `original / maximum` to `original * maximum`, where the original
+    /// and maximum are the resampling ratios that were provided to the constructor. Trying to set
+    /// the ratio outside these bounds will return [ResampleError::RatioOutOfBounds].
     ///
     /// If the argument `ramp` is set to true, the ratio will be ramped from the old to the new value
     /// during processing of the next chunk. This allows smooth transitions from one ratio to another.
     /// If `ramp` is false, the new ratio will be applied from the start of the next chunk.
     fn set_resample_ratio(&mut self, new_ratio: f64, ramp: bool) -> ResampleResult<()>;
 
-    /// Get the current resample ratio, defined as output sample rate divided by input sample rate.
-    fn resample_ratio(&self) -> f64;
-
     /// Update the resample ratio as a factor relative to the original one.
     ///
-    /// For asynchronous resamplers, the relative ratio must be within
-    /// `1 / maximum` to `maximum`, where `maximum` is the maximum
-    /// resampling ratio that was provided to the constructor.
-    /// Trying to set the ratio outside these bounds
-    /// will return [ResampleError::RatioOutOfBounds].
+    /// The relative ratio must be within `1 / maximum` to `maximum`, where `maximum` is the maximum
+    /// resampling ratio that was provided to the constructor. Trying to set the ratio outside these
+    /// bounds will return [ResampleError::RatioOutOfBounds].
     ///
     /// Ratios above 1.0 slow down the output and lower the pitch, while ratios
     /// below 1.0 speed up the output and raise the pitch.
-    ///
-    /// For synchronous resamplers, this will always return [ResampleError::SyncNotAdjustable].
     fn set_resample_ratio_relative(&mut self, rel_ratio: f64, ramp: bool) -> ResampleResult<()>;
+}
 
-    /// Reset the resampler state and clear all internal buffers.
-    fn reset(&mut self);
-
+/// A [Resampler] whose chunk size can be changed after construction.
+///
+/// From a `&mut dyn Resampler` it can be recovered with [Resampler::as_resizable].
+pub trait Resizable<T>: Resampler<T>
+where
+    T: Sample,
+{
     /// Change the chunk size for the resampler.
-    /// This is not supported by all resampler types.
     /// The value must be equal to or smaller than the chunk size value
     /// that the resampler was created with.
     /// [ResampleError::InvalidChunkSize] is returned if the value is zero or too large.
@@ -363,18 +536,12 @@ where
     /// The meaning of chunk size depends on the resampler,
     /// it refers to the input size for resamplers with fixed input size,
     /// and output size for resamplers with fixed output size.
-    ///
-    /// Resamplers that do not support changing the chunk size
-    /// return [ResampleError::ChunkSizeNotAdjustable].
-    fn set_chunk_size(&mut self, _chunksize: usize) -> ResampleResult<()> {
-        Err(ResampleError::ChunkSizeNotAdjustable)
-    }
+    fn set_chunk_size(&mut self, chunksize: usize) -> ResampleResult<()>;
 }
 
-pub(crate) fn validate_buffers<'a, 'b, T: 'a + 'b>(
-    wave_in: &dyn Adapter<'a, T>,
-    wave_out: &dyn AdapterMut<'b, T>,
-    mask: &[bool],
+pub(crate) fn validate_buffers<T>(
+    wave_in: &dyn Adapter<T>,
+    wave_out: &dyn AdapterMut<T>,
     channels: usize,
     min_input_len: usize,
     min_output_len: usize,
@@ -383,12 +550,6 @@ pub(crate) fn validate_buffers<'a, 'b, T: 'a + 'b>(
         return Err(ResampleError::WrongNumberOfInputChannels {
             expected: channels,
             actual: wave_in.channels(),
-        });
-    }
-    if mask.len() != channels {
-        return Err(ResampleError::WrongNumberOfMaskChannels {
-            expected: channels,
-            actual: mask.len(),
         });
     }
     if wave_in.frames() < min_input_len {
@@ -414,14 +575,75 @@ pub(crate) fn validate_buffers<'a, 'b, T: 'a + 'b>(
 
 #[cfg(test)]
 pub mod tests {
-    #[cfg(feature = "fft_resampler")]
-    use crate::Fft;
     use crate::Resampler;
     use crate::{
-        Async, FixedAsync, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+        Async, FixedAsync, Indexing, ResampleError, SincInterpolationParameters,
+        SincInterpolationType, Slip, WindowFunction,
     };
+    #[cfg(feature = "fft_resampler")]
+    use crate::{Fft, FixedSync};
     use audioadapter::Adapter;
     use audioadapter_buffers::direct::SequentialSliceOfVecs;
+
+    fn test_sinc_resampler() -> Async<f64> {
+        Async::<f64>::new_sinc(
+            88200.0 / 44100.0,
+            1.1,
+            &SincInterpolationParameters {
+                sinc_len: 64,
+                f_cutoff: Some(0.95),
+                interpolation: SincInterpolationType::Cubic,
+                oversampling_factor: 16,
+                window: WindowFunction::BlackmanHarris2,
+            },
+            1024,
+            2,
+            FixedAsync::Input,
+        )
+        .unwrap()
+    }
+
+    #[test_log::test]
+    fn process_single_chunk() {
+        let mut resampler = test_sinc_resampler();
+        let in_len = resampler.input_frames_next();
+        let samples: Vec<f64> = (0..in_len).map(|v| v as f64 / 10.0).collect();
+        let input_data = vec![samples; 2];
+        let input = SequentialSliceOfVecs::new(&input_data, 2, in_len).unwrap();
+
+        // A full chunk with no indexing returns output_frames_next frames.
+        let expected = resampler.output_frames_next();
+        let out = resampler.process(&input, None).unwrap();
+        assert_eq!(out.channels(), 2);
+        assert_eq!(out.frames(), expected);
+
+        // A final partial chunk fed via Indexing.partial_len still returns a full output chunk
+        // (process does not trim); the missing input frames are treated as silence.
+        let expected = resampler.output_frames_next();
+        let out = resampler
+            .process(&input, Some(&Indexing::new().partial_len(in_len / 2)))
+            .unwrap();
+        assert_eq!(out.frames(), expected);
+    }
+
+    #[test_log::test]
+    fn wrong_length_mask_returns_error() {
+        // A mask with the wrong number of channels must return an error, not panic.
+        let mut resampler = test_sinc_resampler();
+        let in_len = resampler.input_frames_next();
+        let input_data = vec![vec![0.0f64; in_len]; 2];
+        let input = SequentialSliceOfVecs::new(&input_data, 2, in_len).unwrap();
+
+        let indexing = Indexing::new().active_channels_mask(vec![true, true, true]);
+        let result = resampler.process(&input, Some(&indexing));
+        assert!(matches!(
+            result,
+            Err(ResampleError::WrongNumberOfMaskChannels {
+                expected: 2,
+                actual: 3
+            })
+        ));
+    }
 
     #[test_log::test]
     fn process_all() {
@@ -430,7 +652,7 @@ pub mod tests {
             1.1,
             &SincInterpolationParameters {
                 sinc_len: 64,
-                f_cutoff: 0.95,
+                f_cutoff: Some(0.95),
                 interpolation: SincInterpolationType::Cubic,
                 oversampling_factor: 16,
                 window: WindowFunction::BlackmanHarris2,
@@ -482,6 +704,105 @@ pub mod tests {
         }
     }
 
+    #[test_log::test]
+    fn process_all_allocating() {
+        let mut resampler = Async::<f64>::new_sinc(
+            88200.0 / 44100.0,
+            1.1,
+            &SincInterpolationParameters {
+                sinc_len: 64,
+                f_cutoff: Some(0.95),
+                interpolation: SincInterpolationType::Cubic,
+                oversampling_factor: 16,
+                window: WindowFunction::BlackmanHarris2,
+            },
+            1024,
+            2,
+            FixedAsync::Input,
+        )
+        .unwrap();
+        let input_len = 12345;
+        let samples: Vec<f64> = (0..input_len).map(|v| v as f64 / 10.0).collect();
+        let input_data = vec![samples; 2];
+        let input = SequentialSliceOfVecs::new(&input_data, 2, input_len).unwrap();
+
+        let output = resampler.process_all(&input, input_len, None).unwrap();
+        // 2x upsampling, and the result must be trimmed to exactly the resampled length
+        // (not the oversized internal buffer).
+        let expected_len = 2 * input_len;
+        assert_eq!(output.channels(), 2);
+        assert_eq!(output.frames(), expected_len);
+
+        // The delay is trimmed, so output frame f follows input position f / ratio.
+        let increment = 0.1 / resampler.resample_ratio();
+        let margin = (resampler.output_delay() as f64 * resampler.resample_ratio()) as usize;
+        for frame in margin..(expected_len - margin) {
+            let expected = frame as f64 * increment;
+            for chan in 0..2 {
+                let val = output.read_sample(chan, frame).unwrap();
+                assert!(
+                    (val - expected).abs() < 100.0 * increment,
+                    "frame: {}, value: {}, expected: {}",
+                    frame,
+                    val,
+                    expected
+                );
+            }
+        }
+
+        // A second call must reset internally and produce an identical result.
+        let output2 = resampler.process_all(&input, input_len, None).unwrap();
+        assert_eq!(output2.frames(), expected_len);
+        for frame in 0..expected_len {
+            for chan in 0..2 {
+                assert_eq!(
+                    output.read_sample(chan, frame),
+                    output2.read_sample(chan, frame)
+                );
+            }
+        }
+    }
+
+    #[test_log::test]
+    fn capability_queries() {
+        // Async resamplers are adjustable and resizable.
+        let mut resampler = test_sinc_resampler();
+        assert!(resampler.is_adjustable());
+        assert!(resampler.is_resizable());
+        resampler
+            .as_adjustable()
+            .expect("Async should be adjustable")
+            .set_resample_ratio_relative(1.05, false)
+            .unwrap();
+        assert!(resampler.as_resizable().is_some());
+
+        // The capability is reachable through a trait object too, including through a shared
+        // reference via the `is_*` probes.
+        let mut boxed: Box<dyn Resampler<f64>> = Box::new(test_sinc_resampler());
+        let shared: &dyn Resampler<f64> = boxed.as_ref();
+        assert!(shared.is_adjustable());
+        assert!(shared.is_resizable());
+        assert!(boxed.as_adjustable().is_some());
+        assert!(boxed.as_resizable().is_some());
+
+        // Slip resamplers are adjustable and resizable, like the async resamplers.
+        let mut slip = Slip::<f64>::new(1024, 2, FixedAsync::Output).unwrap();
+        assert!(slip.is_adjustable());
+        assert!(slip.is_resizable());
+        assert!(slip.as_adjustable().is_some());
+        assert!(slip.as_resizable().is_some());
+
+        // Synchronous Fft resamplers are neither.
+        #[cfg(feature = "fft_resampler")]
+        {
+            let mut fft = Fft::<f64>::new(44100, 48000, 1024, 2, FixedSync::Both).unwrap();
+            assert!(!fft.is_adjustable());
+            assert!(!fft.is_resizable());
+            assert!(fft.as_adjustable().is_none());
+            assert!(fft.as_resizable().is_none());
+        }
+    }
+
     // This tests that a Resampler can be boxed.
     #[test_log::test]
     fn boxed_resampler() {
@@ -491,7 +812,7 @@ pub mod tests {
                 1.1,
                 &SincInterpolationParameters {
                     sinc_len: 64,
-                    f_cutoff: 0.95,
+                    f_cutoff: Some(0.95),
                     interpolation: SincInterpolationType::Cubic,
                     oversampling_factor: 16,
                     window: WindowFunction::BlackmanHarris2,
@@ -522,6 +843,7 @@ pub mod tests {
     fn impl_send<T: Send>() {
         fn is_send<T: Send>() {}
         is_send::<Async<T>>();
+        is_send::<Slip<T>>();
         #[cfg(feature = "fft_resampler")]
         {
             is_send::<Fft<T>>();

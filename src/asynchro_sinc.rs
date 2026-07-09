@@ -10,7 +10,7 @@ use crate::sinc_interpolator::{
     AlignedBuf, AnyInterpolator, AvxSample, NeonSample, ScalarInterpolator, SincInterpolator,
     SseSample,
 };
-use crate::windows::WindowFunction;
+use crate::windows::{calculate_cutoff, WindowFunction};
 use crate::Sample;
 use audioadapter::AdapterMut;
 
@@ -30,8 +30,15 @@ pub struct SincInterpolationParameters {
     /// The value will be rounded up to the nearest multiple of 8.
     pub sinc_len: usize,
     /// Relative cutoff frequency of the sinc interpolation filter
-    /// (relative to the lowest one of fs_in/2 or fs_out/2). Start at 0.95, and increase if needed.
-    pub f_cutoff: f32,
+    /// (relative to the lowest one of fs_in/2 or fs_out/2).
+    ///
+    /// `None` (the default) lets the resampler choose the cutoff automatically with
+    /// [calculate_cutoff], which picks the highest cutoff that keeps aliasing below the
+    /// window's sidelobe level for the given filter length. This is the recommended setting.
+    ///
+    /// Set `Some(value)` only to override the automatic choice, for example to roll off
+    /// earlier for more guard band, or to push the cutoff higher to preserve more high end.
+    pub f_cutoff: Option<f32>,
     /// The number of intermediate points to use for interpolation.
     /// Higher values use more memory for storing the sinc filters.
     /// Only the points actually needed are calculated during processing
@@ -42,6 +49,79 @@ pub struct SincInterpolationParameters {
     pub interpolation: SincInterpolationType,
     /// Window function to use.
     pub window: WindowFunction,
+}
+
+impl Default for SincInterpolationParameters {
+    /// The defaults match [new](SincInterpolationParameters::new) called with a `sinc_len`
+    /// of 256 and a [BlackmanHarris2](WindowFunction::BlackmanHarris2) window: an automatic
+    /// cutoff, `oversampling_factor` 128 and [Cubic](SincInterpolationType::Cubic) interpolation.
+    fn default() -> Self {
+        Self::new(256, WindowFunction::BlackmanHarris2)
+    }
+}
+
+impl SincInterpolationParameters {
+    /// Create a [SincInterpolationParameters] from the two parameters that determine the
+    /// filter's frequency response: the filter length `sinc_len` and the `window` function.
+    ///
+    /// The cutoff frequency is left automatic (`f_cutoff` is `None`), so the resampler derives
+    /// it from `sinc_len` and `window` with [calculate_cutoff]. The remaining fields start at
+    /// sensible defaults: `oversampling_factor` 128 and [Cubic](SincInterpolationType::Cubic)
+    /// interpolation. Chain the setters to adjust them:
+    ///
+    /// ```
+    /// use rubato::{SincInterpolationParameters, SincInterpolationType, WindowFunction};
+    ///
+    /// let params = SincInterpolationParameters::new(256, WindowFunction::Blackman2)
+    ///     .oversampling_factor(256)
+    ///     .interpolation(SincInterpolationType::Linear);
+    /// ```
+    pub fn new(sinc_len: usize, window: WindowFunction) -> Self {
+        SincInterpolationParameters {
+            sinc_len,
+            f_cutoff: None,
+            oversampling_factor: 128,
+            interpolation: SincInterpolationType::Cubic,
+            window,
+        }
+    }
+
+    /// Set the length of the windowed sinc interpolation filter.
+    #[must_use]
+    pub fn sinc_len(mut self, sinc_len: usize) -> Self {
+        self.sinc_len = sinc_len;
+        self
+    }
+
+    /// Set the window function.
+    #[must_use]
+    pub fn window(mut self, window: WindowFunction) -> Self {
+        self.window = window;
+        self
+    }
+
+    /// Override the relative cutoff frequency of the sinc interpolation filter.
+    /// By default (see [new](Self::new)) the cutoff is derived from `sinc_len` and `window`;
+    /// only set it explicitly if you have a specific value in mind.
+    #[must_use]
+    pub fn f_cutoff(mut self, f_cutoff: f32) -> Self {
+        self.f_cutoff = Some(f_cutoff);
+        self
+    }
+
+    /// Set the number of intermediate points to use for interpolation.
+    #[must_use]
+    pub fn oversampling_factor(mut self, oversampling_factor: usize) -> Self {
+        self.oversampling_factor = oversampling_factor;
+        self
+    }
+
+    /// Set the interpolation type.
+    #[must_use]
+    pub fn interpolation(mut self, interpolation: SincInterpolationType) -> Self {
+        self.interpolation = interpolation;
+        self
+    }
 }
 
 /// Interpolation methods that can be selected. For asynchronous interpolation where the
@@ -92,7 +172,7 @@ pub struct SincInterpolationParameters {
 ///   to choose Quadratic over Cubic for stereo content.
 /// - **Upgrading from Linear to Cubic** above the threshold costs the same as adding
 ///   two more channels at the current mode — a fixed overhead, not a multiplier.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SincInterpolationType {
     /// Cubic interpolation using the four nearest intermediate sinc points.
     /// A cubic polynomial is fitted to these points to compute each output sample.
@@ -133,7 +213,7 @@ pub enum SincInterpolationType {
 pub fn make_interpolator<T>(
     sinc_len: usize,
     resample_ratio: f64,
-    f_cutoff: f32,
+    f_cutoff: Option<f32>,
     oversampling_factor: usize,
     window: WindowFunction,
 ) -> AnyInterpolator<T>
@@ -141,6 +221,9 @@ where
     T: AvxSample + SseSample + NeonSample + Sample,
 {
     let sinc_len = 8 * (((sinc_len as f32) / 8.0).ceil() as usize);
+    // Resolve an automatic cutoff against the rounded filter length, so it matches the
+    // filter that is actually built.
+    let f_cutoff = f_cutoff.unwrap_or_else(|| calculate_cutoff(sinc_len, window));
     let f_cutoff = if resample_ratio >= 1.0 {
         f_cutoff
     } else {
@@ -299,7 +382,7 @@ where
         interpolator_len: usize,
         channel_mask: &[bool],
         wave_in: &[Vec<T>],
-        wave_out: &mut dyn AdapterMut<'_, T>,
+        wave_out: &mut dyn AdapterMut<T>,
         frame: usize,
         output_offset: usize,
     ) {
@@ -334,7 +417,7 @@ where
         interpolator_len: usize,
         channel_mask: &[bool],
         wave_in: &[Vec<T>],
-        wave_out: &mut dyn AdapterMut<'_, T>,
+        wave_out: &mut dyn AdapterMut<T>,
         frame: usize,
         output_offset: usize,
         interp: impl Fn(&[T]) -> T,
@@ -369,7 +452,7 @@ where
         t_ratio: f64,
         t_ratio_increment: f64,
         wave_in: &[Vec<T>],
-        wave_out: &mut dyn AdapterMut<'_, T>,
+        wave_out: &mut dyn AdapterMut<T>,
         output_offset: usize,
     ) -> f64 {
         let mut t_ratio = t_ratio;

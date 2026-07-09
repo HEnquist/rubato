@@ -1,7 +1,7 @@
 extern crate rubato;
 use audioadapter_buffers::direct::InterleavedSlice;
 use rubato::{
-    calculate_cutoff, Async, FixedAsync, PolynomialDegree, Resampler, SincInterpolationParameters,
+    Async, FixedAsync, PolynomialDegree, Resampler, SincInterpolationParameters,
     SincInterpolationType, WindowFunction,
 };
 #[cfg(feature = "fft_resampler")]
@@ -94,14 +94,9 @@ fn main() {
             let interpolation = SincInterpolationType::Quadratic;
             let window = WindowFunction::Blackman2;
 
-            let f_cutoff = calculate_cutoff(sinc_len, window);
-            let params = SincInterpolationParameters {
-                sinc_len,
-                f_cutoff,
-                interpolation,
-                oversampling_factor,
-                window,
-            };
+            let params = SincInterpolationParameters::new(sinc_len, window)
+                .oversampling_factor(oversampling_factor)
+                .interpolation(interpolation);
             Box::new(Async::<f64>::new_sinc(f_ratio, 1.1, &params, 1024, channels, FixedAsync::Input).unwrap())
         }
         "SincFixedOutput" => {
@@ -110,14 +105,9 @@ fn main() {
             let interpolation = SincInterpolationType::Cubic;
             let window = WindowFunction::Blackman2;
 
-            let f_cutoff = calculate_cutoff(sinc_len, window);
-            let params = SincInterpolationParameters {
-                sinc_len,
-                f_cutoff,
-                interpolation,
-                oversampling_factor,
-                window,
-            };
+            let params = SincInterpolationParameters::new(sinc_len, window)
+                .oversampling_factor(oversampling_factor)
+                .interpolation(interpolation);
             Box::new(Async::<f64>::new_sinc(f_ratio, 1.1, &params, 1024, channels, FixedAsync::Output).unwrap())
         }
         "PolyFixedInput" => {
@@ -128,15 +118,15 @@ fn main() {
         }
         #[cfg(feature = "fft_resampler")]
         "FftFixedInput" => {
-            Box::new(Fft::<f64>::new(fs_in, fs_out, 1024, 2, channels, FixedSync::Input).unwrap())
+            Box::new(Fft::<f64>::new(fs_in, fs_out, 1024, channels, FixedSync::Input).unwrap())
         }
         #[cfg(feature = "fft_resampler")]
         "FftFixedOutput" => {
-            Box::new(Fft::<f64>::new(fs_in, fs_out, 1024, 2, channels, FixedSync::Output).unwrap())
+            Box::new(Fft::<f64>::new(fs_in, fs_out, 1024, channels, FixedSync::Output).unwrap())
         }
         #[cfg(feature = "fft_resampler")]
         "FftFixedBoth" => {
-            Box::new(Fft::<f64>::new(fs_in, fs_out, 1024, 1, channels, FixedSync::Both).unwrap())
+            Box::new(Fft::<f64>::new(fs_in, fs_out, 1024, channels, FixedSync::Both).unwrap())
         }
         _ => panic!("Unknown resampler type {}\nMust be one of SincFixedInput, SincFixedOutput, PolyFixedInput, PolyFixedOutput, FftFixedInput, FftFixedOutput, FftFixedBoth", resampler_type),
     };

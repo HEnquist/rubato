@@ -468,11 +468,20 @@ mod bench_fft {
     extern crate rubato;
     use audioadapter_buffers::owned::InterleavedOwned;
     use rubato::Fft;
-    use rubato::{FixedSync, Resampler};
+    use rubato::{FixedSync, Resampler, WindowFunction};
 
     fn bench_fft_64(c: &mut Criterion) {
         let chunksize = 1024;
-        let mut resampler = Fft::<f64>::new(44100, 192000, 1024, 2, 1, FixedSync::Input).unwrap();
+        let mut resampler = Fft::<f64>::new_custom(
+            44100,
+            192000,
+            1024,
+            2,
+            1,
+            WindowFunction::BlackmanHarris2,
+            FixedSync::Input,
+        )
+        .unwrap();
         let buffer_in = InterleavedOwned::new(0.0, 1, chunksize);
         let mut buffer_out = InterleavedOwned::new(0.0, 1, resampler.output_frames_max());
         c.bench_function("fft sync f64", |b| {
@@ -486,7 +495,16 @@ mod bench_fft {
 
     fn bench_fft_32(c: &mut Criterion) {
         let chunksize = 1024;
-        let mut resampler = Fft::<f32>::new(44100, 192000, 1024, 2, 1, FixedSync::Input).unwrap();
+        let mut resampler = Fft::<f32>::new_custom(
+            44100,
+            192000,
+            1024,
+            2,
+            1,
+            WindowFunction::BlackmanHarris2,
+            FixedSync::Input,
+        )
+        .unwrap();
         let buffer_in = InterleavedOwned::new(0.0, 1, chunksize);
         let mut buffer_out = InterleavedOwned::new(0.0, 1, resampler.output_frames_max());
         c.bench_function("fft sync f32", |b| {

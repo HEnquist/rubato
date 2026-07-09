@@ -2,7 +2,7 @@ use crate::Sample;
 use windowfunctions::{window, Symmetry, WindowFunction as ImportedWindowFunction};
 
 /// Different window functions that can be used to window the sinc function.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum WindowFunction {
     /// Blackman. Intermediate rolloff and intermediate attenuation.
     Blackman,

@@ -11,8 +11,8 @@ use audioadapter::{Adapter, AdapterMut};
 
 use crate::{get_offsets, get_partial_len, update_mask, Indexing};
 
-use crate::error::{ResampleError, ResampleResult};
-use crate::{calculate_cutoff, validate_buffers, Resampler, Sample};
+use crate::error::ResampleResult;
+use crate::{calculate_cutoff, validate_buffers, Adjustable, Resampler, Resizable, Sample};
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 
 /// A helper for resampling a single chunk of data.
@@ -34,7 +34,7 @@ struct FftResampler<T> {
 /// This is similar to [FixedAsync](crate::FixedAsync) that is used for the asynchronous resamplers.
 /// The difference is asynchronous resamplers must allow one side to vary,
 /// and can therefore not support the `Both` option.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FixedSync {
     /// Input size is fixed, output size varies.
     Input,
@@ -93,20 +93,18 @@ impl<T> FftResampler<T>
 where
     T: Sample,
 {
-    pub fn new(fft_size_in: usize, fft_size_out: usize) -> Self {
+    pub fn new(fft_size_in: usize, fft_size_out: usize, window: WindowFunction) -> Self {
         // calculate antialiasing cutoff
         let cutoff = if fft_size_in > fft_size_out {
-            calculate_cutoff::<f32>(fft_size_out, WindowFunction::BlackmanHarris2)
-                * fft_size_out as f32
-                / fft_size_in as f32
+            calculate_cutoff::<f32>(fft_size_out, window) * fft_size_out as f32 / fft_size_in as f32
         } else {
-            calculate_cutoff::<f32>(fft_size_in, WindowFunction::BlackmanHarris2)
+            calculate_cutoff::<f32>(fft_size_in, window)
         };
         debug!(
-            "Create new FftResampler, fft_size_in: {}, fft_size_out: {}, cutoff: {}",
-            fft_size_in, fft_size_out, cutoff
+            "Create new FftResampler, fft_size_in: {}, fft_size_out: {}, cutoff: {}, window: {:?}",
+            fft_size_in, fft_size_out, cutoff, window
         );
-        let sinc = make_sincs::<T>(fft_size_in, 1, cutoff, WindowFunction::BlackmanHarris2);
+        let sinc = make_sincs::<T>(fft_size_in, 1, cutoff, window);
         let mut filter_t: Vec<T> = vec![T::zero(); 2 * fft_size_in];
         let mut filter_f: Vec<Complex<T>> = vec![Complex::zero(); fft_size_in + 1];
         for (n, f) in filter_t.iter_mut().enumerate().take(fft_size_in) {
@@ -194,7 +192,45 @@ impl<T> Fft<T>
 where
     T: Sample,
 {
-    /// Create a new `Fft` synchronous resampler.
+    /// Create a new `Fft` synchronous resampler with default settings.
+    ///
+    /// This is the recommended constructor for most uses. It uses a
+    /// [BlackmanHarris2](WindowFunction::BlackmanHarris2) anti-aliasing window and
+    /// automatically chooses the number of FFT sub-chunks to target a sub-chunk size of
+    /// roughly 256 frames, which keeps the resampler delay low while maintaining good quality.
+    ///
+    /// For control over the anti-aliasing window and the number of sub-chunks, use
+    /// [new_custom](Fft::new_custom).
+    ///
+    /// The parameters are the same as for [new_custom](Fft::new_custom), without `sub_chunks`
+    /// and `window`:
+    /// - `sample_rate_input`: Input sample rate, must be > 0.
+    /// - `sample_rate_output`: Output sample rate, must be > 0.
+    /// - `chunk_size`: desired chunk size in frames.
+    /// - `nbr_channels`: number of channels in input/output.
+    /// - `fixed`: Deciding whether input size, output size, or both should be fixed.
+    pub fn new(
+        sample_rate_input: usize,
+        sample_rate_output: usize,
+        chunk_size: usize,
+        nbr_channels: usize,
+        fixed: FixedSync,
+    ) -> Result<Self, ResamplerConstructionError> {
+        // Target a sub-chunk size of roughly 256 frames to keep the delay low.
+        let sub_chunks = (chunk_size / 256).max(1);
+        Self::new_custom(
+            sample_rate_input,
+            sample_rate_output,
+            chunk_size,
+            sub_chunks,
+            nbr_channels,
+            WindowFunction::BlackmanHarris2,
+            fixed,
+        )
+    }
+
+    /// Create a new `Fft` synchronous resampler with full control over the anti-aliasing
+    /// window and the number of FFT sub-chunks.
     ///
     /// The `Fft` resampler supports fixed input size, fixed output size, and both.
     /// With fixed input or output size, the fixed side accepts or returns the chosen number of frames,
@@ -237,13 +273,15 @@ where
     /// - `chunk_size`: desired chunk size in frames.
     /// - `sub_chunks`: desired number of sub chunks to use for processing.
     /// - `nbr_channels`: number of channels in input/output.
+    /// - `window`: the anti-aliasing window function to use.
     /// - `fixed`: Deciding whether input size, output size, or both should be fixed.
-    pub fn new(
+    pub fn new_custom(
         sample_rate_input: usize,
         sample_rate_output: usize,
         chunk_size: usize,
         sub_chunks: usize,
         nbr_channels: usize,
+        window: WindowFunction,
         fixed: FixedSync,
     ) -> Result<Self, ResamplerConstructionError> {
         validate_sample_rates(sample_rate_input, sample_rate_output)?;
@@ -276,7 +314,7 @@ where
         let fft_size_out = fft_chunks * sample_rate_output / gcd;
         let fft_size_in = fft_chunks * sample_rate_input / gcd;
 
-        let resampler = FftResampler::<T>::new(fft_size_in, fft_size_out);
+        let resampler = FftResampler::<T>::new(fft_size_in, fft_size_out, window);
 
         debug!(
             "Create new Fft with fixed {:?}, sample_rate_input: {}, sample_rate_output: {} chunk_size: {}, channels: {}, fft_size_in: {}, fft_size_out: {}",
@@ -420,14 +458,14 @@ impl<T> Resampler<T> for Fft<T>
 where
     T: Sample,
 {
-    fn process_into_buffer<'a, 'b>(
+    fn process_into_buffer(
         &mut self,
-        buffer_in: &dyn Adapter<'a, T>,
-        buffer_out: &mut dyn AdapterMut<'b, T>,
+        buffer_in: &dyn Adapter<T>,
+        buffer_out: &mut dyn AdapterMut<T>,
         indexing: Option<&Indexing>,
     ) -> ResampleResult<(usize, usize)> {
         // read the optional indexing struct
-        update_mask(&indexing, &mut self.channel_mask);
+        update_mask(&indexing, &mut self.channel_mask)?;
         let (input_offset, output_offset) = get_offsets(&indexing);
 
         // figure out how many frames to read
@@ -441,7 +479,6 @@ where
         validate_buffers(
             buffer_in,
             buffer_out,
-            &self.channel_mask,
             self.nbr_channels,
             frames_to_read + input_offset,
             self.chunk_size_out + output_offset,
@@ -620,20 +657,8 @@ where
         self.fft_size_out / 2
     }
 
-    /// Update the resample ratio. This is not supported by this resampler and
-    /// always returns [ResampleError::SyncNotAdjustable].
-    fn set_resample_ratio(&mut self, _new_ratio: f64, _ramp: bool) -> ResampleResult<()> {
-        Err(ResampleError::SyncNotAdjustable)
-    }
-
     fn resample_ratio(&self) -> f64 {
         self.fft_size_out as f64 / self.fft_size_in as f64
-    }
-
-    /// Update the resample ratio relative to the original one. This is not
-    /// supported by this resampler and always returns [ResampleError::SyncNotAdjustable].
-    fn set_resample_ratio_relative(&mut self, _rel_ratio: f64, _ramp: bool) -> ResampleResult<()> {
-        Err(ResampleError::SyncNotAdjustable)
     }
 
     fn reset(&mut self) {
@@ -650,6 +675,14 @@ where
         self.saved_frames = 0;
         self.update_chunk_sizes();
     }
+
+    fn as_adjustable(&mut self) -> Option<&mut dyn Adjustable<T>> {
+        None
+    }
+
+    fn as_resizable(&mut self) -> Option<&mut dyn Resizable<T>> {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -658,6 +691,7 @@ mod tests {
     use crate::tests::expected_output_value;
     use crate::Indexing;
     use crate::Resampler;
+    use crate::WindowFunction;
     use crate::{
         assert_fb_len, assert_fi_len, assert_fo_len, check_input_offset, check_masked,
         check_output, check_output_offset, check_ratio, check_reset,
@@ -668,7 +702,7 @@ mod tests {
 
     #[test_log::test]
     fn resample_unit() {
-        let mut resampler = FftResampler::<f64>::new(147, 1000);
+        let mut resampler = FftResampler::<f64>::new(147, 1000, WindowFunction::BlackmanHarris2);
         let mut wave_in = vec![0.0; 147];
 
         wave_in[0] = 0.3;
@@ -694,8 +728,7 @@ mod tests {
     ))]
     fn fft_output(chunksize: usize, rates: (usize, usize), fixed: FixedSync) {
         let (input_rate, output_rate) = rates;
-        let mut resampler =
-            Fft::<f64>::new(input_rate, output_rate, chunksize, 2, 2, fixed).unwrap();
+        let mut resampler = Fft::<f64>::new(input_rate, output_rate, chunksize, 2, fixed).unwrap();
         check_output!(resampler, f64);
     }
 
@@ -706,8 +739,7 @@ mod tests {
     ))]
     fn fft_ratio(chunksize: usize, rates: (usize, usize), fixed: FixedSync) {
         let (input_rate, output_rate) = rates;
-        let mut resampler =
-            Fft::<f64>::new(input_rate, output_rate, chunksize, 2, 2, fixed).unwrap();
+        let mut resampler = Fft::<f64>::new(input_rate, output_rate, chunksize, 2, fixed).unwrap();
         check_ratio!(resampler, 100000 / chunksize, 0.05, f64);
     }
     #[test_log::test(test_matrix(
@@ -717,7 +749,7 @@ mod tests {
     ))]
     fn fft_len(chunksize: usize, rates: (usize, usize), fixed: FixedSync) {
         let (input_rate, output_rate) = rates;
-        let resampler = Fft::<f64>::new(input_rate, output_rate, chunksize, 2, 2, fixed).unwrap();
+        let resampler = Fft::<f64>::new(input_rate, output_rate, chunksize, 2, fixed).unwrap();
         match fixed {
             FixedSync::Input => {
                 assert_fi_len!(resampler, chunksize);
@@ -738,8 +770,7 @@ mod tests {
     ))]
     fn fft_reset(chunksize: usize, rates: (usize, usize), fixed: FixedSync) {
         let (input_rate, output_rate) = rates;
-        let mut resampler =
-            Fft::<f64>::new(input_rate, output_rate, chunksize, 2, 2, fixed).unwrap();
+        let mut resampler = Fft::<f64>::new(input_rate, output_rate, chunksize, 2, fixed).unwrap();
         check_reset!(resampler);
     }
 
@@ -750,8 +781,7 @@ mod tests {
     ))]
     fn fft_input_offset(chunksize: usize, rates: (usize, usize), fixed: FixedSync) {
         let (input_rate, output_rate) = rates;
-        let mut resampler =
-            Fft::<f64>::new(input_rate, output_rate, chunksize, 2, 2, fixed).unwrap();
+        let mut resampler = Fft::<f64>::new(input_rate, output_rate, chunksize, 2, fixed).unwrap();
         check_input_offset!(resampler);
     }
 
@@ -762,8 +792,7 @@ mod tests {
     ))]
     fn fft_output_offset(chunksize: usize, rates: (usize, usize), fixed: FixedSync) {
         let (input_rate, output_rate) = rates;
-        let mut resampler =
-            Fft::<f64>::new(input_rate, output_rate, chunksize, 2, 2, fixed).unwrap();
+        let mut resampler = Fft::<f64>::new(input_rate, output_rate, chunksize, 2, fixed).unwrap();
         check_output_offset!(resampler);
     }
 
@@ -771,7 +800,9 @@ mod tests {
         [FixedSync::Input, FixedSync::Output, FixedSync::Both]
     ))]
     fn fft_masked(fixed: FixedSync) {
-        let mut resampler = Fft::<f64>::new(44100, 48000, 1024, 2, 2, fixed).unwrap();
+        // Use new_custom here to exercise the expert constructor and a non-default window.
+        let mut resampler =
+            Fft::<f64>::new_custom(44100, 48000, 1024, 2, 2, WindowFunction::Hann, fixed).unwrap();
         check_masked!(resampler);
     }
 }

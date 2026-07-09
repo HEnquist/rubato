@@ -1,10 +1,10 @@
 [package]
 name = "rubato"
-version = "3.0.0"
+version = "4.0.0"
 rust-version = "1.85"
 authors = ["HEnquist <henrik.enquist@gmail.com>"]
 description = "Asynchronous resampling library intended for audio data"
-license = "MIT"
+license = "MIT OR Apache-2.0"
 repository = "https://github.com/HEnquist/rubato"
 keywords = ["interpolation", "resampling"]
 categories = ["multimedia::audio"]
@@ -25,10 +25,10 @@ realfft = { version = "3.5.0", optional = true }
 num-complex = { version = "0.4", optional = true }
 num-integer = "0.1.45"
 num-traits = "0.2"
-#audioadapter = {version = "3.0.0", path = "../audioadapter-rs/audioadapter"}
-audioadapter = "3.0"
-#audioadapter-buffers = {version = "3.0.0", path = "../audioadapter-rs/audioadapter-buffers"}
-audioadapter-buffers = "3.0"
+#audioadapter = {version = "4.0.0", path = "../audioadapter-rs/audioadapter"}
+audioadapter = "4.0"
+#audioadapter-buffers = {version = "4.0.0", path = "../audioadapter-rs/audioadapter-buffers"}
+audioadapter-buffers = "4.0"
 visibility = "0.1.1"
 windowfunctions = "0.1.1"
 
@@ -41,8 +41,8 @@ log = "0.4.18"
 approx = "0.5.1"
 test-log = "0.2.16"
 test-case = "3"
-#audioadapter-sample = {version = "3.0.0", path = "../audioadapter-rs/audioadapter-sample"}
-audioadapter-sample = "3.0"
+#audioadapter-sample = {version = "4.0.0", path = "../audioadapter-rs/audioadapter-sample"}
+audioadapter-sample = "4.0"
 
 [[bench]]
 name = "resamplers"
