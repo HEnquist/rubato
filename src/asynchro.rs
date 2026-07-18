@@ -395,11 +395,7 @@ where
     /// This is the value used in the inner loop:
     /// `t_ratio += t_ratio_increment; idx += t_ratio;`
     #[inline(always)]
-    fn compute_t_ratio_increment(
-        resample_ratio: f64,
-        target_ratio: f64,
-        nbr_frames: usize,
-    ) -> f64 {
+    fn compute_t_ratio_increment(resample_ratio: f64, target_ratio: f64, nbr_frames: usize) -> f64 {
         (1.0 / target_ratio - 1.0 / resample_ratio) / nbr_frames as f64
     }
 
@@ -442,8 +438,7 @@ where
             FixedAsync::Output => {
                 // The total index advance for chunk_size output frames is
                 // chunk_size * avg_t_ratio + 0.5 * (1/r2 - 1/r1).
-                let ramp_overshoot =
-                    0.5 * (1.0 / target_ratio - 1.0 / resample_ratio);
+                let ramp_overshoot = 0.5 * (1.0 / target_ratio - 1.0 / resample_ratio);
                 (last_index
                     + chunk_size as f64 * Self::avg_t_ratio(resample_ratio, target_ratio)
                     + ramp_overshoot
@@ -466,13 +461,10 @@ where
             FixedAsync::Input => {
                 // n * avg_t_ratio + 0.5*(1/r2 - 1/r1) <= space  =>
                 // n <= (space - ramp_overshoot) / avg_t_ratio
-                let space =
-                    chunk_size as f64 - (interpolator_len + 1) as f64 - last_index;
-                let ramp_overshoot =
-                    0.5 * (1.0 / target_ratio - 1.0 / resample_ratio);
-                ((space - ramp_overshoot)
-                    / Self::avg_t_ratio(resample_ratio, target_ratio))
-                    .floor() as usize
+                let space = chunk_size as f64 - (interpolator_len + 1) as f64 - last_index;
+                let ramp_overshoot = 0.5 * (1.0 / target_ratio - 1.0 / resample_ratio);
+                ((space - ramp_overshoot) / Self::avg_t_ratio(resample_ratio, target_ratio)).floor()
+                    as usize
             }
         }
     }
@@ -1496,8 +1488,7 @@ mod tests {
         ] {
             let start_idx = 0.0f64;
             let inc = Async::<f64>::compute_t_ratio_increment(r1, r2, n);
-            let final_idx =
-                Async::<f64>::advance_index(start_idx, 1.0 / r1, inc, n);
+            let final_idx = Async::<f64>::advance_index(start_idx, 1.0 / r1, inc, n);
 
             let avg = Async::<f64>::avg_t_ratio(r1, r2);
             let ramp_overshoot = 0.5 * (1.0 / r2 - 1.0 / r1);
@@ -1551,8 +1542,7 @@ mod tests {
                 }
 
                 let inc = Async::<f64>::compute_t_ratio_increment(r1, r2, n);
-                let final_idx =
-                    Async::<f64>::advance_index(last_index, 1.0 / r1, inc, n);
+                let final_idx = Async::<f64>::advance_index(last_index, 1.0 / r1, inc, n);
 
                 // The inner loop uses floor(idx) as the array start index,
                 // so we check the integer part rather than the raw float to
