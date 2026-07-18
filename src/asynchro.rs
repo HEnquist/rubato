@@ -135,6 +135,24 @@ impl<T> fmt::Debug for Async<T> {
     }
 }
 
+/// Advance the interpolation index by one output frame.
+///
+/// This is the single-step kernel shared by every inner resampler loop and
+/// by the [`Async`] size-estimation helper `advance_index`.  Keeping it in
+/// one place guarantees that the estimation math and the real stepping logic
+/// can never silently diverge.
+///
+/// The increment-first order (`t_ratio` is updated *before* being added to
+/// `idx`) is preserved so that the step sequence is identical to what the
+/// inner loops produce.
+///
+/// Returns `(new_idx, new_t_ratio)`.
+#[inline(always)]
+pub(crate) fn step_index(idx: f64, t_ratio: f64, t_ratio_increment: f64) -> (f64, f64) {
+    let new_t_ratio = t_ratio + t_ratio_increment;
+    (idx + new_t_ratio, new_t_ratio)
+}
+
 fn validate_ratios(
     resample_ratio: f64,
     max_resample_ratio_relative: f64,
@@ -420,8 +438,7 @@ where
         let mut idx = start_idx;
         let mut t_ratio = start_t_ratio;
         for _ in 0..nbr_frames {
-            t_ratio += t_ratio_increment;
-            idx += t_ratio;
+            (idx, t_ratio) = step_index(idx, t_ratio, t_ratio_increment);
         }
         idx
     }
