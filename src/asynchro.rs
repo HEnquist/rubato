@@ -410,6 +410,7 @@ where
     /// by all inner resamplers (polynomial and sinc). It can be used in tests
     /// to verify that `calculate_output_size` and `calculate_input_size` never
     /// let the index exceed the input buffer boundary.
+    #[cfg(test)]
     fn advance_index(
         start_idx: f64,
         start_t_ratio: f64,
