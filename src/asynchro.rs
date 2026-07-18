@@ -360,12 +360,13 @@ where
     /// Compute the average step size for a block that ramps linearly from
     /// `resample_ratio` to `target_ratio`.
     ///
-    /// The step size for a single output frame is `1 / ratio` (the number of
-    /// input frames consumed per output frame). When the ratio ramps linearly
-    /// over the block, the total index advance over `n` output frames is
+    /// The step size for a single output frame is `reciprocal(ratio)` (the
+    /// number of input frames consumed per output frame). When the ratio ramps
+    /// linearly over the block, the total index advance over `n` output frames
+    /// is
     ///
     /// ```text
-    /// n * avg_t_ratio + 0.5 * (1/target_ratio - 1/resample_ratio)
+    /// n * avg_t_ratio + 0.5 * (reciprocal(target_ratio) - reciprocal(resample_ratio))
     /// ```
     ///
     /// The first term uses the arithmetic mean of the start and end step sizes.
@@ -1183,7 +1184,7 @@ mod tests {
     /// *ratios* to estimate how many output frames fit inside the input buffer.
     /// When the ratio decreased sharply (e.g. 1.0 → 0.2, relative 0.2×) with
     /// `ramp = true`, the step size averaged to 3.0 instead of ≈ 0.6, so the
-    /// resampler tried to consume ~1842 input frames from a 1024-frame buffer
+    /// resampler tried to consume far more input frames than the buffer holds
     /// and panicked with an unsafe precondition violation.
     #[test_log::test(test_matrix(
         [PolynomialDegree::Cubic, PolynomialDegree::Linear],
