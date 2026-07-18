@@ -77,13 +77,7 @@ where
         + t!(336.0) * g
         - t!(36.0) * h;
     let k0 = t!(5040.0) * d;
-    let x2 = x * x;
-    let x3 = x2 * x;
-    let x4 = x2 * x2;
-    let x5 = x2 * x3;
-    let x6 = x3 * x3;
-    let x7 = x3 * x4;
-    let val = k7 * x7 + k6 * x6 + k5 * x5 + k4 * x4 + k3 * x3 + k2 * x2 + k1 * x + k0;
+    let val = k0 + x * (k1 + x * (k2 + x * (k3 + x * (k4 + x * (k5 + x * (k6 + x * k7))))));
     t!(1.0 / 5040.0) * val
 }
 
@@ -105,11 +99,7 @@ where
     let k2 = -t!(5.0) * a + t!(80.0) * b - t!(150.0) * c + t!(80.0) * d - t!(5.0) * e;
     let k1 = t!(6.0) * a - t!(60.0) * b - t!(40.0) * c + t!(120.0) * d - t!(30.0) * e + t!(4.0) * f;
     let k0 = t!(120.0) * c;
-    let x2 = x * x;
-    let x3 = x2 * x;
-    let x4 = x2 * x2;
-    let x5 = x2 * x3;
-    let val = k5 * x5 + k4 * x4 + k3 * x3 + k2 * x2 + k1 * x + k0;
+    let val = k0 + x * (k1 + x * (k2 + x * (k3 + x * (k4 + x * k5))));
     t!(1.0 / 120.0) * val
 }
 
@@ -123,9 +113,7 @@ where
     let a1 = -t!(1.0 / 3.0) * yvals[0] - t!(0.5) * yvals[1] + yvals[2] - t!(1.0 / 6.0) * yvals[3];
     let a2 = t!(0.5) * (yvals[0] + yvals[2]) - yvals[1];
     let a3 = t!(0.5) * (yvals[1] - yvals[2]) + t!(1.0 / 6.0) * (yvals[3] - yvals[0]);
-    let x2 = x * x;
-    let x3 = x2 * x;
-    a0 + a1 * x + a2 * x2 + a3 * x3
+    a0 + x * (a1 + x * (a2 + x * a3))
 }
 
 /// Linear interpolation between two points at x=0 and x=1.
