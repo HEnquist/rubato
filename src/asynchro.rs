@@ -1113,25 +1113,34 @@ mod tests {
     #[test_log::test]
     fn avg_t_ratio_equal_ratios() {
         // When both ratios are equal, avg_t_ratio must equal 1/ratio.
-        let r = 2.0f64;
-        let got = Async::<f64>::avg_t_ratio(r, r);
-        let expected = 1.0 / r;
-        assert!(
-            (got - expected).abs() < 1e-12,
-            "avg_t_ratio({r}, {r}) = {got}, expected {expected}",
-        );
+        for r in [0.1f64, 0.5, 1.0, 2.0, 10.0] {
+            let got = Async::<f64>::avg_t_ratio(r, r);
+            let expected = 1.0 / r;
+            assert!(
+                (got - expected).abs() < 1e-12,
+                "avg_t_ratio({r}, {r}) = {got}, expected {expected}",
+            );
+        }
     }
 
     #[test_log::test]
     fn avg_t_ratio_symmetric() {
-        let r1 = 1.0f64;
-        let r2 = 0.2f64;
-        let forward = Async::<f64>::avg_t_ratio(r1, r2);
-        let backward = Async::<f64>::avg_t_ratio(r2, r1);
-        assert!(
-            (forward - backward).abs() < 1e-12,
-            "avg_t_ratio must be symmetric: avg_t_ratio({r1},{r2})={forward}, avg_t_ratio({r2},{r1})={backward}",
-        );
+        // avg_t_ratio must be symmetric for a variety of ratio pairs including
+        // both-greater-than-1, both-less-than-1, and mixed pairs.
+        for (r1, r2) in [
+            (1.0f64, 0.2f64),
+            (2.0, 3.0),
+            (0.3, 0.5),
+            (0.125, 8.0),
+            (1.0, 1.0),
+        ] {
+            let forward = Async::<f64>::avg_t_ratio(r1, r2);
+            let backward = Async::<f64>::avg_t_ratio(r2, r1);
+            assert!(
+                (forward - backward).abs() < 1e-12,
+                "avg_t_ratio must be symmetric: avg_t_ratio({r1},{r2})={forward}, avg_t_ratio({r2},{r1})={backward}",
+            );
+        }
     }
 
     #[test_log::test]
@@ -1141,6 +1150,13 @@ mod tests {
         assert!(
             (got - 3.0).abs() < 1e-12,
             "avg_t_ratio(1.0, 0.2) = {got}, expected 3.0",
+        );
+        // avg_t_ratio(2.0, 3.0) = 0.5 * (0.5 + 1/3) = 0.5 * (5/6) = 5/12
+        let got2 = Async::<f64>::avg_t_ratio(2.0, 3.0);
+        let expected2 = 5.0 / 12.0;
+        assert!(
+            (got2 - expected2).abs() < 1e-12,
+            "avg_t_ratio(2.0, 3.0) = {got2}, expected {expected2}",
         );
     }
 
