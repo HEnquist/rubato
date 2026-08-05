@@ -135,6 +135,24 @@ impl<T> fmt::Debug for Async<T> {
     }
 }
 
+/// Advance the interpolation index by one output frame.
+///
+/// This is the single-step kernel shared by every inner resampler loop and
+/// by the [`Async`] size-estimation helper `advance_index`.  Keeping it in
+/// one place guarantees that the estimation math and the real stepping logic
+/// can never silently diverge.
+///
+/// The increment-first order (`t_ratio` is updated *before* being added to
+/// `idx`) is preserved so that the step sequence is identical to what the
+/// inner loops produce.
+///
+/// Returns `(new_idx, new_t_ratio)`.
+#[inline(always)]
+pub(crate) fn step_index(idx: f64, t_ratio: f64, t_ratio_increment: f64) -> (f64, f64) {
+    let new_t_ratio = t_ratio + t_ratio_increment;
+    (idx + new_t_ratio, new_t_ratio)
+}
+
 fn validate_ratios(
     resample_ratio: f64,
     max_resample_ratio_relative: f64,
@@ -357,6 +375,74 @@ where
         })
     }
 
+    /// Compute the average step size for a block that ramps linearly from
+    /// `resample_ratio` to `target_ratio`.
+    ///
+    /// The step size for a single output frame is `reciprocal(ratio)` (the
+    /// number of input frames consumed per output frame). When the ratio ramps
+    /// linearly over the block, the total index advance over `n` output frames
+    /// is
+    ///
+    /// ```text
+    /// n * avg_t_ratio + 0.5 * (reciprocal(target_ratio) - reciprocal(resample_ratio))
+    /// ```
+    ///
+    /// The first term uses the arithmetic mean of the start and end step sizes.
+    /// The second term accounts for the increment-first order in the inner loop
+    /// (the step size is incremented before being added to the index, so all
+    /// steps are offset by `+1` increment compared to a midpoint approximation).
+    ///
+    /// Using the arithmetic mean of the *ratios* instead of the step sizes
+    /// would severely underestimate the advance when the ratio decreases
+    /// sharply, causing the interpolation index to exceed the buffer bounds
+    /// (issue #136).
+    #[inline(always)]
+    fn avg_t_ratio(resample_ratio: f64, target_ratio: f64) -> f64 {
+        0.5 * (1.0 / resample_ratio + 1.0 / target_ratio)
+    }
+
+    /// Compute the per-frame step-size increment used during a ramped
+    /// transition from `resample_ratio` to `target_ratio` over `nbr_frames`
+    /// output frames.
+    ///
+    /// The step size ramps linearly in step-size space:
+    /// ```text
+    /// t_ratio[k] = 1/resample_ratio + k * t_ratio_increment
+    /// t_ratio[nbr_frames] == 1/target_ratio
+    /// ```
+    /// This is the value used in the inner loop:
+    /// `t_ratio += t_ratio_increment; idx += t_ratio;`
+    #[inline(always)]
+    fn compute_t_ratio_increment(resample_ratio: f64, target_ratio: f64, nbr_frames: usize) -> f64 {
+        (1.0 / target_ratio - 1.0 / resample_ratio) / nbr_frames as f64
+    }
+
+    /// Simulate `nbr_frames` steps of the inner index-advance loop:
+    /// ```text
+    /// t_ratio += t_ratio_increment
+    /// idx     += t_ratio
+    /// ```
+    /// Returns the final value of `idx`.
+    ///
+    /// This function is the reference implementation of the loop body shared
+    /// by all inner resamplers (polynomial and sinc). It can be used in tests
+    /// to verify that `calculate_output_size` and `calculate_input_size` never
+    /// let the index exceed the input buffer boundary.
+    #[cfg(test)]
+    fn advance_index(
+        start_idx: f64,
+        start_t_ratio: f64,
+        t_ratio_increment: f64,
+        nbr_frames: usize,
+    ) -> f64 {
+        let mut idx = start_idx;
+        let mut t_ratio = start_t_ratio;
+        for _ in 0..nbr_frames {
+            (idx, t_ratio) = step_index(idx, t_ratio, t_ratio_increment);
+        }
+        idx
+    }
+
     fn calculate_input_size(
         chunk_size: usize,
         resample_ratio: f64,
@@ -367,10 +453,16 @@ where
     ) -> usize {
         match fixed {
             FixedAsync::Input => chunk_size,
-            FixedAsync::Output => (last_index
-                + chunk_size as f64 / (0.5 * resample_ratio + 0.5 * target_ratio)
-                + interpolator_len as f64)
-                .ceil() as usize,
+            FixedAsync::Output => {
+                // The total index advance for chunk_size output frames is
+                // chunk_size * avg_t_ratio + 0.5 * (1/r2 - 1/r1).
+                let ramp_overshoot = 0.5 * (1.0 / target_ratio - 1.0 / resample_ratio);
+                (last_index
+                    + chunk_size as f64 * Self::avg_t_ratio(resample_ratio, target_ratio)
+                    + ramp_overshoot
+                    + interpolator_len as f64)
+                    .ceil() as usize
+            }
         }
     }
 
@@ -384,9 +476,14 @@ where
     ) -> usize {
         match fixed {
             FixedAsync::Output => chunk_size,
-            FixedAsync::Input => ((chunk_size as f64 - (interpolator_len + 1) as f64 - last_index)
-                * (0.5 * resample_ratio + 0.5 * target_ratio))
-                .floor() as usize,
+            FixedAsync::Input => {
+                // n * avg_t_ratio + 0.5*(1/r2 - 1/r1) <= space  =>
+                // n <= (space - ramp_overshoot) / avg_t_ratio
+                let space = chunk_size as f64 - (interpolator_len + 1) as f64 - last_index;
+                let ramp_overshoot = 0.5 * (1.0 / target_ratio - 1.0 / resample_ratio);
+                ((space - ramp_overshoot) / Self::avg_t_ratio(resample_ratio, target_ratio)).floor()
+                    as usize
+            }
         }
     }
 
@@ -498,9 +595,12 @@ where
         let interpolator_len = self.inner_resampler.nbr_points();
 
         let t_ratio = 1.0 / self.resample_ratio;
-        let t_ratio_end = 1.0 / self.target_ratio;
 
-        let t_ratio_increment = (t_ratio_end - t_ratio) / self.needed_output_size as f64;
+        let t_ratio_increment = Self::compute_t_ratio_increment(
+            self.resample_ratio,
+            self.target_ratio,
+            self.needed_output_size,
+        );
 
         // Update buffer with new data.
         for buf in self.buffer.iter_mut() {
@@ -1066,5 +1166,413 @@ mod tests {
     ))]
     fn sinc_4ch_matches_1ch(interp: SincInterpolationType, ratio: f64, fixed: FixedAsync) {
         compare_1ch_4ch_sinc_output(interp, ratio, fixed);
+    }
+
+    // --- avg_t_ratio unit tests ---
+
+    #[test_log::test]
+    fn avg_t_ratio_equal_ratios() {
+        // When both ratios are equal, avg_t_ratio must equal 1/ratio.
+        for r in [0.1f64, 0.5, 1.0, 2.0, 10.0] {
+            let got = Async::<f64>::avg_t_ratio(r, r);
+            let expected = 1.0 / r;
+            assert!(
+                (got - expected).abs() < 1e-12,
+                "avg_t_ratio({r}, {r}) = {got}, expected {expected}",
+            );
+        }
+    }
+
+    #[test_log::test]
+    fn avg_t_ratio_symmetric() {
+        // avg_t_ratio must be symmetric for a variety of ratio pairs including
+        // both-greater-than-1, both-less-than-1, and mixed pairs.
+        for (r1, r2) in [
+            (1.0f64, 0.2f64),
+            (2.0, 3.0),
+            (0.3, 0.5),
+            (0.125, 8.0),
+            (1.0, 1.0),
+        ] {
+            let forward = Async::<f64>::avg_t_ratio(r1, r2);
+            let backward = Async::<f64>::avg_t_ratio(r2, r1);
+            assert!(
+                (forward - backward).abs() < 1e-12,
+                "avg_t_ratio must be symmetric: avg_t_ratio({r1},{r2})={forward}, avg_t_ratio({r2},{r1})={backward}",
+            );
+        }
+    }
+
+    #[test_log::test]
+    fn avg_t_ratio_known_value() {
+        // avg_t_ratio(1.0, 0.2) = 0.5 * (1/1.0 + 1/0.2) = 0.5 * (1 + 5) = 3.0
+        let got = Async::<f64>::avg_t_ratio(1.0, 0.2);
+        assert!(
+            (got - 3.0).abs() < 1e-12,
+            "avg_t_ratio(1.0, 0.2) = {got}, expected 3.0",
+        );
+        // avg_t_ratio(2.0, 3.0) = 0.5 * (0.5 + 1/3) = 0.5 * (5/6) = 5/12
+        let got2 = Async::<f64>::avg_t_ratio(2.0, 3.0);
+        let expected2 = 5.0 / 12.0;
+        assert!(
+            (got2 - expected2).abs() < 1e-12,
+            "avg_t_ratio(2.0, 3.0) = {got2}, expected {expected2}",
+        );
+    }
+
+    // --- Regression tests for issue #136 ---
+
+    /// Helper: fill one block through `resampler`, returning (frames_in, frames_out).
+    fn process_one_block(resampler: &mut Async<f64>, channels: usize) -> (usize, usize) {
+        let frames_in = resampler.input_frames_next();
+        let frames_out_max = resampler.output_frames_max();
+        let in_data = vec![vec![0.0f64; frames_in]; channels];
+        let input = SequentialSliceOfVecs::new(&in_data, channels, frames_in).unwrap();
+        let mut out_data = vec![vec![0.0f64; frames_out_max]; channels];
+        let mut out =
+            SequentialSliceOfVecs::new_mut(&mut out_data, channels, frames_out_max).unwrap();
+        let (consumed, produced) = resampler
+            .process_into_buffer(&input, &mut out, None)
+            .unwrap();
+        (consumed, produced)
+    }
+
+    /// Regression test for issue #136 — `FixedAsync::Input` mode.
+    ///
+    /// Before the fix, `calculate_output_size` used the arithmetic mean of the
+    /// *ratios* to estimate how many output frames fit inside the input buffer.
+    /// When the ratio decreased sharply (e.g. 1.0 → 0.2, relative 0.2×) with
+    /// `ramp = true`, the step size averaged to 3.0 instead of ≈ 0.6, so the
+    /// resampler tried to consume far more input frames than the buffer holds
+    /// and panicked with an unsafe precondition violation.
+    #[test_log::test(test_matrix(
+        [PolynomialDegree::Cubic, PolynomialDegree::Linear],
+        [0.2f64, 5.0f64]
+    ))]
+    fn poly_ramp_large_ratio_change_does_not_panic(degree: PolynomialDegree, target_rel: f64) {
+        let chunk_size = 1024;
+        let channels = 1;
+        let mut resampler =
+            Async::<f64>::new_poly(1.0, 6.0, degree, chunk_size, channels, FixedAsync::Input)
+                .unwrap();
+
+        // First block at the nominal ratio.
+        let (frames_in, frames_out) = process_one_block(&mut resampler, channels);
+        assert!(
+            frames_in == chunk_size,
+            "first block: expected {chunk_size} input frames, got {frames_in}",
+        );
+        assert!(
+            frames_out > 0,
+            "first block: expected nonzero output frames, got 0",
+        );
+
+        // Change ratio dramatically with ramp=true — the issue #136 trigger.
+        resampler
+            .set_resample_ratio_relative(target_rel, true)
+            .unwrap();
+
+        // The sizes reported by the resampler must be in bounds.
+        let frames_in2 = resampler.input_frames_next();
+        let frames_out2 = resampler.output_frames_next();
+        assert!(
+            frames_in2 == chunk_size,
+            "after ratio change: expected {chunk_size} input frames, got {frames_in2}",
+        );
+        assert!(
+            frames_out2 > 0,
+            "after ratio change: expected nonzero output frames, got {frames_out2}",
+        );
+
+        // Second block must complete without panicking.
+        let (consumed2, produced2) = process_one_block(&mut resampler, channels);
+        assert_eq!(
+            consumed2, frames_in2,
+            "second block consumed {consumed2} frames, expected {frames_in2}",
+        );
+        assert_eq!(
+            produced2, frames_out2,
+            "second block produced {produced2} frames, expected {frames_out2}",
+        );
+    }
+
+    #[test_log::test(test_matrix(
+        [0.2f64, 5.0f64]
+    ))]
+    fn sinc_ramp_large_ratio_change_does_not_panic(target_rel: f64) {
+        let chunk_size = 1024;
+        let channels = 1;
+        let params = basic_params();
+        let mut resampler =
+            Async::<f64>::new_sinc(1.0, 6.0, &params, chunk_size, channels, FixedAsync::Input)
+                .unwrap();
+
+        // First block at the nominal ratio.
+        let (frames_in, frames_out) = process_one_block(&mut resampler, channels);
+        assert!(
+            frames_in == chunk_size,
+            "first block: expected {chunk_size} input frames, got {frames_in}",
+        );
+        assert!(
+            frames_out > 0,
+            "first block: expected nonzero output frames, got 0",
+        );
+
+        // Change ratio dramatically with ramp=true — the issue #136 trigger.
+        resampler
+            .set_resample_ratio_relative(target_rel, true)
+            .unwrap();
+
+        let frames_in2 = resampler.input_frames_next();
+        let frames_out2 = resampler.output_frames_next();
+        assert!(
+            frames_in2 == chunk_size,
+            "after ratio change: expected {chunk_size} input frames, got {frames_in2}",
+        );
+        assert!(
+            frames_out2 > 0,
+            "after ratio change: expected nonzero output frames, got {frames_out2}",
+        );
+
+        // Second block must complete without panicking.
+        let (consumed2, produced2) = process_one_block(&mut resampler, channels);
+        assert_eq!(
+            consumed2, frames_in2,
+            "second block consumed {consumed2} frames, expected {frames_in2}",
+        );
+        assert_eq!(
+            produced2, frames_out2,
+            "second block produced {produced2} frames, expected {frames_out2}",
+        );
+    }
+
+    /// Regression test for issue #136 — `FixedAsync::Output` mode.
+    ///
+    /// In `FixedAsync::Output` mode the output chunk size is fixed and the
+    /// input size is variable (computed by `calculate_input_size`). The same
+    /// averaging error that caused the `FixedAsync::Input` panic would have
+    /// caused `calculate_input_size` to underestimate how many input frames
+    /// are needed, making the resampler read past the allocated buffer.
+    #[test_log::test(test_matrix(
+        [PolynomialDegree::Cubic, PolynomialDegree::Linear],
+        [0.2f64, 5.0f64]
+    ))]
+    fn poly_output_fixed_ramp_large_ratio_change_does_not_panic(
+        degree: PolynomialDegree,
+        target_rel: f64,
+    ) {
+        let chunk_size = 1024;
+        let channels = 1;
+        let mut resampler =
+            Async::<f64>::new_poly(1.0, 6.0, degree, chunk_size, channels, FixedAsync::Output)
+                .unwrap();
+
+        // First block at the nominal ratio.
+        let (_, frames_out) = process_one_block(&mut resampler, channels);
+        assert!(
+            frames_out == chunk_size,
+            "first block: expected {chunk_size} output frames, got {frames_out}",
+        );
+
+        // Change ratio dramatically with ramp=true.
+        resampler
+            .set_resample_ratio_relative(target_rel, true)
+            .unwrap();
+
+        let frames_in2 = resampler.input_frames_next();
+        let frames_out2 = resampler.output_frames_next();
+        assert!(
+            frames_in2 > 0,
+            "after ratio change: expected nonzero input frames, got {frames_in2}",
+        );
+        assert_eq!(
+            frames_out2, chunk_size,
+            "after ratio change: expected {chunk_size} output frames, got {frames_out2}",
+        );
+
+        // Second block must complete without panicking.
+        let (consumed2, produced2) = process_one_block(&mut resampler, channels);
+        assert_eq!(
+            consumed2, frames_in2,
+            "second block consumed {consumed2} frames, expected {frames_in2}",
+        );
+        assert_eq!(
+            produced2, frames_out2,
+            "second block produced {produced2} frames, expected {frames_out2}",
+        );
+    }
+
+    #[test_log::test(test_matrix(
+        [0.2f64, 5.0f64]
+    ))]
+    fn sinc_output_fixed_ramp_large_ratio_change_does_not_panic(target_rel: f64) {
+        let chunk_size = 1024;
+        let channels = 1;
+        let params = basic_params();
+        let mut resampler =
+            Async::<f64>::new_sinc(1.0, 6.0, &params, chunk_size, channels, FixedAsync::Output)
+                .unwrap();
+
+        // First block at the nominal ratio.
+        let (_, frames_out) = process_one_block(&mut resampler, channels);
+        assert!(
+            frames_out == chunk_size,
+            "first block: expected {chunk_size} output frames, got {frames_out}",
+        );
+
+        // Change ratio dramatically with ramp=true.
+        resampler
+            .set_resample_ratio_relative(target_rel, true)
+            .unwrap();
+
+        let frames_in2 = resampler.input_frames_next();
+        let frames_out2 = resampler.output_frames_next();
+        assert!(
+            frames_in2 > 0,
+            "after ratio change: expected nonzero input frames, got {frames_in2}",
+        );
+        assert_eq!(
+            frames_out2, chunk_size,
+            "after ratio change: expected {chunk_size} output frames, got {frames_out2}",
+        );
+
+        // Second block must complete without panicking.
+        let (consumed2, produced2) = process_one_block(&mut resampler, channels);
+        assert_eq!(
+            consumed2, frames_in2,
+            "second block consumed {consumed2} frames, expected {frames_in2}",
+        );
+        assert_eq!(
+            produced2, frames_out2,
+            "second block produced {produced2} frames, expected {frames_out2}",
+        );
+    }
+
+    // --- compute_t_ratio_increment unit tests ---
+
+    /// `compute_t_ratio_increment` must produce a ramp that reaches exactly
+    /// `1/target_ratio` after `n` increments from `1/resample_ratio`.
+    #[test_log::test]
+    fn t_ratio_increment_reaches_target() {
+        for (r1, r2, n) in [
+            (1.0f64, 0.2f64, 100usize),
+            (1.0, 5.0, 1024),
+            (2.0, 3.0, 512),
+            (0.5, 0.5, 256),
+            (0.125, 8.0, 64),
+        ] {
+            let inc = Async::<f64>::compute_t_ratio_increment(r1, r2, n);
+            let t_ratio_end = 1.0 / r1 + n as f64 * inc;
+            let expected_end = 1.0 / r2;
+            assert!(
+                (t_ratio_end - expected_end).abs() < 1e-10,
+                "r1={r1}, r2={r2}, n={n}: t_ratio after {n} increments = {t_ratio_end}, expected {expected_end}",
+            );
+        }
+    }
+
+    /// At equal ratios `compute_t_ratio_increment` must return zero (no ramp).
+    #[test_log::test]
+    fn t_ratio_increment_equal_ratios_is_zero() {
+        for r in [0.1f64, 0.5, 1.0, 2.0, 10.0] {
+            for n in [1usize, 100, 1024] {
+                let inc = Async::<f64>::compute_t_ratio_increment(r, r, n);
+                assert!(
+                    inc.abs() < 1e-15,
+                    "compute_t_ratio_increment({r}, {r}, {n}) = {inc}, expected 0.0",
+                );
+            }
+        }
+    }
+
+    // --- advance_index unit tests ---
+
+    /// The index advance produced by the exact loop must equal the closed-form
+    /// prediction `n * avg_t_ratio + ramp_overshoot` to within floating-point
+    /// rounding error.
+    ///
+    /// This closes the loop between the analytical estimate used in
+    /// `calculate_output_size`/`calculate_input_size` and the real arithmetic
+    /// performed in every inner resampler loop.
+    #[test_log::test]
+    fn advance_index_matches_analytical_formula() {
+        for (r1, r2, n) in [
+            (1.0f64, 0.2f64, 100usize),
+            (1.0, 5.0, 1024),
+            (2.0, 3.0, 512),
+            (0.5, 0.8, 256),
+            (0.125, 8.0, 64),
+            (1.0, 1.0, 200),
+        ] {
+            let start_idx = 0.0f64;
+            let inc = Async::<f64>::compute_t_ratio_increment(r1, r2, n);
+            let final_idx = Async::<f64>::advance_index(start_idx, 1.0 / r1, inc, n);
+
+            let avg = Async::<f64>::avg_t_ratio(r1, r2);
+            let ramp_overshoot = 0.5 * (1.0 / r2 - 1.0 / r1);
+            let analytical = start_idx + n as f64 * avg + ramp_overshoot;
+
+            // Tolerate small floating-point accumulation over n steps.
+            let tol = 1e-6;
+            assert!(
+                (final_idx - analytical).abs() <= tol,
+                "r1={r1}, r2={r2}, n={n}: advance_index={final_idx}, analytical={analytical}, diff={}",
+                (final_idx - analytical).abs(),
+            );
+        }
+    }
+
+    /// For every combination of ratio-change direction and magnitude, the
+    /// index produced by `advance_index` (using the output-frame count from
+    /// `calculate_output_size`) must stay within the input buffer bounds.
+    ///
+    /// This is the direct, loop-level proof that the fix in
+    /// `calculate_output_size` is tight: the analytical estimate is never an
+    /// overestimate.
+    #[test_log::test]
+    fn advance_index_stays_within_buffer_bounds() {
+        let chunk_size = 1024usize;
+        let interpolator_len = 4usize; // representative polynomial kernel half-width
+
+        for last_index in [0.0f64, 0.5, 2.0] {
+            for (r1, r2) in [
+                (1.0f64, 0.2f64),
+                (1.0, 5.0),
+                (0.5, 2.0),
+                (2.0, 0.5),
+                (1.0, 1.0),
+                (0.3, 0.3),
+                (0.125, 8.0),
+                (8.0, 0.125),
+            ] {
+                let n = Async::<f64>::calculate_output_size(
+                    chunk_size,
+                    r1,
+                    r2,
+                    last_index,
+                    interpolator_len,
+                    &FixedAsync::Input,
+                );
+
+                if n == 0 {
+                    // No output frames fit in this configuration; nothing to check.
+                    continue;
+                }
+
+                let inc = Async::<f64>::compute_t_ratio_increment(r1, r2, n);
+                let final_idx = Async::<f64>::advance_index(last_index, 1.0 / r1, inc, n);
+
+                // The inner loop uses floor(idx) as the array start index,
+                // so we check the integer part rather than the raw float to
+                // avoid false failures from sub-ULP floating-point noise.
+                let bound = chunk_size - interpolator_len - 1;
+                assert!(
+                    final_idx.floor() as usize <= bound,
+                    "r1={r1}, r2={r2}, last_index={last_index}, n={n}: \
+                     advance_index floor(final_idx)={} exceeds buffer bound={bound}",
+                    final_idx.floor() as usize,
+                );
+            }
+        }
     }
 }

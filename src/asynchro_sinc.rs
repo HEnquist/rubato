@@ -1,4 +1,4 @@
-use crate::asynchro::InnerResampler;
+use crate::asynchro::{step_index, InnerResampler};
 use crate::interpolation::*;
 #[cfg(target_arch = "x86_64")]
 use crate::sinc_interpolator::sinc_interpolator_avx::AvxInterpolator;
@@ -466,8 +466,7 @@ where
                 let use_combined = active_count >= 2;
                 let mut nearest = [(0isize, 0isize); 4];
                 for frame in 0..nbr_frames {
-                    t_ratio += t_ratio_increment;
-                    idx += t_ratio;
+                    (idx, t_ratio) = step_index(idx, t_ratio, t_ratio_increment);
                     get_nearest_times_4(idx, oversampling_factor as isize, &mut nearest);
                     let frac_offset = t!(idx * oversampling_factor as f64
                         - (idx * oversampling_factor as f64).floor());
@@ -502,8 +501,7 @@ where
                 let use_combined = active_count > 2;
                 let mut nearest = [(0isize, 0isize); 3];
                 for frame in 0..nbr_frames {
-                    t_ratio += t_ratio_increment;
-                    idx += t_ratio;
+                    (idx, t_ratio) = step_index(idx, t_ratio, t_ratio_increment);
                     get_nearest_times_3(idx, oversampling_factor as isize, &mut nearest);
                     let frac_offset = t!(idx * oversampling_factor as f64
                         - (idx * oversampling_factor as f64).floor());
@@ -538,8 +536,7 @@ where
                 let use_combined = active_count > 2;
                 let mut nearest = [(0isize, 0isize); 2];
                 for frame in 0..nbr_frames {
-                    t_ratio += t_ratio_increment;
-                    idx += t_ratio;
+                    (idx, t_ratio) = step_index(idx, t_ratio, t_ratio_increment);
                     get_nearest_times_2(idx, oversampling_factor as isize, &mut nearest);
                     let frac_offset = t!(idx * oversampling_factor as f64
                         - (idx * oversampling_factor as f64).floor());
@@ -574,8 +571,7 @@ where
                 let mut point;
                 let mut nearest;
                 for frame in 0..nbr_frames {
-                    t_ratio += t_ratio_increment;
-                    idx += t_ratio;
+                    (idx, t_ratio) = step_index(idx, t_ratio, t_ratio_increment);
                     nearest = get_nearest_time(idx, oversampling_factor as isize);
                     for (chan, active) in channel_mask.iter().enumerate() {
                         if *active {

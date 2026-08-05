@@ -1,4 +1,4 @@
-use crate::asynchro::InnerResampler;
+use crate::asynchro::{step_index, InnerResampler};
 use crate::Sample;
 use audioadapter::AdapterMut;
 use std::marker::PhantomData;
@@ -162,8 +162,7 @@ where
         match self.interpolation {
             PolynomialDegree::Septic => {
                 for frame in 0..nbr_frames {
-                    t_ratio += t_ratio_increment;
-                    idx += t_ratio;
+                    (idx, t_ratio) = step_index(idx, t_ratio, t_ratio_increment);
                     let idx_floor = idx.floor();
                     let start_idx = idx_floor as isize - 3;
                     let frac = idx - idx_floor;
@@ -187,8 +186,7 @@ where
             }
             PolynomialDegree::Quintic => {
                 for frame in 0..nbr_frames {
-                    t_ratio += t_ratio_increment;
-                    idx += t_ratio;
+                    (idx, t_ratio) = step_index(idx, t_ratio, t_ratio_increment);
                     let idx_floor = idx.floor();
                     let start_idx = idx_floor as isize - 2;
                     let frac = idx - idx_floor;
@@ -212,8 +210,7 @@ where
             }
             PolynomialDegree::Cubic => {
                 for frame in 0..nbr_frames {
-                    t_ratio += t_ratio_increment;
-                    idx += t_ratio;
+                    (idx, t_ratio) = step_index(idx, t_ratio, t_ratio_increment);
                     let idx_floor = idx.floor();
                     let start_idx = idx_floor as isize - 1;
                     let frac = idx - idx_floor;
@@ -237,8 +234,7 @@ where
             }
             PolynomialDegree::Linear => {
                 for frame in 0..nbr_frames {
-                    t_ratio += t_ratio_increment;
-                    idx += t_ratio;
+                    (idx, t_ratio) = step_index(idx, t_ratio, t_ratio_increment);
                     let idx_floor = idx.floor();
                     let start_idx = idx_floor as isize;
                     let frac = idx - idx_floor;
@@ -262,8 +258,7 @@ where
             }
             PolynomialDegree::Nearest => {
                 for frame in 0..nbr_frames {
-                    t_ratio += t_ratio_increment;
-                    idx += t_ratio;
+                    (idx, t_ratio) = step_index(idx, t_ratio, t_ratio_increment);
                     let start_idx = idx.floor() as isize;
                     for (chan, active) in channel_mask.iter().enumerate() {
                         if *active {
