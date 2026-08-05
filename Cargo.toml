@@ -1,7 +1,7 @@
 [package]
 name = "rubato"
-version = "4.0.0"
-rust-version = "1.85"
+version = "5.0.0"
+rust-version = "1.87"
 authors = ["HEnquist <henrik.enquist@gmail.com>"]
 description = "Asynchronous resampling library intended for audio data"
 license = "MIT OR Apache-2.0"
@@ -25,10 +25,8 @@ realfft = { version = "3.5.0", optional = true }
 num-complex = { version = "0.4", optional = true }
 num-integer = "0.1.45"
 num-traits = "0.2"
-#audioadapter = {version = "4.0.0", path = "../audioadapter-rs/audioadapter"}
-audioadapter = "4.0"
-#audioadapter-buffers = {version = "4.0.0", path = "../audioadapter-rs/audioadapter-buffers"}
-audioadapter-buffers = "4.0"
+audioadapter = "5.0"
+audioadapter-buffers = "5.1"
 visibility = "0.1.1"
 windowfunctions = "0.1.1"
 
@@ -41,8 +39,13 @@ log = "0.4.18"
 approx = "0.5.1"
 test-log = "0.2.16"
 test-case = "3"
-#audioadapter-sample = {version = "4.0.0", path = "../audioadapter-rs/audioadapter-sample"}
-audioadapter-sample = "4.0"
+audioadapter-sample = "5.1"
+
+# Uncomment to build against a local audioadapter checkout instead of the published crates.
+#[patch.crates-io]
+#audioadapter = { path = "../audioadapter-rs/audioadapter" }
+#audioadapter-buffers = { path = "../audioadapter-rs/audioadapter-buffers" }
+#audioadapter-sample = { path = "../audioadapter-rs/audioadapter-sample" }
 
 [[bench]]
 name = "resamplers"

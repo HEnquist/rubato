@@ -18,8 +18,8 @@ See [Real-time considerations](#real-time-considerations) for more details.
 ## Input and output data format
 
 Input and output data is handled via
-[`Adapter`](https://docs.rs/audioadapter/4.0.0/audioadapter/trait.Adapter.html)
-and [`AdapterMut`](https://docs.rs/audioadapter/4.0.0/audioadapter/trait.AdapterMut.html)
+[`Adapter`](https://docs.rs/audioadapter/5.0.0/audioadapter/trait.Adapter.html)
+and [`AdapterMut`](https://docs.rs/audioadapter/5.0.0/audioadapter/trait.AdapterMut.html)
 objects from the [audioadapter](https://crates.io/crates/audioadapter) crate.
 By using a suitable adapter, any sample layout and format can be used.
 
@@ -29,7 +29,7 @@ and the `audioadapter` traits are kept simple in order to make it easy to implem
 for new structures if needed.
 
 For projects migrating from a previous version of `rubato`, the
-[`SequentialSliceOfVecs`](https://docs.rs/audioadapter-buffers/4.0.0/audioadapter_buffers/direct/struct.SequentialSliceOfVecs.html)
+[`SequentialSliceOfVecs`](https://docs.rs/audioadapter-buffers/5.1.0/audioadapter_buffers/direct/struct.SequentialSliceOfVecs.html)
 adapter is a good starting point, since it wraps the vector of vectors
 commonly used with `rubato` v0.16 and earlier.
 
@@ -405,7 +405,7 @@ Many audio editors, for example Audacity, are also able to directly import and e
 
 ## Compatibility
 
-The `rubato` crate requires rustc version 1.85 or newer.
+The `rubato` crate requires rustc version 1.87 or newer.
 
 ## Migrating from 3.x to 4.0
 
@@ -497,6 +497,16 @@ async_resampler.set_resample_ratio_relative(0.95, true)?;
 `ResamplerConstructionError`, add a `_ => ...` arm.
 
 ## Changelog
+- v5.0.0
+  - Fix an out-of-bounds panic in the asynchronous resamplers when the resampling ratio is
+    changed by a large factor with `ramp = true`. The input and output size estimates now
+    average the step sizes rather than the ratios, and correct for the ramp overshoot, so the
+    estimate is never lower than the number of frames the processing loop actually consumes.
+  - Speed up the polynomial interpolation in `Async::new_poly` by evaluating the polynomials
+    in Horner form.
+  - Update to `audioadapter` 5.0 and `audioadapter-buffers` 5.1. Bump your own `audioadapter`
+    dependencies to match the versions `rubato` re-exports.
+  - Raise the minimum supported rustc version to 1.87.
 - v4.0.0
   - Update to `audioadapter` 4.0, which removes the lifetime parameter from the
     `Adapter` and `AdapterMut` traits.
