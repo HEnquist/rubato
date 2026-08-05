@@ -118,12 +118,12 @@ pub struct Async<T> {
 
 impl<T> fmt::Debug for Async<T> {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt.debug_struct("Fast")
+        fmt.debug_struct("Async")
             .field("nbr_channels", &self.nbr_channels)
-            .field("chunk_size,", &self.chunk_size)
-            .field("max_chunk_size,", &self.max_chunk_size)
-            .field("needed_input_size,", &self.needed_input_size)
-            .field("needed_output_size,", &self.needed_output_size)
+            .field("chunk_size", &self.chunk_size)
+            .field("max_chunk_size", &self.max_chunk_size)
+            .field("needed_input_size", &self.needed_input_size)
+            .field("needed_output_size", &self.needed_output_size)
             .field("last_index", &self.last_index)
             .field("current_buffer_fill", &self.current_buffer_fill)
             .field("resample_ratio", &self.resample_ratio)
