@@ -50,6 +50,7 @@ mod bench_asyncro {
                     1.1,
                     interpolation_type,
                     interpolator,
+                    f_cutoff,
                     chunksize,
                     channels,
                     FixedAsync::Input,

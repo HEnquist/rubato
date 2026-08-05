@@ -19,6 +19,7 @@ use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 struct FftResampler<T> {
     fft_size_in: usize,
     fft_size_out: usize,
+    cutoff: f32,
     filter_f: Vec<Complex<T>>,
     fft: Arc<dyn RealToComplex<T>>,
     ifft: Arc<dyn ComplexToReal<T>>,
@@ -66,7 +67,7 @@ pub struct Fft<T> {
 
 impl<T> fmt::Debug for Fft<T> {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt.debug_struct("Fast")
+        fmt.debug_struct("Fft")
             .field("nbr_channels", &self.nbr_channels)
             .field("chunk_size_in,", &self.chunk_size_in)
             .field("chunk_size_out,", &self.chunk_size_out)
@@ -125,6 +126,7 @@ where
         FftResampler {
             fft_size_in,
             fft_size_out,
+            cutoff,
             filter_f,
             fft,
             ifft,
@@ -363,6 +365,42 @@ where
             channel_mask,
             fixed,
         })
+    }
+
+    /// The FFT block size on the input side, in frames.
+    ///
+    /// This is the number of frames the resampler transforms at a time,
+    /// determined by the sample rates and the requested `chunk_size`.
+    /// It is not the same as the chunk size, unless the resampler was created
+    /// with [FixedSync::Both] and processes a single block per chunk.
+    /// The resampler delay is half of [fft_size_out](Fft::fft_size_out),
+    /// see [Resampler::output_delay].
+    pub fn fft_size_in(&self) -> usize {
+        self.fft_size_in
+    }
+
+    /// The FFT block size on the output side, in frames.
+    ///
+    /// The counterpart of [fft_size_in](Fft::fft_size_in), in the same ratio to
+    /// it as the output sample rate is to the input sample rate.
+    pub fn fft_size_out(&self) -> usize {
+        self.fft_size_out
+    }
+
+    /// The relative cutoff frequency of the anti-aliasing filter.
+    ///
+    /// The value is relative to the Nyquist frequency of the *input* rate,
+    /// where `1.0` means the cutoff sits right at Nyquist.
+    /// Multiply by `sample_rate_input / 2` to get the cutoff in Hz.
+    ///
+    /// The cutoff is determined by the FFT block size and the window function.
+    /// A larger block moves it closer to Nyquist.
+    /// When downsampling it is scaled down to keep it below the lower Nyquist
+    /// frequency of the two sample rates.
+    ///
+    /// Multiply by `sample_rate_input / 2` to get the cutoff in Hz.
+    pub fn cutoff(&self) -> f32 {
+        self.resampler.cutoff
     }
 
     fn calc_chunk_sizes(
@@ -719,6 +757,31 @@ mod tests {
         let maxval = wave_out.iter().cloned().fold(f64::NAN, f64::max);
         assert!((vecsum - 4.0 * 1000.0 / 147.0).abs() < 1.0e-6);
         assert!((maxval - 1.0).abs() < 0.1);
+    }
+
+    #[test_log::test(test_matrix(
+        [512, 1024, 4096],
+        [(44100, 48000), (48000, 44100), (44100, 88200), (88200, 44100), (44100, 192000), (192000, 44100)],
+        [FixedSync::Input, FixedSync::Output, FixedSync::Both]
+    ))]
+    fn fft_sizes_and_cutoff(chunksize: usize, rates: (usize, usize), fixed: FixedSync) {
+        let (input_rate, output_rate) = rates;
+        let resampler = Fft::<f64>::new(input_rate, output_rate, chunksize, 2, fixed).unwrap();
+
+        // The two block sizes are in the same ratio as the sample rates,
+        // and the delay is half the output block.
+        assert_abs_diff_eq!(
+            resampler.fft_size_out() as f64 / resampler.fft_size_in() as f64,
+            output_rate as f64 / input_rate as f64,
+            epsilon = 1e-9
+        );
+        assert_eq!(resampler.output_delay(), resampler.fft_size_out() / 2);
+
+        // The cutoff must stay below the lower of the two Nyquist frequencies,
+        // expressed relative to the input Nyquist frequency.
+        let limit = (output_rate as f32 / input_rate as f32).min(1.0);
+        assert!(resampler.cutoff() > 0.5 * limit);
+        assert!(resampler.cutoff() < limit);
     }
 
     #[test_log::test(test_matrix(

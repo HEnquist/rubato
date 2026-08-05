@@ -210,6 +210,30 @@ pub enum SincInterpolationType {
     Nearest,
 }
 
+/// Round the sinc length up to the multiple of 8 that the interpolators use.
+pub(crate) fn round_sinc_len(sinc_len: usize) -> usize {
+    8 * (((sinc_len as f32) / 8.0).ceil() as usize)
+}
+
+/// Resolve the relative cutoff frequency of the sinc filter.
+///
+/// An automatic cutoff is resolved against the rounded filter length, so that it
+/// matches the filter that is actually built. When downsampling, the cutoff is
+/// scaled by the resample ratio to keep it below the output Nyquist frequency.
+pub(crate) fn resolve_cutoff(
+    sinc_len: usize,
+    resample_ratio: f64,
+    f_cutoff: Option<f32>,
+    window: WindowFunction,
+) -> f32 {
+    let f_cutoff = f_cutoff.unwrap_or_else(|| calculate_cutoff(round_sinc_len(sinc_len), window));
+    if resample_ratio >= 1.0 {
+        f_cutoff
+    } else {
+        f_cutoff * resample_ratio as f32
+    }
+}
+
 pub fn make_interpolator<T>(
     sinc_len: usize,
     resample_ratio: f64,
@@ -220,15 +244,8 @@ pub fn make_interpolator<T>(
 where
     T: AvxSample + SseSample + NeonSample + Sample,
 {
-    let sinc_len = 8 * (((sinc_len as f32) / 8.0).ceil() as usize);
-    // Resolve an automatic cutoff against the rounded filter length, so it matches the
-    // filter that is actually built.
-    let f_cutoff = f_cutoff.unwrap_or_else(|| calculate_cutoff(sinc_len, window));
-    let f_cutoff = if resample_ratio >= 1.0 {
-        f_cutoff
-    } else {
-        f_cutoff * resample_ratio as f32
-    };
+    let f_cutoff = resolve_cutoff(sinc_len, resample_ratio, f_cutoff, window);
+    let sinc_len = round_sinc_len(sinc_len);
 
     #[cfg(target_arch = "x86_64")]
     if let Ok(interpolator) =

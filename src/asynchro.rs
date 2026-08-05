@@ -4,7 +4,8 @@ use std::marker::PhantomData;
 
 use crate::asynchro_fast::{InnerPoly, PolynomialDegree};
 use crate::asynchro_sinc::{
-    make_interpolator, InnerSinc, SincInterpolationParameters, SincInterpolationType,
+    make_interpolator, resolve_cutoff, InnerSinc, SincInterpolationParameters,
+    SincInterpolationType,
 };
 use crate::error::{ResampleError, ResampleResult, ResamplerConstructionError};
 use crate::sinc_interpolator::{
@@ -112,6 +113,7 @@ pub struct Async<T> {
     inner_resampler: Box<dyn InnerResampler<T>>,
     channel_mask: Vec<bool>,
     fixed: FixedAsync,
+    sinc_cutoff: Option<f32>,
 }
 
 impl<T> fmt::Debug for Async<T> {
@@ -251,6 +253,8 @@ where
             inner_resampler: Box::new(inner_resampler),
             channel_mask,
             fixed,
+            // Polynomial interpolation uses no anti-aliasing filter.
+            sinc_cutoff: None,
         })
     }
 
@@ -288,10 +292,36 @@ where
             max_resample_ratio_relative,
             parameters.interpolation,
             interpolator,
+            resolve_cutoff(
+                parameters.sinc_len,
+                resample_ratio,
+                parameters.f_cutoff,
+                parameters.window,
+            ),
             chunk_size,
             nbr_channels,
             fixed,
         )
+    }
+
+    /// The relative cutoff frequency of the sinc anti-aliasing filter,
+    /// or `None` if this resampler uses polynomial interpolation.
+    ///
+    /// The value is relative to the Nyquist frequency of the *input* rate,
+    /// where `1.0` means the cutoff sits right at Nyquist.
+    /// Multiply by `sample_rate_input / 2` to get the cutoff in Hz.
+    ///
+    /// The cutoff is either the one given in the
+    /// [SincInterpolationParameters], or, when that is left unset, one derived
+    /// from the sinc length and the window function. A longer sinc moves it
+    /// closer to Nyquist. When the resampler was created for downsampling, it
+    /// is scaled down to keep it below the output Nyquist frequency.
+    ///
+    /// The filter is built once, so the value reflects the resample ratio the
+    /// resampler was created with, and does not change with
+    /// [Adjustable::set_resample_ratio](crate::Adjustable::set_resample_ratio).
+    pub fn cutoff(&self) -> Option<f32> {
+        self.sinc_cutoff
     }
 
     /// Create a new Sinc using an existing Interpolator.
@@ -301,6 +331,7 @@ where
     /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Adjustable::set_resample_ratio](crate::Adjustable::set_resample_ratio) relative to `resample_ratio`, must be >= 1.0. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio` * 10.0 and `resample_ratio` / 10.0.
     /// - `interpolation_type`: Parameters for interpolation, see `SincInterpolationParameters`.
     /// - `interpolator`: The interpolator to use.
+    /// - `f_cutoff`: The relative cutoff frequency the interpolator was built with, reported by [cutoff](Async::cutoff).
     /// - `chunk_size`: Size of output data in frames.
     /// - `nbr_channels`: Number of channels in input/output.
     #[cfg_attr(feature = "bench_asyncro", visibility::make(pub))]
@@ -309,6 +340,7 @@ where
         max_resample_ratio_relative: f64,
         interpolation_type: SincInterpolationType,
         interpolator: AnyInterpolator<T>,
+        f_cutoff: f32,
         chunk_size: usize,
         nbr_channels: usize,
         fixed: FixedAsync,
@@ -372,6 +404,7 @@ where
             buffer,
             channel_mask,
             fixed,
+            sinc_cutoff: Some(f_cutoff),
         })
     }
 
@@ -790,6 +823,7 @@ mod tests {
     };
     use crate::{Adjustable, Resampler, Resizable};
     use crate::{Async, FixedAsync};
+    use approx::assert_abs_diff_eq;
     use audioadapter_buffers::direct::SequentialSliceOfVecs;
     use test_case::test_matrix;
 
@@ -801,6 +835,48 @@ mod tests {
             oversampling_factor: 16,
             window: WindowFunction::BlackmanHarris2,
         }
+    }
+
+    #[test_log::test(test_matrix([0.8, 1.2, 0.125, 8.0]))]
+    fn poly_cutoff_is_none(ratio: f64) {
+        let resampler = Async::<f64>::new_poly(
+            ratio,
+            1.0,
+            PolynomialDegree::Cubic,
+            1024,
+            2,
+            FixedAsync::Input,
+        )
+        .unwrap();
+        assert_eq!(resampler.cutoff(), None);
+    }
+
+    #[test_log::test(test_matrix([0.8, 1.2, 0.125, 8.0]))]
+    fn sinc_cutoff_given(ratio: f64) {
+        // The given cutoff is used as is when upsampling, and scaled by the
+        // ratio when downsampling, to stay below the output Nyquist frequency.
+        let resampler =
+            Async::<f64>::new_sinc(ratio, 1.0, &basic_params(), 1024, 2, FixedAsync::Input)
+                .unwrap();
+        let expected = 0.95 * ratio.min(1.0) as f32;
+        assert_abs_diff_eq!(resampler.cutoff().unwrap(), expected, epsilon = 1e-6);
+    }
+
+    #[test_log::test(test_matrix([0.8, 1.2, 0.125, 8.0], [32, 256]))]
+    fn sinc_cutoff_automatic(ratio: f64, sinc_len: usize) {
+        // Without a given cutoff it is derived from the sinc length and window,
+        // and must stay below the lower Nyquist frequency of the two rates.
+        let params = SincInterpolationParameters {
+            sinc_len,
+            f_cutoff: None,
+            ..basic_params()
+        };
+        let resampler =
+            Async::<f64>::new_sinc(ratio, 1.0, &params, 1024, 2, FixedAsync::Input).unwrap();
+        let limit = ratio.min(1.0) as f32;
+        let cutoff = resampler.cutoff().unwrap();
+        assert!(cutoff > 0.5 * limit);
+        assert!(cutoff < limit);
     }
 
     #[test_log::test(test_matrix(
