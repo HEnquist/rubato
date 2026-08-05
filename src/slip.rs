@@ -295,8 +295,8 @@ where
     ///
     /// Parameters are:
     /// - `chunk_size`: Size of the fixed side (input or output, see `fixed`) in frames. Must be at
-    ///   least 4. The internal crossfade grows with the chunk up to [MAX_CROSSFADE_LEN] frames
-    ///   (reached at `2 * MAX_CROSSFADE_LEN + 2` = 258 and above) and shrinks for smaller chunks.
+    ///   least 4. The internal crossfade grows with the chunk up to 128 frames (reached at a chunk
+    ///   size of 258 and above) and shrinks for smaller chunks.
     /// - `nbr_channels`: Number of channels in input/output.
     /// - `fixed`: Whether the input or the output chunk size is fixed.
     pub fn new(
