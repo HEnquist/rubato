@@ -40,6 +40,8 @@ approx = "0.5.1"
 test-log = "0.2.16"
 test-case = "3"
 audioadapter-sample = "5.1"
+waveadapter = "0.2"
+clap = { version = "4.6", features = ["derive"] }
 
 # Uncomment to build against a local audioadapter checkout instead of the published crates.
 #[patch.crates-io]
@@ -50,6 +52,10 @@ audioadapter-sample = "5.1"
 [[bench]]
 name = "resamplers"
 harness = false
+
+[[example]]
+name = "resample_wav"
+required-features = ["fft_resampler"]
 
 [lib]
 bench = false
