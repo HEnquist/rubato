@@ -335,6 +335,7 @@ where
     /// - `chunk_size`: Size of output data in frames.
     /// - `nbr_channels`: Number of channels in input/output.
     #[cfg_attr(feature = "bench_asyncro", visibility::make(pub))]
+    #[allow(clippy::too_many_arguments)]
     fn new_with_sinc_interpolator(
         resample_ratio: f64,
         max_resample_ratio_relative: f64,

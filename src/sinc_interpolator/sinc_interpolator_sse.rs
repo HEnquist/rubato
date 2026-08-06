@@ -264,7 +264,7 @@ where
             return Err(MissingCpuFeature(*feature));
         }
 
-        assert!(sinc_len % 8 == 0, "Sinc length must be a multiple of 8.");
+        assert!(sinc_len.is_multiple_of(8), "Sinc length must be a multiple of 8.");
         let raw_sincs: Vec<Vec<T>> = make_sincs(sinc_len, oversampling_factor, f_cutoff, window);
         let sincs = raw_sincs
             .into_iter()
