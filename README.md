@@ -386,8 +386,15 @@ loop {
 
 The `examples` directory contains a few sample applications for testing the resamplers.
 There are also Python scripts for generating simple test signals as well as analyzing the resampled results.
+Run any of them with `--help` for the full list of options.
 
-The examples read and write raw audio data in either 64-bit float or 16-bit integer format.
+- `resample_wav` reads and writes .wav files directly, and converts to any sample format
+  supported by the [waveadapter](https://crates.io/crates/waveadapter) crate.
+- `process_f64` converts between two fixed sample rates, using any of the resampler types.
+- `adjust_ratio_f64` applies a small constant rate offset, the clock drift case.
+- `ramp_ratio_f64` ramps the ratio while processing.
+
+Apart from `resample_wav`, the examples read and write raw audio data as 64-bit floats.
 They can be used to process .wav files if the files are first converted to the right format.
 Example, use `sox` to convert a .wav to 64-bit float raw samples:
 ```sh
