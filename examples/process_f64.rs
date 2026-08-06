@@ -1,5 +1,6 @@
 extern crate rubato;
 use audioadapter_buffers::direct::InterleavedSlice;
+use clap::{Parser, ValueEnum};
 use rubato::{
     Async, FixedAsync, Indexing, PolynomialDegree, Resampler, SincInterpolationParameters,
     SincInterpolationType, WindowFunction,
@@ -7,7 +8,6 @@ use rubato::{
 #[cfg(feature = "fft_resampler")]
 use rubato::{Fft, FixedSync};
 use std::convert::TryInto;
-use std::env;
 use std::fs::File;
 use std::io::prelude::{Read, Seek, Write};
 use std::io::{BufReader, BufWriter};
@@ -20,10 +20,13 @@ use log::LevelFilter;
 const BYTE_PER_SAMPLE: usize = 8;
 
 // A resampler app that reads a raw file of little-endian 64 bit floats, and writes the output in the same format.
-// The command line arguments are resampler type, input filename, output filename, input samplerate, output samplerate, number of channels
-// To use a sinc resampler with fixed input size to resample the file `sine_f64_2ch.raw` from 44.1kHz to 192kHz, and assuming the file has two channels, the command is:
+// This is the fixed ratio case. See the `adjust_ratio_f64` example for applying a constant rate offset,
+// and `ramp_ratio_f64` for a ratio that changes while processing.
+//
+// To use a sinc resampler with fixed input size to resample the file `sine_f64_2ch.raw` from 44.1kHz
+// to 192kHz, and assuming the file has two channels, the command is:
 // ```
-// cargo run --release --example process_f64 SincFixedInput sine_f64_2ch.raw test.raw 44100 192000 2
+// cargo run --release --example process_f64 sine_f64_2ch.raw test.raw 44100 192000 -r SincFixedInput
 // ```
 // There are two helper python scripts for testing.
 //  - `makesineraw.py` to generate test files in raw format.
@@ -34,6 +37,60 @@ const BYTE_PER_SAMPLE: usize = 8;
 //    ```
 //    python examples/analyze_result.py test.raw 2 192000 f64
 //    ```
+
+/// Resample a raw file of 64 bit floats between two fixed sample rates.
+#[derive(Parser)]
+#[command(version)]
+struct Options {
+    /// Raw file of little-endian 64 bit floats to read.
+    input: String,
+
+    /// Raw file to write, in the same format.
+    output: String,
+
+    /// Sample rate of the input file, in Hz.
+    input_rate: usize,
+
+    /// Sample rate of the output file, in Hz.
+    output_rate: usize,
+
+    /// Resampler to use.
+    #[arg(short, long, value_enum, ignore_case = true, default_value_t = ResamplerType::SincFixedInput)]
+    resampler: ResamplerType,
+
+    /// Number of channels in the file.
+    #[arg(short, long, default_value_t = 2)]
+    channels: usize,
+}
+
+/// The resampler types this example can build.
+#[derive(Copy, Clone, PartialEq, Eq, ValueEnum)]
+enum ResamplerType {
+    /// Sinc interpolation, fixed input size.
+    #[value(name = "SincFixedInput")]
+    SincFixedInput,
+    /// Sinc interpolation, fixed output size.
+    #[value(name = "SincFixedOutput")]
+    SincFixedOutput,
+    /// Polynomial interpolation, fixed input size.
+    #[value(name = "PolyFixedInput")]
+    PolyFixedInput,
+    /// Polynomial interpolation, fixed output size.
+    #[value(name = "PolyFixedOutput")]
+    PolyFixedOutput,
+    /// Synchronous FFT, fixed input size.
+    #[cfg(feature = "fft_resampler")]
+    #[value(name = "FftFixedInput")]
+    FftFixedInput,
+    /// Synchronous FFT, fixed output size.
+    #[cfg(feature = "fft_resampler")]
+    #[value(name = "FftFixedOutput")]
+    FftFixedOutput,
+    /// Synchronous FFT, both sizes fixed.
+    #[cfg(feature = "fft_resampler")]
+    #[value(name = "FftFixedBoth")]
+    FftFixedBoth,
+}
 
 /// Helper to read an entire file to memory as f64 values
 fn read_file<R: Read + Seek>(inbuffer: &mut R) -> Vec<f64> {
@@ -68,31 +125,14 @@ fn main() {
     let mut builder = Builder::from_default_env();
     builder.filter(None, LevelFilter::Debug).init();
 
-    let resampler_type = env::args()
-        .nth(1)
-        .expect("Please specify a resampler type, one of:\nSincFixedIn\nSincFixedOut\nFastFixedIn\nFastFixedOut\nFftFixedIn\nFftFixedOut\nFftFixedInOut");
-
-    let file_in = env::args().nth(2).expect("Please specify an input file.");
-    let file_out = env::args().nth(3).expect("Please specify an output file.");
-    println!("Opening files: {}, {}", file_in, file_out);
-
-    let fs_in_str = env::args()
-        .nth(4)
-        .expect("Please specify an input sample rate");
-    let fs_out_str = env::args()
-        .nth(5)
-        .expect("Please specify an output sample rate");
-    let fs_in = fs_in_str.parse::<usize>().unwrap();
-    let fs_out = fs_out_str.parse::<usize>().unwrap();
+    let opts = Options::parse();
+    let channels = opts.channels;
+    let (fs_in, fs_out) = (opts.input_rate, opts.output_rate);
+    println!("Opening files: {}, {}", opts.input, opts.output);
     println!("Resampling from {} to {}", fs_in, fs_out);
 
-    let channels_str = env::args()
-        .nth(6)
-        .expect("Please specify number of channels");
-    let channels = channels_str.parse::<usize>().unwrap();
-
     println!("Copy input file to buffer");
-    let file_in_disk = File::open(file_in).expect("Can't open file");
+    let file_in_disk = File::open(&opts.input).expect("Can't open file");
     let mut file_in_reader = BufReader::new(file_in_disk);
     let indata = read_file(&mut file_in_reader);
     let nbr_input_frames = indata.len() / channels;
@@ -104,48 +144,59 @@ fn main() {
 
     println!("Creating resampler");
     // Create resampler
-    let mut resampler: Box<dyn Resampler<f64>> = match resampler_type.as_str() {
-        "SincFixedInput" => {
-            let sinc_len = 128;
-            let oversampling_factor = 256;
-            let interpolation = SincInterpolationType::Quadratic;
-            let window = WindowFunction::Blackman2;
-
-            let params = SincInterpolationParameters::new(sinc_len, window)
-                .oversampling_factor(oversampling_factor)
-                .interpolation(interpolation);
-            Box::new(Async::<f64>::new_sinc(f_ratio, 1.1, &params, 1024, channels, FixedAsync::Input).unwrap())
+    let mut resampler: Box<dyn Resampler<f64>> = match opts.resampler {
+        ResamplerType::SincFixedInput => {
+            let params = SincInterpolationParameters::new(128, WindowFunction::Blackman2)
+                .oversampling_factor(256)
+                .interpolation(SincInterpolationType::Quadratic);
+            Box::new(
+                Async::<f64>::new_sinc(f_ratio, 1.1, &params, 1024, channels, FixedAsync::Input)
+                    .unwrap(),
+            )
         }
-        "SincFixedOutput" => {
-            let sinc_len = 128;
-            let oversampling_factor = 512;
-            let interpolation = SincInterpolationType::Cubic;
-            let window = WindowFunction::Blackman2;
-
-            let params = SincInterpolationParameters::new(sinc_len, window)
-                .oversampling_factor(oversampling_factor)
-                .interpolation(interpolation);
-            Box::new(Async::<f64>::new_sinc(f_ratio, 1.1, &params, 1024, channels, FixedAsync::Output).unwrap())
+        ResamplerType::SincFixedOutput => {
+            let params = SincInterpolationParameters::new(128, WindowFunction::Blackman2)
+                .oversampling_factor(512)
+                .interpolation(SincInterpolationType::Cubic);
+            Box::new(
+                Async::<f64>::new_sinc(f_ratio, 1.1, &params, 1024, channels, FixedAsync::Output)
+                    .unwrap(),
+            )
         }
-        "PolyFixedInput" => {
-            Box::new(Async::<f64>::new_poly(f_ratio, 1.1, PolynomialDegree::Septic, 1024, channels, FixedAsync::Input).unwrap())
-        }
-        "PolyFixedOutput" => {
-            Box::new(Async::<f64>::new_poly(f_ratio, 1.1, PolynomialDegree::Septic, 1024, channels, FixedAsync::Output).unwrap())
-        }
+        ResamplerType::PolyFixedInput => Box::new(
+            Async::<f64>::new_poly(
+                f_ratio,
+                1.1,
+                PolynomialDegree::Septic,
+                1024,
+                channels,
+                FixedAsync::Input,
+            )
+            .unwrap(),
+        ),
+        ResamplerType::PolyFixedOutput => Box::new(
+            Async::<f64>::new_poly(
+                f_ratio,
+                1.1,
+                PolynomialDegree::Septic,
+                1024,
+                channels,
+                FixedAsync::Output,
+            )
+            .unwrap(),
+        ),
         #[cfg(feature = "fft_resampler")]
-        "FftFixedInput" => {
+        ResamplerType::FftFixedInput => {
             Box::new(Fft::<f64>::new(fs_in, fs_out, 1024, channels, FixedSync::Input).unwrap())
         }
         #[cfg(feature = "fft_resampler")]
-        "FftFixedOutput" => {
+        ResamplerType::FftFixedOutput => {
             Box::new(Fft::<f64>::new(fs_in, fs_out, 1024, channels, FixedSync::Output).unwrap())
         }
         #[cfg(feature = "fft_resampler")]
-        "FftFixedBoth" => {
+        ResamplerType::FftFixedBoth => {
             Box::new(Fft::<f64>::new(fs_in, fs_out, 1024, channels, FixedSync::Both).unwrap())
         }
-        _ => panic!("Unknown resampler type {}\nMust be one of SincFixedInput, SincFixedOutput, PolyFixedInput, PolyFixedOutput, FftFixedInput, FftFixedOutput, FftFixedBoth", resampler_type),
     };
 
     // Prepare
@@ -189,7 +240,7 @@ fn main() {
     );
 
     println!("Write output to file, trimming off the silent frames from both ends.");
-    let mut file_out_disk = BufWriter::new(File::create(file_out).unwrap());
+    let mut file_out_disk = BufWriter::new(File::create(&opts.output).unwrap());
     write_file(
         &outdata,
         &mut file_out_disk,

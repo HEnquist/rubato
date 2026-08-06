@@ -1,11 +1,11 @@
 extern crate rubato;
 use audioadapter_buffers::direct::InterleavedSlice;
+use clap::{Parser, ValueEnum};
 use rubato::{
     Async, FixedAsync, PolynomialDegree, Resampler, SincInterpolationParameters,
     SincInterpolationType, Slip, WindowFunction,
 };
 use std::convert::TryInto;
-use std::env;
 use std::fs::File;
 use std::io::prelude::{Read, Seek, Write};
 use std::io::{BufReader, BufWriter};
@@ -18,7 +18,7 @@ use log::LevelFilter;
 const BYTE_PER_SAMPLE: usize = 8;
 
 // A resampler app that reads a raw file of little-endian 64 bit floats, and writes the output in the same format.
-// Unlike the `process_all_f64` example, which converts between two fixed rates, this one uses one of the
+// Unlike the `process_f64` example, which converts between two fixed rates, this one uses one of the
 // *adjustable* resamplers to apply a small, constant rate offset. This is the clock-drift / rate-matching case:
 // the nominal input and output rates are equal (ratio 1:1), and the resampler is nudged by a user-selected
 // offset given in parts per million (ppm). A positive offset produces slightly more output frames than input,
@@ -26,14 +26,62 @@ const BYTE_PER_SAMPLE: usize = 8;
 //
 // The offset is applied through the `Resampler::as_adjustable` capability accessor, so the same code drives every
 // adjustable resampler type without knowing the concrete type. The synchronous FFT resamplers cannot change
-// ratio and are therefore not offered here; use the `process_all_f64` example for fixed-ratio conversion.
+// ratio and are therefore not offered here; use the `process_f64` example for fixed-ratio conversion.
+// For a ratio that changes while processing, see the `ramp_ratio_f64` example.
 //
-// The command line arguments are resampler type, input filename, output filename, number of channels,
-// and the rate offset in ppm. The adjustable resamplers support offsets up to roughly +/- 10%.
+// The adjustable resamplers support offsets up to roughly +/- 10%.
 // To apply a +50 ppm offset to the two-channel file `sine_f64_2ch.raw` using the Slip resampler:
 // ```
-// cargo run --release --example adjust_ratio_f64 SlipFixedOutput sine_f64_2ch.raw test.raw 2 50
+// cargo run --release --example adjust_ratio_f64 sine_f64_2ch.raw test.raw -r SlipFixedOutput -o 50
 // ```
+
+/// Apply a small constant rate offset to a raw file of 64 bit floats.
+#[derive(Parser)]
+#[command(version)]
+struct Options {
+    /// Raw file of little-endian 64 bit floats to read.
+    input: String,
+
+    /// Raw file to write, in the same format.
+    output: String,
+
+    /// Resampler to use. Only the adjustable types are offered, since the
+    /// synchronous FFT resamplers cannot change ratio.
+    #[arg(short, long, value_enum, ignore_case = true, default_value_t = ResamplerType::SlipFixedOutput)]
+    resampler: ResamplerType,
+
+    /// Number of channels in the file.
+    #[arg(short, long, default_value_t = 2)]
+    channels: usize,
+
+    /// Rate offset in parts per million. Positive gives slightly more output
+    /// frames than input, negative slightly fewer.
+    #[arg(short, long, default_value_t = 50.0, allow_negative_numbers = true)]
+    offset: f64,
+}
+
+/// The adjustable resampler types this example can build.
+#[derive(Copy, Clone, PartialEq, Eq, ValueEnum)]
+enum ResamplerType {
+    /// Sinc interpolation, fixed input size.
+    #[value(name = "SincFixedInput")]
+    SincFixedInput,
+    /// Sinc interpolation, fixed output size.
+    #[value(name = "SincFixedOutput")]
+    SincFixedOutput,
+    /// Polynomial interpolation, fixed input size.
+    #[value(name = "PolyFixedInput")]
+    PolyFixedInput,
+    /// Polynomial interpolation, fixed output size.
+    #[value(name = "PolyFixedOutput")]
+    PolyFixedOutput,
+    /// Slip resampler, fixed input size.
+    #[value(name = "SlipFixedInput")]
+    SlipFixedInput,
+    /// Slip resampler, fixed output size.
+    #[value(name = "SlipFixedOutput")]
+    SlipFixedOutput,
+}
 
 /// Helper to read an entire file to memory as f64 values
 fn read_file<R: Read + Seek>(inbuffer: &mut R) -> Vec<f64> {
@@ -66,23 +114,11 @@ fn main() {
     let mut builder = Builder::from_default_env();
     builder.filter(None, LevelFilter::Debug).init();
 
-    let resampler_type = env::args().nth(1).expect(
-        "Please specify a resampler type, one of:\nSincFixedInput\nSincFixedOutput\nPolyFixedInput\nPolyFixedOutput\nSlipFixedInput\nSlipFixedOutput",
-    );
+    let opts = Options::parse();
+    let channels = opts.channels;
+    let offset_ppm = opts.offset;
+    println!("Opening files: {}, {}", opts.input, opts.output);
 
-    let file_in = env::args().nth(2).expect("Please specify an input file.");
-    let file_out = env::args().nth(3).expect("Please specify an output file.");
-    println!("Opening files: {}, {}", file_in, file_out);
-
-    let channels_str = env::args()
-        .nth(4)
-        .expect("Please specify number of channels");
-    let channels = channels_str.parse::<usize>().unwrap();
-
-    let offset_str = env::args()
-        .nth(5)
-        .expect("Please specify the rate offset in ppm");
-    let offset_ppm = offset_str.parse::<f64>().unwrap();
     let rel_ratio = 1.0 + offset_ppm / 1_000_000.0;
     println!(
         "Applying a rate offset of {} ppm (relative ratio {})",
@@ -90,7 +126,7 @@ fn main() {
     );
 
     println!("Copy input file to buffer");
-    let file_in_disk = File::open(file_in).expect("Can't open file");
+    let file_in_disk = File::open(&opts.input).expect("Can't open file");
     let mut file_in_reader = BufReader::new(file_in_disk);
     let indata = read_file(&mut file_in_reader);
     let nbr_input_frames = indata.len() / channels;
@@ -103,8 +139,8 @@ fn main() {
     // Every branch is built at the nominal ratio of 1.0. The asynchronous resamplers get a maximum
     // relative ratio of 1.1, matching the Slip resampler's built-in +/- 10% range.
     let chunk_size = 1024;
-    let mut resampler: Box<dyn Resampler<f64>> = match resampler_type.as_str() {
-        "SincFixedInput" => {
+    let mut resampler: Box<dyn Resampler<f64>> = match opts.resampler {
+        ResamplerType::SincFixedInput => {
             let params = SincInterpolationParameters::new(128, WindowFunction::Blackman2)
                 .oversampling_factor(256)
                 .interpolation(SincInterpolationType::Quadratic);
@@ -113,7 +149,7 @@ fn main() {
                     .unwrap(),
             )
         }
-        "SincFixedOutput" => {
+        ResamplerType::SincFixedOutput => {
             let params = SincInterpolationParameters::new(128, WindowFunction::Blackman2)
                 .oversampling_factor(256)
                 .interpolation(SincInterpolationType::Quadratic);
@@ -122,7 +158,7 @@ fn main() {
                     .unwrap(),
             )
         }
-        "PolyFixedInput" => Box::new(
+        ResamplerType::PolyFixedInput => Box::new(
             Async::<f64>::new_poly(
                 1.0,
                 1.1,
@@ -133,7 +169,7 @@ fn main() {
             )
             .unwrap(),
         ),
-        "PolyFixedOutput" => Box::new(
+        ResamplerType::PolyFixedOutput => Box::new(
             Async::<f64>::new_poly(
                 1.0,
                 1.1,
@@ -144,16 +180,12 @@ fn main() {
             )
             .unwrap(),
         ),
-        "SlipFixedInput" => {
+        ResamplerType::SlipFixedInput => {
             Box::new(Slip::<f64>::new(chunk_size, channels, FixedAsync::Input).unwrap())
         }
-        "SlipFixedOutput" => {
+        ResamplerType::SlipFixedOutput => {
             Box::new(Slip::<f64>::new(chunk_size, channels, FixedAsync::Output).unwrap())
         }
-        _ => panic!(
-            "Unknown or non-adjustable resampler type {}\nMust be one of SincFixedInput, SincFixedOutput, PolyFixedInput, PolyFixedOutput, SlipFixedInput, SlipFixedOutput",
-            resampler_type
-        ),
     };
 
     // Recover the adjust-ratio capability from the trait object and apply the offset once. Since the
@@ -193,6 +225,6 @@ fn main() {
     );
 
     println!("Write output to file, trimming off the silent frames from both ends.");
-    let mut file_out_disk = BufWriter::new(File::create(file_out).unwrap());
+    let mut file_out_disk = BufWriter::new(File::create(&opts.output).unwrap());
     write_file(&outdata, &mut file_out_disk, nbr_out * channels);
 }
