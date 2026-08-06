@@ -39,7 +39,6 @@ log = "0.4.18"
 approx = "0.5.1"
 test-log = "0.2.16"
 test-case = "3"
-audioadapter-sample = "5.1"
 waveadapter = "0.2"
 clap = { version = "4.6", features = ["derive"] }
 
