@@ -220,6 +220,22 @@ fn main() {
         }
     }
 
+    // Process the frames that are left over, fewer than the resampler asks for.
+    // Setting `partial_len` tells it how many of the frames are real, and it inserts
+    // silence in place of the rest. Without this the tail of the clip is dropped.
+    if frames_left > 0 {
+        let frames_out = resampler.output_frames_next();
+        let mut output_scratch = vec![0.0; channels * frames_out];
+        let mut output_adapter =
+            InterleavedSlice::new_mut(&mut output_scratch, channels, frames_out).unwrap();
+        indexing.partial_len = Some(frames_left);
+        let (_nbr_in, nbr_out) = resampler
+            .process_into_buffer(&input_adapter, &mut output_adapter, Some(&indexing))
+            .unwrap();
+        output_scratch.truncate(channels * nbr_out);
+        outdata.append(&mut output_scratch);
+    }
+
     let duration = start.elapsed();
     println!("Resampling took: {:?}", duration);
 
