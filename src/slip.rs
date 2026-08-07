@@ -601,6 +601,10 @@ mod tests {
     /// leaving room for a correction (`chunk >= 2 * len + 2`).
     #[test]
     fn crossfade_len_scales_with_chunk() {
+        // The docs on Slip::new quote these two values, since they are what a caller
+        // needs to pick a chunk size. Keep them in sync if the target ever changes.
+        assert_eq!(MAX_CROSSFADE_LEN, 128);
+        assert_eq!(2 * MAX_CROSSFADE_LEN + 2, 258);
         // Capped at the target once the chunk is big enough to hold it.
         assert_eq!(crossfade_len_for(4096), MAX_CROSSFADE_LEN);
         assert_eq!(

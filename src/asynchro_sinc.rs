@@ -212,7 +212,7 @@ pub enum SincInterpolationType {
 
 /// Round the sinc length up to the multiple of 8 that the interpolators use.
 pub(crate) fn round_sinc_len(sinc_len: usize) -> usize {
-    8 * (((sinc_len as f32) / 8.0).ceil() as usize)
+    sinc_len.next_multiple_of(8)
 }
 
 /// Resolve the relative cutoff frequency of the sinc filter.

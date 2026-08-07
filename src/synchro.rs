@@ -301,18 +301,21 @@ where
             FixedSync::Input => {
                 let min_chunk_in = sample_rate_input / gcd;
                 let wanted_subsize = chunk_size / sub_chunks;
-                (wanted_subsize as f32 / min_chunk_in as f32).ceil() as usize
+                wanted_subsize.div_ceil(min_chunk_in)
             }
             FixedSync::Output => {
                 let min_chunk_out = sample_rate_output / gcd;
                 let wanted_subsize = chunk_size / sub_chunks;
-                (wanted_subsize as f32 / min_chunk_out as f32).ceil() as usize
+                wanted_subsize.div_ceil(min_chunk_out)
             }
             FixedSync::Both => {
                 let min_chunk_in = sample_rate_input / gcd;
-                (chunk_size as f32 / min_chunk_in as f32).ceil() as usize
+                chunk_size.div_ceil(min_chunk_in)
             }
-        };
+        }
+        // Asking for more sub chunks than there are frames rounds down to zero blocks,
+        // which is not a usable resampler. Fall back to a single minimum sized block.
+        .max(1);
         let fft_size_out = fft_chunks * sample_rate_output / gcd;
         let fft_size_in = fft_chunks * sample_rate_input / gcd;
 
@@ -397,8 +400,6 @@ where
     /// A larger block moves it closer to Nyquist.
     /// When downsampling it is scaled down to keep it below the lower Nyquist
     /// frequency of the two sample rates.
-    ///
-    /// Multiply by `sample_rate_input / 2` to get the cutoff in Hz.
     pub fn cutoff(&self) -> f32 {
         self.resampler.cutoff
     }
@@ -412,21 +413,20 @@ where
     ) -> (usize, usize) {
         match fixed {
             FixedSync::Input => {
-                let subchunks_available: f32 =
-                    ((chunk_size + saved_frames) as f32 / fft_size_in as f32).floor();
-                let frames_available = (subchunks_available as usize) * fft_size_out;
+                let subchunks_available = (chunk_size + saved_frames) / fft_size_in;
+                let frames_available = subchunks_available * fft_size_out;
                 (chunk_size, frames_available)
             }
             FixedSync::Output => {
-                let subchunks_needed = ((chunk_size as f32 - saved_frames as f32)
-                    / fft_size_out as f32)
-                    .ceil()
-                    .max(0.0);
-                let frames_needed = (subchunks_needed as usize) * fft_size_in;
+                // Saturating, since more frames may be saved than the chunk needs.
+                let subchunks_needed = chunk_size
+                    .saturating_sub(saved_frames)
+                    .div_ceil(fft_size_out);
+                let frames_needed = subchunks_needed * fft_size_in;
                 (frames_needed, chunk_size)
             }
             FixedSync::Both => {
-                let subchunks_needed = (chunk_size as f32 / fft_size_in as f32).ceil() as usize;
+                let subchunks_needed = chunk_size.div_ceil(fft_size_in);
                 let frames_needed_in = subchunks_needed * fft_size_in;
                 let frames_needed_out = subchunks_needed * fft_size_out;
                 (frames_needed_in, frames_needed_out)
@@ -467,9 +467,7 @@ where
     ) -> usize {
         match fixed {
             FixedSync::Both | FixedSync::Input => chunk_size_in,
-            FixedSync::Output => {
-                (chunk_size_out as f32 / fft_size_out as f32).ceil() as usize * fft_size_in
-            }
+            FixedSync::Output => chunk_size_out.div_ceil(fft_size_out) * fft_size_in,
         }
     }
 
@@ -757,6 +755,25 @@ mod tests {
         let maxval = wave_out.iter().cloned().fold(f64::NAN, f64::max);
         assert!((vecsum - 4.0 * 1000.0 / 147.0).abs() < 1.0e-6);
         assert!((maxval - 1.0).abs() < 0.1);
+    }
+
+    #[test_log::test(test_matrix([FixedSync::Input, FixedSync::Output, FixedSync::Both]))]
+    fn fft_more_sub_chunks_than_frames(fixed: FixedSync) {
+        // Asking for more sub chunks than the chunk has frames rounds the sub chunk
+        // size down to zero. That used to give zero FFT blocks, and a panic on the
+        // first division by the block size.
+        let resampler = Fft::<f64>::new_custom(
+            44100,
+            48000,
+            100,
+            1000,
+            2,
+            WindowFunction::BlackmanHarris2,
+            fixed,
+        )
+        .unwrap();
+        assert_eq!(resampler.fft_size_in(), 147);
+        assert_eq!(resampler.fft_size_out(), 160);
     }
 
     #[test_log::test(test_matrix(
