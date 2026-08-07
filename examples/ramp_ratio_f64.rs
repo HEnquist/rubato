@@ -93,12 +93,15 @@ fn read_file<R: Read + Seek>(inbuffer: &mut R) -> Vec<f64> {
     let mut buffer = vec![0u8; BYTE_PER_SAMPLE];
     let mut data = Vec::new();
     loop {
-        let bytes_read = inbuffer.read(&mut buffer).unwrap();
-        if bytes_read == 0 {
-            break;
+        match inbuffer.read_exact(&mut buffer) {
+            Ok(()) => {
+                let value = f64::from_le_bytes(buffer.as_slice().try_into().unwrap());
+                data.push(value);
+            }
+            // A clean end of file stops the loop; a partial trailing read means a malformed file.
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
+            Err(e) => panic!("Error reading input file: {}", e),
         }
-        let value = f64::from_le_bytes(buffer.as_slice().try_into().unwrap());
-        data.push(value);
     }
     data
 }

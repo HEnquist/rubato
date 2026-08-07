@@ -163,7 +163,9 @@ fn run(opts: Options) -> Result<(), Box<dyn std::error::Error>> {
     // Write the same sample format as the input file unless told otherwise.
     let format_out = opts.format.map(SampleFormat::from).unwrap_or(format_in);
 
-    // One sub chunk per chunk, so the chunk size is also the FFT block size.
+    // One sub chunk per chunk, so each chunk is a single FFT block. The requested
+    // chunk size is only a starting point: it is rounded up to a block size that is
+    // valid for the sample rate pair, so 1024 frames becomes 1029 for 44.1k to 48k.
     let window = WindowFunction::from(opts.window);
     let mut resampler = Fft::<f64>::new_custom(
         rate_in,
@@ -175,8 +177,8 @@ fn run(opts: Options) -> Result<(), Box<dyn std::error::Error>> {
         FixedSync::Both,
     )?;
 
-    // With a single sub chunk the chunk sizes are the FFT block sizes. The
-    // cutoff is relative to the input Nyquist frequency, so scale it by half
+    // Report the block sizes the resampler settled on, not the requested chunk size.
+    // The cutoff is relative to the input Nyquist frequency, so scale it by half
     // the input rate to report it in Hz.
     println!(
         "Config: chunks of {} -> {} frames, {:?} window, cutoff {:.0} Hz",
