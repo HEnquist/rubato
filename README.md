@@ -325,7 +325,7 @@ The input is processed in a loop and can come from anywhere: a file read
 chunk by chunk, or a live stream that keeps running indefinitely.
 This uses the `Async` resampler with polynomial interpolation,
 which is always available and needs no optional features.
-See also the "process_f64" example that can be used to process a file from disk.
+See also the "process_raw" example that can be used to process a file from disk.
 ```rust
 use rubato::{
     Resampler, Async, FixedAsync, PolynomialDegree, Indexing
@@ -361,7 +361,7 @@ loop {
     // Fetch the next `input_frames_next()` frames from the source into `indata`.
     // For a file, break out of the loop once the end is reached (a shorter final
     // chunk is handled by setting `partial_len` on the indexing struct, see the
-    // `process_f64` example). For an endless stream, simply never break.
+    // `process_raw` example). For an endless stream, simply never break.
     if chunks_left == 0 {
         break;
     }
@@ -390,9 +390,24 @@ Run any of them with `--help` for the full list of options.
 
 - `resample_wav` reads and writes .wav files directly, and converts to any sample format
   supported by the [waveadapter](https://crates.io/crates/waveadapter) crate.
-- `process_f64` converts between two fixed sample rates, using any of the resampler types.
+- `process_raw` converts between two fixed sample rates, using any of the resampler types.
+  The resampling runs in f32 or f64, chosen with `--precision`, for comparing the two.
 - `adjust_ratio_f64` applies a small constant rate offset, the clock drift case.
 - `ramp_ratio_f64` ramps the ratio while processing.
+
+The Python scripts make test signals in the raw 64-bit float format the examples read, and analyze
+the results. They need `numpy`, and `analyze_result.py` also needs `matplotlib`.
+
+- `make_sine.py` writes a sine, taking the sample rate, channel count, length and frequency
+  as arguments.
+- `make_tone_scale.py` writes a scale of stepped pure sine tones, which makes the artefacts of a
+  slowly adjusted ratio easy to hear. It also prints the ppm offset to give `adjust_ratio_f64`
+  for a chosen correction rate.
+- `make_multitone.py` writes a comb of equally spaced tones, for looking at aliasing and
+  intermodulation across the whole band at once. Same arguments as `make_sine.py`, with the
+  tone grid set by `--first`, `--last` and `--spacing`.
+- `analyze_result.py` plots the spectrum of a resampled file, taking the file name, channel count,
+  sample rate and sample format as arguments.
 
 Apart from `resample_wav`, the examples read and write raw audio data as 64-bit floats.
 They can be used to process .wav files if the files are first converted to the right format.
@@ -401,7 +416,7 @@ Example, use `sox` to convert a .wav to 64-bit float raw samples:
 sox some_file.wav -e floating-point -b 64 some_file_f64.raw
 ```
 
-After processing with for instance the `process_f64` example,
+After processing with for instance the `process_raw` example,
 the result can be converted back to a new .wav.
 This command converts the 64-bit floats to 16-bits at 44.1 kHz:
 ```sh

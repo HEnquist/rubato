@@ -1,20 +1,13 @@
-extern crate rubato;
 use audioadapter_buffers::direct::InterleavedSlice;
 use clap::{Parser, ValueEnum};
 use rubato::{
     Async, FixedAsync, Indexing, PolynomialDegree, Resampler, SincInterpolationParameters,
     SincInterpolationType, WindowFunction,
 };
-use std::convert::TryInto;
 use std::fs::File;
-use std::io::prelude::{Read, Seek, Write};
+use std::io::prelude::{Read, Write};
 use std::io::{BufReader, BufWriter};
 use std::time::Instant;
-
-extern crate env_logger;
-extern crate log;
-use env_logger::Builder;
-use log::LevelFilter;
 
 const BYTE_PER_SAMPLE: usize = std::mem::size_of::<f64>();
 
@@ -23,20 +16,32 @@ const BYTE_PER_SAMPLE: usize = std::mem::size_of::<f64>();
 // duration (measured in output time). Unlike the `adjust_ratio_f64` example, which applies one constant offset,
 // this one changes the ratio continuously while processing.
 //
+// The file handling is kept to the bare minimum, since it is not what this example is about.
+// Errors simply panic, a partial sample at the end of the input is dropped, and nothing is
+// done to limit memory use: the entire clip is held in memory, and the input twice over
+// while it is decoded. The `read_file` and `write_file` helpers exist to keep the example
+// short, and are not meant to be copied into an application.
+//
 // To resample the file `sine_f64_2ch.raw` from 44.1kHz to 192kHz, and assuming the file has two channels,
 // and that the resampling ratio should be ramped to 150% during 3 seconds, the command is:
 // ```
 // cargo run --release --example ramp_ratio_f64 sine_f64_2ch.raw test.raw 44100 192000 -r SincFixedOutput -t 150 -d 3
 // ```
 // There are two helper python scripts for testing.
-//  - `makesineraw.py` to generate test files in raw format.
+//  - `make_sine.py` to generate test files in raw format.
 //    Run it with the `-h` flag for instructions.
 //  - `analyze_result.py` to analyze the result.
-//    This takes three arguments: number of channels, samplerate, and sample format.
+//    This takes four arguments: file name, number of channels, samplerate, and sample format.
 //    Example, to analyze the file created above:
 //    ```
 //    python examples/analyze_result.py test.raw 2 192000 f64
 //    ```
+//
+// Rubato can log what it is doing through the `log` crate, behind the optional
+// `log` feature. Enable the feature and set `RUST_LOG` to see it:
+// ```
+// RUST_LOG=debug cargo run --release --features log --example ramp_ratio_f64 ...
+// ```
 
 /// Resample a raw file of 64 bit floats while ramping the ratio.
 #[derive(Parser)]
@@ -88,26 +93,25 @@ enum ResamplerType {
     PolyFixedOutput,
 }
 
-/// Helper to read an entire file to memory as f64 values
-fn read_file<R: Read + Seek>(inbuffer: &mut R) -> Vec<f64> {
-    let mut buffer = vec![0u8; BYTE_PER_SAMPLE];
-    let mut data = Vec::new();
-    loop {
-        match inbuffer.read_exact(&mut buffer) {
-            Ok(()) => {
-                let value = f64::from_le_bytes(buffer.as_slice().try_into().unwrap());
-                data.push(value);
-            }
-            // A clean end of file stops the loop; a partial trailing read means a malformed file.
-            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
-            Err(e) => panic!("Error reading input file: {}", e),
-        }
-    }
-    data
+/// Helper to read an entire file to memory as f64 values.
+///
+/// Minimal on purpose, do not copy this into an application. It panics on any io
+/// error, silently ignores a partial sample at the end of the file, and holds the
+/// contents in memory twice, as bytes and as samples, while decoding.
+fn read_file<R: Read>(inbuffer: &mut R) -> Vec<f64> {
+    let mut bytes = Vec::new();
+    inbuffer.read_to_end(&mut bytes).unwrap();
+    bytes
+        .chunks_exact(BYTE_PER_SAMPLE)
+        .map(|chunk| f64::from_le_bytes(chunk.try_into().unwrap()))
+        .collect()
 }
 
-/// Helper to write all frames to a file
-fn write_file<W: Write + Seek>(data: &[f64], output: &mut W) {
+/// Helper to write all frames to a file.
+///
+/// Minimal on purpose, do not copy this into an application. It panics on any io error,
+/// and expects the whole clip to already be in memory.
+fn write_file<W: Write>(data: &[f64], output: &mut W) {
     for value in data.iter() {
         let bytes = value.to_le_bytes();
         output.write_all(&bytes).unwrap();
@@ -115,9 +119,7 @@ fn write_file<W: Write + Seek>(data: &[f64], output: &mut W) {
 }
 
 fn main() {
-    // init logger
-    let mut builder = Builder::from_default_env();
-    builder.filter(None, LevelFilter::Debug).init();
+    env_logger::init();
 
     let opts = Options::parse();
     let channels = opts.channels;

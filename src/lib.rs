@@ -243,7 +243,7 @@ where
     /// The `indexing` parameter is optional. When left out, the default values are used.
     ///  - `input_offset` and `output_offset`: these determine how many frames at the beginning
     ///    of the input and output buffers will be skipped before reading or writing starts.
-    ///    See the `process_f64` example for how these may be used to process a longer sound clip.
+    ///    See the `process_raw` example for how these may be used to process a longer sound clip.
     ///  - `partial_len`: If the input buffer has fewer frames than the required input length,
     ///    set `partial_len` to the available number.
     ///    The resampler will then insert silence in place of the missing frames.
