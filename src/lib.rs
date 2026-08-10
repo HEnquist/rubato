@@ -291,6 +291,10 @@ where
     /// [process_all](Resampler::process_all) for the allocating counterpart.
     ///
     /// ```
+    /// # #[cfg(not(feature = "fft_resampler"))]
+    /// # fn main() {}
+    /// # #[cfg(feature = "fft_resampler")]
+    /// # fn main() {
     /// use audioadapter_buffers::owned::InterleavedOwned;
     /// use rubato::{Fft, FixedSync, Resampler};
     ///
@@ -314,6 +318,7 @@ where
     /// assert_eq!(consumed, input_len);
     /// assert!(produced >= 48000);
     /// assert!(produced <= needed_len);
+    /// # }
     /// ```
     fn process_all_into_buffer(
         &mut self,

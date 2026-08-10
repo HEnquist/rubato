@@ -17,6 +17,14 @@ const BYTE_PER_SAMPLE: usize = 8;
 // This is the fixed ratio case. See the `adjust_ratio_f64` example for applying a constant rate offset,
 // and `ramp_ratio_f64` for a ratio that changes while processing.
 //
+// This has a second purpose beyond showing how to drive the resamplers: together with the
+// python scripts it is the measurement tool for the resampling quality. Generate a test
+// signal, resample it, and analyze the result. That is why it stays on raw 64 bit floats
+// instead of reading and writing wav files, which would be friendlier but would defeat the
+// measurement. The interesting noise floors sit 200 dB or more below the signal, way past
+// what an integer wav format can hold, and quantizing on the way out would measure the file
+// format rather than the resampler. Use the `resample_wav` example for real audio files.
+//
 // The resampling itself runs in either 32 or 64 bit floats, selected with `--precision`.
 // The files stay 64 bit either way, so the only thing that changes is the precision the
 // resampler works in, which is what makes the two runs comparable. Resample the same clip
