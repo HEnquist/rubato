@@ -20,9 +20,9 @@ so this script also prints the ppm offset to feed the example for a chosen,
 easily audible correction rate (default 2 Hz).
 
 Example:
-    python examples/gen_test_tones.py
+    python examples/make_tone_scale.py
     cargo run --release --example adjust_ratio_f64 \\
-        SlipFixedOutput test_tones_f64_2ch.raw out.raw 2 45
+        test_tones_f64_2ch.raw out.raw -r SlipFixedOutput -c 2 -o 45
 """
 import argparse
 import math
@@ -96,7 +96,7 @@ def main():
     print()
     print(f"For a {args.slip_hz:g} Hz Slip correction rate use offset = {ppm:.1f} ppm:")
     print(f"  cargo run --release --example adjust_ratio_f64 "
-          f"SlipFixedOutput {args.out} out.raw {CHANNELS} {round(ppm)}")
+          f"{args.out} out.raw -r SlipFixedOutput -c {CHANNELS} -o {round(ppm)}")
 
 
 if __name__ == "__main__":

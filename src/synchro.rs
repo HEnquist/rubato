@@ -19,6 +19,7 @@ use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 struct FftResampler<T> {
     fft_size_in: usize,
     fft_size_out: usize,
+    cutoff: f32,
     filter_f: Vec<Complex<T>>,
     fft: Arc<dyn RealToComplex<T>>,
     ifft: Arc<dyn ComplexToReal<T>>,
@@ -66,12 +67,12 @@ pub struct Fft<T> {
 
 impl<T> fmt::Debug for Fft<T> {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt.debug_struct("Fast")
+        fmt.debug_struct("Fft")
             .field("nbr_channels", &self.nbr_channels)
-            .field("chunk_size_in,", &self.chunk_size_in)
-            .field("chunk_size_out,", &self.chunk_size_out)
-            .field("fft_size_in,", &self.fft_size_in)
-            .field("fft_size_out,", &self.fft_size_out)
+            .field("chunk_size_in", &self.chunk_size_in)
+            .field("chunk_size_out", &self.chunk_size_out)
+            .field("fft_size_in", &self.fft_size_in)
+            .field("fft_size_out", &self.fft_size_out)
             .field("overlaps[0].len()", &self.overlaps[0].len())
             .field("input_scratch[0].len()", &self.input_scratch[0].len())
             .field("output_scratch[0].len()", &self.output_scratch[0].len())
@@ -125,6 +126,7 @@ where
         FftResampler {
             fft_size_in,
             fft_size_out,
+            cutoff,
             filter_f,
             fft,
             ifft,
@@ -299,18 +301,21 @@ where
             FixedSync::Input => {
                 let min_chunk_in = sample_rate_input / gcd;
                 let wanted_subsize = chunk_size / sub_chunks;
-                (wanted_subsize as f32 / min_chunk_in as f32).ceil() as usize
+                wanted_subsize.div_ceil(min_chunk_in)
             }
             FixedSync::Output => {
                 let min_chunk_out = sample_rate_output / gcd;
                 let wanted_subsize = chunk_size / sub_chunks;
-                (wanted_subsize as f32 / min_chunk_out as f32).ceil() as usize
+                wanted_subsize.div_ceil(min_chunk_out)
             }
             FixedSync::Both => {
                 let min_chunk_in = sample_rate_input / gcd;
-                (chunk_size as f32 / min_chunk_in as f32).ceil() as usize
+                chunk_size.div_ceil(min_chunk_in)
             }
-        };
+        }
+        // Asking for more sub chunks than there are frames rounds down to zero blocks,
+        // which is not a usable resampler. Fall back to a single minimum sized block.
+        .max(1);
         let fft_size_out = fft_chunks * sample_rate_output / gcd;
         let fft_size_in = fft_chunks * sample_rate_input / gcd;
 
@@ -365,6 +370,40 @@ where
         })
     }
 
+    /// The FFT block size on the input side, in frames.
+    ///
+    /// This is the number of frames the resampler transforms at a time,
+    /// determined by the sample rates and the requested `chunk_size`.
+    /// It is not the same as the chunk size, unless the resampler was created
+    /// with [FixedSync::Both] and processes a single block per chunk.
+    /// The resampler delay is half of [fft_size_out](Fft::fft_size_out),
+    /// see [Resampler::output_delay].
+    pub fn fft_size_in(&self) -> usize {
+        self.fft_size_in
+    }
+
+    /// The FFT block size on the output side, in frames.
+    ///
+    /// The counterpart of [fft_size_in](Fft::fft_size_in), in the same ratio to
+    /// it as the output sample rate is to the input sample rate.
+    pub fn fft_size_out(&self) -> usize {
+        self.fft_size_out
+    }
+
+    /// The relative cutoff frequency of the anti-aliasing filter.
+    ///
+    /// The value is relative to the Nyquist frequency of the *input* rate,
+    /// where `1.0` means the cutoff sits right at Nyquist.
+    /// Multiply by `sample_rate_input / 2` to get the cutoff in Hz.
+    ///
+    /// The cutoff is determined by the FFT block size and the window function.
+    /// A larger block moves it closer to Nyquist.
+    /// When downsampling it is scaled down to keep it below the lower Nyquist
+    /// frequency of the two sample rates.
+    pub fn cutoff(&self) -> f32 {
+        self.resampler.cutoff
+    }
+
     fn calc_chunk_sizes(
         fft_size_in: usize,
         fft_size_out: usize,
@@ -374,21 +413,20 @@ where
     ) -> (usize, usize) {
         match fixed {
             FixedSync::Input => {
-                let subchunks_available: f32 =
-                    ((chunk_size + saved_frames) as f32 / fft_size_in as f32).floor();
-                let frames_available = (subchunks_available as usize) * fft_size_out;
+                let subchunks_available = (chunk_size + saved_frames) / fft_size_in;
+                let frames_available = subchunks_available * fft_size_out;
                 (chunk_size, frames_available)
             }
             FixedSync::Output => {
-                let subchunks_needed = ((chunk_size as f32 - saved_frames as f32)
-                    / fft_size_out as f32)
-                    .ceil()
-                    .max(0.0);
-                let frames_needed = (subchunks_needed as usize) * fft_size_in;
+                // Saturating, since more frames may be saved than the chunk needs.
+                let subchunks_needed = chunk_size
+                    .saturating_sub(saved_frames)
+                    .div_ceil(fft_size_out);
+                let frames_needed = subchunks_needed * fft_size_in;
                 (frames_needed, chunk_size)
             }
             FixedSync::Both => {
-                let subchunks_needed = (chunk_size as f32 / fft_size_in as f32).ceil() as usize;
+                let subchunks_needed = chunk_size.div_ceil(fft_size_in);
                 let frames_needed_in = subchunks_needed * fft_size_in;
                 let frames_needed_out = subchunks_needed * fft_size_out;
                 (frames_needed_in, frames_needed_out)
@@ -429,9 +467,7 @@ where
     ) -> usize {
         match fixed {
             FixedSync::Both | FixedSync::Input => chunk_size_in,
-            FixedSync::Output => {
-                (chunk_size_out as f32 / fft_size_out as f32).ceil() as usize * fft_size_in
-            }
+            FixedSync::Output => chunk_size_out.div_ceil(fft_size_out) * fft_size_in,
         }
     }
 
@@ -719,6 +755,50 @@ mod tests {
         let maxval = wave_out.iter().cloned().fold(f64::NAN, f64::max);
         assert!((vecsum - 4.0 * 1000.0 / 147.0).abs() < 1.0e-6);
         assert!((maxval - 1.0).abs() < 0.1);
+    }
+
+    #[test_log::test(test_matrix([FixedSync::Input, FixedSync::Output, FixedSync::Both]))]
+    fn fft_more_sub_chunks_than_frames(fixed: FixedSync) {
+        // Asking for more sub chunks than the chunk has frames rounds the sub chunk
+        // size down to zero. That used to give zero FFT blocks, and a panic on the
+        // first division by the block size.
+        let resampler = Fft::<f64>::new_custom(
+            44100,
+            48000,
+            100,
+            1000,
+            2,
+            WindowFunction::BlackmanHarris2,
+            fixed,
+        )
+        .unwrap();
+        assert_eq!(resampler.fft_size_in(), 147);
+        assert_eq!(resampler.fft_size_out(), 160);
+    }
+
+    #[test_log::test(test_matrix(
+        [512, 1024, 4096],
+        [(44100, 48000), (48000, 44100), (44100, 88200), (88200, 44100), (44100, 192000), (192000, 44100)],
+        [FixedSync::Input, FixedSync::Output, FixedSync::Both]
+    ))]
+    fn fft_sizes_and_cutoff(chunksize: usize, rates: (usize, usize), fixed: FixedSync) {
+        let (input_rate, output_rate) = rates;
+        let resampler = Fft::<f64>::new(input_rate, output_rate, chunksize, 2, fixed).unwrap();
+
+        // The two block sizes are in the same ratio as the sample rates,
+        // and the delay is half the output block.
+        assert_abs_diff_eq!(
+            resampler.fft_size_out() as f64 / resampler.fft_size_in() as f64,
+            output_rate as f64 / input_rate as f64,
+            epsilon = 1e-9
+        );
+        assert_eq!(resampler.output_delay(), resampler.fft_size_out() / 2);
+
+        // The cutoff must stay below the lower of the two Nyquist frequencies,
+        // expressed relative to the input Nyquist frequency.
+        let limit = (output_rate as f32 / input_rate as f32).min(1.0);
+        assert!(resampler.cutoff() > 0.5 * limit);
+        assert!(resampler.cutoff() < limit);
     }
 
     #[test_log::test(test_matrix(

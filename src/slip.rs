@@ -295,8 +295,8 @@ where
     ///
     /// Parameters are:
     /// - `chunk_size`: Size of the fixed side (input or output, see `fixed`) in frames. Must be at
-    ///   least 4. The internal crossfade grows with the chunk up to [MAX_CROSSFADE_LEN] frames
-    ///   (reached at `2 * MAX_CROSSFADE_LEN + 2` = 258 and above) and shrinks for smaller chunks.
+    ///   least 4. The internal crossfade grows with the chunk up to 128 frames (reached at a chunk
+    ///   size of 258 and above) and shrinks for smaller chunks.
     /// - `nbr_channels`: Number of channels in input/output.
     /// - `fixed`: Whether the input or the output chunk size is fixed.
     pub fn new(
@@ -601,6 +601,10 @@ mod tests {
     /// leaving room for a correction (`chunk >= 2 * len + 2`).
     #[test]
     fn crossfade_len_scales_with_chunk() {
+        // The docs on Slip::new quote these two values, since they are what a caller
+        // needs to pick a chunk size. Keep them in sync if the target ever changes.
+        assert_eq!(MAX_CROSSFADE_LEN, 128);
+        assert_eq!(2 * MAX_CROSSFADE_LEN + 2, 258);
         // Capped at the target once the chunk is big enough to hold it.
         assert_eq!(crossfade_len_for(4096), MAX_CROSSFADE_LEN);
         assert_eq!(

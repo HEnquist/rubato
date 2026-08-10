@@ -243,7 +243,7 @@ where
     /// The `indexing` parameter is optional. When left out, the default values are used.
     ///  - `input_offset` and `output_offset`: these determine how many frames at the beginning
     ///    of the input and output buffers will be skipped before reading or writing starts.
-    ///    See the `process_f64` example for how these may be used to process a longer sound clip.
+    ///    See the `process_raw` example for how these may be used to process a longer sound clip.
     ///  - `partial_len`: If the input buffer has fewer frames than the required input length,
     ///    set `partial_len` to the available number.
     ///    The resampler will then insert silence in place of the missing frames.
@@ -282,6 +282,44 @@ where
     /// [process_into_buffer](Resampler::process_into_buffer).
     ///
     /// Returns the lengths of the original input and the resampled output.
+    ///
+    /// # Example
+    ///
+    /// Resample one second of 44.1 kHz audio to 48 kHz, into a buffer allocated
+    /// up front. This is the variant to use when allocating during processing is
+    /// not acceptable, such as in a realtime thread. See
+    /// [process_all](Resampler::process_all) for the allocating counterpart.
+    ///
+    /// ```
+    /// # #[cfg(not(feature = "fft_resampler"))]
+    /// # fn main() {}
+    /// # #[cfg(feature = "fft_resampler")]
+    /// # fn main() {
+    /// use audioadapter_buffers::owned::InterleavedOwned;
+    /// use rubato::{Fft, FixedSync, Resampler};
+    ///
+    /// let channels = 2;
+    /// let input_len = 44100;
+    /// let input = InterleavedOwned::<f64>::new(0.0, channels, input_len);
+    ///
+    /// let mut resampler =
+    ///     Fft::<f64>::new(44100, 48000, 1024, channels, FixedSync::Both).unwrap();
+    ///
+    /// // Allocate an output buffer that is guaranteed to be big enough.
+    /// let needed_len = resampler.process_all_needed_output_len(input_len);
+    /// let mut output = InterleavedOwned::<f64>::new(0.0, channels, needed_len);
+    ///
+    /// let (consumed, produced) = resampler
+    ///     .process_all_into_buffer(&input, &mut output, input_len, None)
+    ///     .unwrap();
+    ///
+    /// // The resampled audio is the first `produced` frames of the buffer.
+    /// // The rest is padding, since the buffer is sized for the worst case.
+    /// assert_eq!(consumed, input_len);
+    /// assert!(produced >= 48000);
+    /// assert!(produced <= needed_len);
+    /// # }
+    /// ```
     fn process_all_into_buffer(
         &mut self,
         buffer_in: &dyn Adapter<T>,
