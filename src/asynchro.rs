@@ -159,15 +159,32 @@ fn validate_ratios(
     resample_ratio: f64,
     max_resample_ratio_relative: f64,
 ) -> Result<(), ResamplerConstructionError> {
-    if resample_ratio <= 0.0 {
+    // `<= 0.0` is false for both NaN and infinity, so finiteness has to be checked separately.
+    if !resample_ratio.is_finite() || resample_ratio <= 0.0 {
         return Err(ResamplerConstructionError::InvalidRatio(resample_ratio));
     }
-    if max_resample_ratio_relative < 1.0 {
+    if !max_resample_ratio_relative.is_finite() || max_resample_ratio_relative < 1.0 {
         return Err(ResamplerConstructionError::InvalidRelativeRatio(
             max_resample_ratio_relative,
         ));
     }
     Ok(())
+}
+
+/// Convert a computed size to a `usize`, panicking if it does not fit.
+///
+/// Casting a float to `usize` saturates, which would turn an impossible size into an ordinary
+/// looking answer for callers to allocate from. The check goes via `i128` because it holds
+/// every `usize`, while `usize::MAX` has no exact `f64`. A size below zero means no frames,
+/// as it did before, but a NaN or an out of range size cannot pass.
+fn size_as_usize(size: f64) -> usize {
+    let frames = size as i128;
+    assert!(
+        !size.is_nan() && frames <= usize::MAX as i128,
+        "The combination of chunk_size, resample_ratio and max_resample_ratio_relative gives \
+         a size of {size} frames, which does not fit in a usize"
+    );
+    frames.max(0) as usize
 }
 
 impl<T> Async<T>
@@ -177,8 +194,13 @@ where
     /// Create a new Async resampler that uses polynomial interpolation.
     ///
     /// Parameters are:
-    /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
-    /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Adjustable::set_resample_ratio](crate::Adjustable::set_resample_ratio) relative to `resample_ratio`, must be >= 1.0. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio * 10.0` and `resample_ratio / 10.0`.
+    /// - `resample_ratio`: Starting ratio between output and input sample rates, must be finite
+    ///   and > 0.
+    /// - `max_resample_ratio_relative`: Maximum ratio that can be set with
+    ///   [Adjustable::set_resample_ratio](crate::Adjustable::set_resample_ratio) relative to
+    ///   `resample_ratio`, must be finite and >= 1.0. The minimum relative ratio is the reciprocal
+    ///   of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be
+    ///   set between `resample_ratio * 10.0` and `resample_ratio / 10.0`.
     /// - `interpolation_type`: Degree of polynomial used for interpolation, see [PolynomialDegree].
     /// - `chunk_size`: Size of input data in frames.
     /// - `nbr_channels`: Number of channels in input/output.
@@ -234,7 +256,8 @@ where
             max_resample_ratio_relative,
             interpolator_len,
             &fixed,
-        ) + 2 * interpolator_len;
+        )
+        .saturating_add(2 * interpolator_len);
         let buffer = vec![vec![T::zero(); buffer_len]; nbr_channels];
 
         Ok(Async {
@@ -261,8 +284,13 @@ where
     /// Create a new [Async] resampler that uses sinc interpolation.
     ///
     /// Parameters are:
-    /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
-    /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Adjustable::set_resample_ratio](crate::Adjustable::set_resample_ratio) relative to `resample_ratio`, must be >= 1.0. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio * 10.0` and `resample_ratio / 10.0`.
+    /// - `resample_ratio`: Starting ratio between output and input sample rates, must be finite
+    ///   and > 0.
+    /// - `max_resample_ratio_relative`: Maximum ratio that can be set with
+    ///   [Adjustable::set_resample_ratio](crate::Adjustable::set_resample_ratio) relative to
+    ///   `resample_ratio`, must be finite and >= 1.0. The minimum relative ratio is the reciprocal
+    ///   of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be
+    ///   set between `resample_ratio * 10.0` and `resample_ratio / 10.0`.
     /// - `parameters`: Parameters for interpolation, see [SincInterpolationParameters].
     /// - `chunk_size`: Size of input data in frames.
     /// - `nbr_channels`: Number of channels in input/output.
@@ -327,8 +355,13 @@ where
     /// Create a new Sinc using an existing Interpolator.
     ///
     /// Parameters are:
-    /// - `resample_ratio`: Starting ratio between output and input sample rates, must be > 0.
-    /// - `max_resample_ratio_relative`: Maximum ratio that can be set with [Adjustable::set_resample_ratio](crate::Adjustable::set_resample_ratio) relative to `resample_ratio`, must be >= 1.0. The minimum relative ratio is the reciprocal of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be set between `resample_ratio` * 10.0 and `resample_ratio` / 10.0.
+    /// - `resample_ratio`: Starting ratio between output and input sample rates, must be finite
+    ///   and > 0.
+    /// - `max_resample_ratio_relative`: Maximum ratio that can be set with
+    ///   [Adjustable::set_resample_ratio](crate::Adjustable::set_resample_ratio) relative to
+    ///   `resample_ratio`, must be finite and >= 1.0. The minimum relative ratio is the reciprocal
+    ///   of the maximum. For example, with `max_resample_ratio_relative` of 10.0, the ratio can be
+    ///   set between `resample_ratio` * 10.0 and `resample_ratio` / 10.0.
     /// - `interpolation_type`: Parameters for interpolation, see `SincInterpolationParameters`.
     /// - `interpolator`: The interpolator to use.
     /// - `f_cutoff`: The relative cutoff frequency the interpolator was built with, reported by [cutoff](Async::cutoff).
@@ -356,7 +389,6 @@ where
         }
 
         let interpolator_len = interpolator.nbr_points();
-
         let inner_resampler = InnerSinc::new(interpolator, interpolation_type);
 
         let last_index = inner_resampler.init_last_index();
@@ -383,7 +415,8 @@ where
             max_resample_ratio_relative,
             interpolator_len,
             &fixed,
-        ) + 2 * interpolator_len;
+        )
+        .saturating_add(2 * interpolator_len);
 
         let buffer = vec![vec![T::zero(); buffer_len]; nbr_channels];
 
@@ -491,11 +524,13 @@ where
                 // The total index advance for chunk_size output frames is
                 // chunk_size * avg_t_ratio + 0.5 * (1/r2 - 1/r1).
                 let ramp_overshoot = 0.5 * (1.0 / target_ratio - 1.0 / resample_ratio);
-                (last_index
-                    + chunk_size as f64 * Self::avg_t_ratio(resample_ratio, target_ratio)
-                    + ramp_overshoot
-                    + interpolator_len as f64)
-                    .ceil() as usize
+                size_as_usize(
+                    (last_index
+                        + chunk_size as f64 * Self::avg_t_ratio(resample_ratio, target_ratio)
+                        + ramp_overshoot
+                        + interpolator_len as f64)
+                        .ceil(),
+                )
             }
         }
     }
@@ -515,8 +550,10 @@ where
                 // n <= (space - ramp_overshoot) / avg_t_ratio
                 let space = chunk_size as f64 - (interpolator_len + 1) as f64 - last_index;
                 let ramp_overshoot = 0.5 * (1.0 / target_ratio - 1.0 / resample_ratio);
-                ((space - ramp_overshoot) / Self::avg_t_ratio(resample_ratio, target_ratio)).floor()
-                    as usize
+                size_as_usize(
+                    ((space - ramp_overshoot) / Self::avg_t_ratio(resample_ratio, target_ratio))
+                        .floor(),
+                )
             }
         }
     }
@@ -528,14 +565,15 @@ where
         interpolator_len: usize,
         fixed: &FixedAsync,
     ) -> usize {
-        match fixed {
-            FixedAsync::Input => chunk_size,
+        let size = match fixed {
+            FixedAsync::Input => chunk_size as f64,
             FixedAsync::Output => {
-                (chunk_size as f64 / resample_ratio_original * max_relative_ratio).ceil() as usize
-                    + 2
-                    + interpolator_len / 2
+                (chunk_size as f64 / resample_ratio_original * max_relative_ratio).ceil()
+                    + 2.0
+                    + (interpolator_len / 2) as f64
             }
-        }
+        };
+        size_as_usize(size)
     }
 
     fn calculate_max_output_size(
@@ -544,12 +582,13 @@ where
         max_relative_ratio: f64,
         fixed: &FixedAsync,
     ) -> usize {
-        match fixed {
-            FixedAsync::Output => chunk_size,
+        let size = match fixed {
+            FixedAsync::Output => chunk_size as f64,
             FixedAsync::Input => {
-                (chunk_size as f64 * resample_ratio_original * max_relative_ratio + 10.0) as usize
+                chunk_size as f64 * resample_ratio_original * max_relative_ratio + 10.0
             }
-        }
+        };
+        size_as_usize(size)
     }
 
     fn update_lengths(&mut self) {
@@ -780,7 +819,9 @@ where
 
     fn set_resample_ratio_relative(&mut self, rel_ratio: f64, ramp: bool) -> ResampleResult<()> {
         let new_ratio = self.resample_ratio_original * rel_ratio;
-        if self.relative_ratio_in_bounds(rel_ratio) {
+        // The product can overflow to infinity, or underflow to zero, while `rel_ratio`
+        // itself is in bounds.
+        if new_ratio.is_finite() && new_ratio > 0.0 && self.relative_ratio_in_bounds(rel_ratio) {
             self.apply_ratio(new_ratio, ramp);
             Ok(())
         } else {
@@ -1650,6 +1691,125 @@ mod tests {
                     final_idx.floor() as usize,
                 );
             }
+        }
+    }
+    #[test]
+    fn reject_non_finite_ratios() {
+        use crate::ResamplerConstructionError;
+
+        for ratio in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let res = Async::<f64>::new_poly(
+                ratio,
+                1.0,
+                PolynomialDegree::Cubic,
+                1024,
+                2,
+                FixedAsync::Input,
+            );
+            assert!(
+                matches!(res, Err(ResamplerConstructionError::InvalidRatio(_))),
+                "resample_ratio {ratio} was accepted"
+            );
+        }
+
+        for rel in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 0.5] {
+            let res = Async::<f64>::new_poly(
+                1.0,
+                rel,
+                PolynomialDegree::Cubic,
+                1024,
+                2,
+                FixedAsync::Input,
+            );
+            assert!(
+                matches!(
+                    res,
+                    Err(ResamplerConstructionError::InvalidRelativeRatio(_))
+                ),
+                "max_resample_ratio_relative {rel} was accepted"
+            );
+        }
+    }
+
+    /// A ratio can be finite, positive, and still give a size that does not fit in a
+    /// `usize`. The cast saturates, so this used to come back as an ordinary `usize::MAX`
+    /// sized buffer that callers would then allocate from, both from the `_max` accessors
+    /// and from the `_next` ones.
+    ///
+    /// A size that is merely enormous is a real answer and is left alone, to fail on
+    /// allocation like any other oversized `Vec`.
+    #[test]
+    #[should_panic(expected = "does not fit in a usize")]
+    fn huge_ratio_panics_on_size_calculation() {
+        let _ = Async::<f64>::new_poly(
+            1e19,
+            1.0,
+            PolynomialDegree::Cubic,
+            1024,
+            2,
+            FixedAsync::Input,
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "does not fit in a usize")]
+    fn huge_relative_ratio_panics_on_buffer_length() {
+        let _ = Async::<f64>::new_poly(
+            1.0,
+            usize::MAX as f64,
+            PolynomialDegree::Cubic,
+            1024,
+            2,
+            FixedAsync::Output,
+        );
+    }
+
+    /// `resample_ratio_original * rel_ratio` can overflow to infinity while `rel_ratio`
+    /// itself is inside the allowed range, which used to install a non-finite ratio.
+    #[test]
+    fn relative_ratio_cannot_install_a_non_finite_ratio() {
+        let mut resampler = Async::<f64>::new_poly(
+            1e308,
+            10.0,
+            PolynomialDegree::Cubic,
+            1024,
+            2,
+            FixedAsync::Output,
+        )
+        .unwrap();
+
+        assert!(resampler.set_resample_ratio_relative(10.0, false).is_err());
+        assert_eq!(resampler.resample_ratio(), 1e308);
+
+        // A relative change that stays finite is still accepted.
+        let mut resampler = Async::<f64>::new_poly(
+            2.0,
+            10.0,
+            PolynomialDegree::Cubic,
+            1024,
+            2,
+            FixedAsync::Output,
+        )
+        .unwrap();
+        assert!(resampler.set_resample_ratio_relative(10.0, false).is_ok());
+        assert_eq!(resampler.resample_ratio(), 20.0);
+    }
+
+    /// The limit must leave room for ratios and buffer sizes that are actually used.
+    #[test]
+    fn accept_realistic_sizes() {
+        for (ratio, rel, fixed) in [
+            (192000.0 / 44100.0, 10.0, FixedAsync::Input),
+            (192000.0 / 44100.0, 10.0, FixedAsync::Output),
+            (44100.0 / 192000.0, 10.0, FixedAsync::Input),
+            (44100.0 / 192000.0, 10.0, FixedAsync::Output),
+            (1.0, 1.0, FixedAsync::Input),
+            (1.0, 1000.0, FixedAsync::Output),
+        ] {
+            assert!(
+                Async::<f64>::new_poly(ratio, rel, PolynomialDegree::Cubic, 8192, 2, fixed).is_ok(),
+                "ratio {ratio} with relative {rel} and {fixed:?} was rejected"
+            );
         }
     }
 }
