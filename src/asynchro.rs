@@ -159,10 +159,11 @@ fn validate_ratios(
     resample_ratio: f64,
     max_resample_ratio_relative: f64,
 ) -> Result<(), ResamplerConstructionError> {
-    if resample_ratio <= 0.0 {
+    // `<= 0.0` is false for both NaN and infinity, so finiteness has to be checked separately.
+    if !resample_ratio.is_finite() || resample_ratio <= 0.0 {
         return Err(ResamplerConstructionError::InvalidRatio(resample_ratio));
     }
-    if max_resample_ratio_relative < 1.0 {
+    if max_resample_ratio_relative.is_nan() || max_resample_ratio_relative < 1.0 {
         return Err(ResamplerConstructionError::InvalidRelativeRatio(
             max_resample_ratio_relative,
         ));
@@ -1651,5 +1652,52 @@ mod tests {
                 );
             }
         }
+    }
+    #[test]
+    fn reject_non_finite_ratios() {
+        use crate::ResamplerConstructionError;
+
+        for ratio in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let res = Async::<f64>::new_poly(
+                ratio,
+                1.0,
+                PolynomialDegree::Cubic,
+                1024,
+                2,
+                FixedAsync::Input,
+            );
+            assert!(
+                matches!(res, Err(ResamplerConstructionError::InvalidRatio(_))),
+                "resample_ratio {ratio} was accepted"
+            );
+        }
+
+        for rel in [f64::NAN, 0.5] {
+            let res = Async::<f64>::new_poly(
+                1.0,
+                rel,
+                PolynomialDegree::Cubic,
+                1024,
+                2,
+                FixedAsync::Input,
+            );
+            assert!(
+                matches!(
+                    res,
+                    Err(ResamplerConstructionError::InvalidRelativeRatio(_))
+                ),
+                "max_resample_ratio_relative {rel} was accepted"
+            );
+        }
+
+        assert!(Async::<f64>::new_poly(
+            1.0,
+            f64::INFINITY,
+            PolynomialDegree::Cubic,
+            1024,
+            2,
+            FixedAsync::Input,
+        )
+        .is_ok());
     }
 }
