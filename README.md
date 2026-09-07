@@ -519,6 +519,15 @@ async_resampler.set_resample_ratio_relative(0.95, true)?;
 `ResamplerConstructionError`, add a `_ => ...` arm.
 
 ## Changelog
+- Unreleased
+  - Reject a non-finite `resample_ratio` or `max_resample_ratio_relative` when constructing an
+    asynchronous resampler. Comparisons against `NaN` and infinity are false, so both slipped
+    through the range checks and left the resampler reporting sizes it could not deliver.
+  - Panic, instead of reporting a `usize::MAX` sized buffer, when the combination of `chunk_size`,
+    `resample_ratio` and `max_resample_ratio_relative` gives a size that does not fit in a `usize`.
+    The float to integer conversion saturates, so such a size used to look like an ordinary answer
+    from `input_frames_max` and `output_frames_max`, and the internal buffer length could wrap to
+    a value far too small.
 - v5.0.0
   - Fix an out-of-bounds panic in the asynchronous resamplers when the resampling ratio is
     changed by a large factor with `ramp = true`. The input and output size estimates now
