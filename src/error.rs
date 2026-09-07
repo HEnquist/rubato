@@ -95,10 +95,10 @@ impl fmt::Display for ResamplerConstructionError {
                 "Input and output sample rates must both be > 0. Provided input: {}, provided output: {}", input, output
             ),
             Self::InvalidRatio(provided) => write!(formatter,
-                "Invalid resample_ratio provided: {}. resample_ratio must be > 0", provided
+                "Invalid resample_ratio provided: {}. resample_ratio must be finite and > 0", provided
             ),
             Self::InvalidRelativeRatio(provided) => write!(formatter,
-                "Invalid max_resample_ratio_relative provided: {}. max_resample_ratio_relative must be >= 1", provided
+                "Invalid max_resample_ratio_relative provided: {}. max_resample_ratio_relative must be finite and >= 1", provided
             ),
             Self::InvalidChunkSize(provided) => write!(formatter,
                 "Invalid chunk_size provided: {}. chunk_size must be >= 1", provided
