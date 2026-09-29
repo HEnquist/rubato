@@ -359,7 +359,7 @@ where
                     output_len, frames_to_trim
                 );
                 // move useful output data to start of output buffer
-                buffer_out.copy_frames_within(frames_to_trim, 0, frames_to_trim);
+                buffer_out.copy_frames_within(frames_to_trim, 0, output_len - frames_to_trim);
                 // update counters
                 output_len -= frames_to_trim;
                 indexing.output_offset -= frames_to_trim;
@@ -796,6 +796,44 @@ pub mod tests {
                 assert_eq!(
                     output.read_sample(chan, frame),
                     output2.read_sample(chan, frame)
+                );
+            }
+        }
+    }
+
+    // The startup delay is trimmed by moving the already produced frames to the start of the
+    // output buffer. Moving too few frames leaves stale data behind, which shows up as a
+    // corrupted first block of the result. See issue #142.
+    #[cfg(feature = "fft_resampler")]
+    #[test_log::test]
+    fn process_all_trims_without_leaving_stale_frames() {
+        let (fs_in, fs_out, freq) = (8000, 16000, 440.0);
+        let input_len = fs_in;
+        let samples: Vec<f64> = (0..input_len)
+            .map(|i| (2.0 * std::f64::consts::PI * freq * i as f64 / fs_in as f64).sin())
+            .collect();
+        let input_data = vec![samples; 2];
+        let input = SequentialSliceOfVecs::new(&input_data, 2, input_len).unwrap();
+
+        let mut resampler = Fft::<f64>::new(fs_in, fs_out, 1024, 2, FixedSync::Input).unwrap();
+        let delay = resampler.output_delay();
+        let output = resampler.process_all(&input, input_len, None).unwrap();
+        assert_eq!(output.frames(), 2 * input_len);
+
+        // The whole output must follow the resampled sine, not just the part after the first
+        // chunk. Skip the first `delay` frames, where the abrupt start of the sine gives a
+        // genuine edge effect, and the tail, which is padded.
+        for frame in delay..(output.frames() - 512) {
+            let expected = (2.0 * std::f64::consts::PI * freq * frame as f64 / fs_out as f64).sin();
+            for chan in 0..2 {
+                let val = output.read_sample(chan, frame).unwrap();
+                assert!(
+                    (val - expected).abs() < 1e-6,
+                    "frame: {}, channel: {}, value: {}, expected: {}",
+                    frame,
+                    chan,
+                    val,
+                    expected
                 );
             }
         }
