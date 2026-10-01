@@ -519,7 +519,7 @@ async_resampler.set_resample_ratio_relative(0.95, true)?;
 `ResamplerConstructionError`, add a `_ => ...` arm.
 
 ## Changelog
-- Unreleased
+- v5.0.1
   - Fix `process_all` and `process_all_into_buffer` leaving stale frames at the start of the
     output. Trimming the startup delay moved only `output_delay()` frames to the start of the
     buffer instead of every frame produced so far, so the first chunk of the result was a mix of
