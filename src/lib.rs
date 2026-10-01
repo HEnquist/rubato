@@ -353,18 +353,12 @@ where
             output_len += nbr_out;
             indexing.input_offset += nbr_in;
             indexing.output_offset += nbr_out;
-            if frames_to_trim > 0 && output_len > frames_to_trim {
-                debug!(
-                    "output, {} is longer than delay to trim, {}, trimming..",
-                    output_len, frames_to_trim
-                );
-                // move useful output data to start of output buffer
-                buffer_out.copy_frames_within(frames_to_trim, 0, frames_to_trim);
-                // update counters
-                output_len -= frames_to_trim;
-                indexing.output_offset -= frames_to_trim;
-                frames_to_trim = 0;
-            }
+            trim_startup_delay(
+                buffer_out,
+                &mut indexing,
+                &mut output_len,
+                &mut frames_to_trim,
+            );
         }
         if frames_left > 0 {
             debug!("process the last partial chunk, len {}", frames_left);
@@ -373,17 +367,32 @@ where
                 self.process_into_buffer(buffer_in, buffer_out, Some(&indexing))?;
             output_len += nbr_out;
             indexing.output_offset += nbr_out;
+            trim_startup_delay(
+                buffer_out,
+                &mut indexing,
+                &mut output_len,
+                &mut frames_to_trim,
+            );
         }
         indexing.partial_len = Some(0);
-        while output_len < expected_output_len {
+        // Any frames still to trim are on top of the output that was asked for, so keep pumping
+        // until there are enough frames left once the delay has been dropped. A clip shorter
+        // than one chunk never enters the loop above, so this is where its delay gets trimmed.
+        while output_len < expected_output_len + frames_to_trim {
             debug!(
-                "output is still too short, {} < {}, pump zeros..",
-                output_len, expected_output_len
+                "output is still too short, {} < {} + {}, pump zeros..",
+                output_len, expected_output_len, frames_to_trim
             );
             let (_nbr_in, nbr_out) =
                 self.process_into_buffer(buffer_in, buffer_out, Some(&indexing))?;
             output_len += nbr_out;
             indexing.output_offset += nbr_out;
+            trim_startup_delay(
+                buffer_out,
+                &mut indexing,
+                &mut output_len,
+                &mut frames_to_trim,
+            );
         }
         Ok((input_len, expected_output_len))
     }
@@ -575,6 +584,35 @@ where
     /// it refers to the input size for resamplers with fixed input size,
     /// and output size for resamplers with fixed output size.
     fn set_chunk_size(&mut self, chunksize: usize) -> ResampleResult<()>;
+}
+
+/// Drop the resampler startup delay from the front of the output buffer, by moving every frame
+/// produced so far down to the start of the buffer.
+///
+/// Does nothing once the delay has been trimmed, or while no more frames than the delay have
+/// been produced. `output_len` and `indexing.output_offset` are updated to match the move, and
+/// `frames_to_trim` is set to zero once the trim has happened.
+fn trim_startup_delay<T>(
+    buffer_out: &mut dyn AdapterMut<T>,
+    indexing: &mut Indexing,
+    output_len: &mut usize,
+    frames_to_trim: &mut usize,
+) where
+    T: Sample,
+{
+    if *frames_to_trim == 0 || *output_len <= *frames_to_trim {
+        return;
+    }
+    debug!(
+        "output, {} is longer than delay to trim, {}, trimming..",
+        output_len, frames_to_trim
+    );
+    // move useful output data to start of output buffer
+    buffer_out.copy_frames_within(*frames_to_trim, 0, *output_len - *frames_to_trim);
+    // update counters
+    *output_len -= *frames_to_trim;
+    indexing.output_offset -= *frames_to_trim;
+    *frames_to_trim = 0;
 }
 
 pub(crate) fn validate_buffers<T>(
@@ -798,6 +836,117 @@ pub mod tests {
                     output2.read_sample(chan, frame)
                 );
             }
+        }
+    }
+
+    // The startup delay is trimmed by moving the already produced frames to the start of the
+    // output buffer. Moving too few frames leaves stale data behind, which shows up as a
+    // corrupted first block of the result. See issue #142.
+    #[cfg(feature = "fft_resampler")]
+    #[test_log::test]
+    fn process_all_trims_without_leaving_stale_frames() {
+        let (fs_in, fs_out, freq) = (8000, 16000, 440.0);
+        let input_len = fs_in;
+        let samples: Vec<f64> = (0..input_len)
+            .map(|i| (2.0 * std::f64::consts::PI * freq * i as f64 / fs_in as f64).sin())
+            .collect();
+        let input_data = vec![samples; 2];
+        let input = SequentialSliceOfVecs::new(&input_data, 2, input_len).unwrap();
+
+        let mut resampler = Fft::<f64>::new(fs_in, fs_out, 1024, 2, FixedSync::Input).unwrap();
+        let delay = resampler.output_delay();
+        let output = resampler.process_all(&input, input_len, None).unwrap();
+        assert_eq!(output.frames(), 2 * input_len);
+
+        // The whole output must follow the resampled sine, not just the part after the first
+        // chunk. Skip the first `delay` frames, where the abrupt start of the sine gives a
+        // genuine edge effect, and the tail, which is padded.
+        for frame in delay..(output.frames() - 512) {
+            let expected = (2.0 * std::f64::consts::PI * freq * frame as f64 / fs_out as f64).sin();
+            for chan in 0..2 {
+                let val = output.read_sample(chan, frame).unwrap();
+                assert!(
+                    (val - expected).abs() < 1e-6,
+                    "frame: {}, channel: {}, value: {}, expected: {}",
+                    frame,
+                    chan,
+                    val,
+                    expected
+                );
+            }
+        }
+    }
+
+    // A clip shorter than one chunk never enters the main processing loop, which is where the
+    // startup delay used to be trimmed, so its result kept the leading silence. See issue #142.
+    #[cfg(feature = "fft_resampler")]
+    #[test_log::test]
+    fn process_all_trims_delay_for_short_clip() {
+        let (fs_in, fs_out, freq) = (8000, 16000, 440.0);
+        let input_len = 300;
+        let samples: Vec<f64> = (0..input_len)
+            .map(|i| (2.0 * std::f64::consts::PI * freq * i as f64 / fs_in as f64).sin())
+            .collect();
+        let input_data = vec![samples; 2];
+        let input = SequentialSliceOfVecs::new(&input_data, 2, input_len).unwrap();
+
+        let mut resampler = Fft::<f64>::new(fs_in, fs_out, 1024, 2, FixedSync::Input).unwrap();
+        assert!(input_len < resampler.input_frames_next());
+        let output = resampler.process_all(&input, input_len, None).unwrap();
+        assert_eq!(output.frames(), 2 * input_len);
+
+        // The clip is short, so the abrupt start and end make up a noticeable part of it. Skip
+        // 64 frames at each end, where that edge effect lives; over the rest the error is a few
+        // times 1e-4. Untrimmed, the first 256 frames are the delay silence instead of the start
+        // of the sine, which is off by around 1.0, so the tolerance is loose on purpose.
+        for frame in 64..(output.frames() - 64) {
+            let expected = (2.0 * std::f64::consts::PI * freq * frame as f64 / fs_out as f64).sin();
+            for chan in 0..2 {
+                let val = output.read_sample(chan, frame).unwrap();
+                assert!(
+                    (val - expected).abs() < 1e-2,
+                    "frame: {}, channel: {}, value: {}, expected: {}",
+                    frame,
+                    chan,
+                    val,
+                    expected
+                );
+            }
+        }
+    }
+
+    // A long sinc filter on a tiny clip puts the delay beyond the end of the whole output, so
+    // the resampler has to be pumped past the requested length before the delay can be trimmed.
+    #[test_log::test]
+    fn process_all_trims_delay_longer_than_the_clip() {
+        let mut resampler = Async::<f64>::new_sinc(
+            1.0,
+            1.1,
+            &SincInterpolationParameters {
+                sinc_len: 256,
+                f_cutoff: Some(0.95),
+                interpolation: SincInterpolationType::Cubic,
+                oversampling_factor: 16,
+                window: WindowFunction::BlackmanHarris2,
+            },
+            64,
+            1,
+            FixedAsync::Input,
+        )
+        .unwrap();
+        let input_len = 10;
+        assert!(resampler.output_delay() > input_len);
+
+        let input_data = vec![vec![1.0f64; input_len]];
+        let input = SequentialSliceOfVecs::new(&input_data, 1, input_len).unwrap();
+        let output = resampler.process_all(&input, input_len, None).unwrap();
+        assert_eq!(output.frames(), input_len);
+
+        // Ratio 1.0 on a constant signal, so every frame except the last, which sits on the
+        // trailing edge, must come back close to the input value. Untrimmed they are all zero.
+        for frame in 0..(input_len - 1) {
+            let val = output.read_sample(0, frame).unwrap();
+            assert!((val - 1.0).abs() < 0.1, "frame: {}, value: {}", frame, val);
         }
     }
 

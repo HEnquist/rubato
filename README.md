@@ -520,6 +520,14 @@ async_resampler.set_resample_ratio_relative(0.95, true)?;
 
 ## Changelog
 - Unreleased
+  - Fix `process_all` and `process_all_into_buffer` leaving stale frames at the start of the
+    output. Trimming the startup delay moved only `output_delay()` frames to the start of the
+    buffer instead of every frame produced so far, so the first chunk of the result was a mix of
+    shifted and unshifted data.
+  - Fix `process_all` and `process_all_into_buffer` not trimming the startup delay at all when
+    the clip is shorter than one chunk, or when the delay is longer than the whole output. The
+    trim only ran in the main processing loop, which such a clip never enters, so the result
+    began with the resampler's leading silence and lost an equal number of frames off the end.
   - Reject a non-finite `resample_ratio` or `max_resample_ratio_relative` when constructing an
     asynchronous resampler. Comparisons against `NaN` and infinity are false, so both slipped
     through the range checks and left the resampler reporting sizes it could not deliver.
