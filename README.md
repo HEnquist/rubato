@@ -526,6 +526,7 @@ async_resampler.set_resample_ratio_relative(0.95, true)?;
     (`get_nearest_time`, `get_nearest_times_2/3/4`) and the `interp_lin`, `interp_quad` and
     `interp_cubic` functions with their `*_weights` variants are available in `interpolation`.
     The `sinc_interpolator` module docs describe how to combine them.
+    The 32-byte aligned `AlignedBuf` is public as well, for holding the wave.
 - v5.0.1
   - Fix `process_all` and `process_all_into_buffer` leaving stale frames at the start of the
     output. Trimming the startup delay moved only `output_delay()` frames to the start of the
