@@ -519,6 +519,13 @@ async_resampler.set_resample_ratio_relative(0.95, true)?;
 `ResamplerConstructionError`, add a `_ => ...` arm.
 
 ## Changelog
+- v5.1.0
+  - Make the sinc interpolators public, to allow reading an in-memory wave at arbitrary
+    fractional positions. `SincInterpolator`, `make_interpolator` and the AVX, SSE, NEON and scalar
+    implementations are available in `sinc_interpolator`. The nearest-point helpers
+    (`get_nearest_time`, `get_nearest_times_2/3/4`) and the `interp_lin`, `interp_quad` and
+    `interp_cubic` functions with their `*_weights` variants are available in `interpolation`.
+    The `sinc_interpolator` module docs describe how to combine them.
 - v5.0.1
   - Fix `process_all` and `process_all_into_buffer` leaving stale frames at the start of the
     output. Trimming the startup delay moved only `output_delay()` frames to the start of the
