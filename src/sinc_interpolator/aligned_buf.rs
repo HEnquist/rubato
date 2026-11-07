@@ -21,8 +21,7 @@ const ALIGN: usize = 32;
 ///
 /// Only safe to call `zeroed` for types whose all-zero bit pattern is a valid
 /// value (true for the numeric `Sample` types we use here).
-#[cfg_attr(feature = "bench_asyncro", visibility::make(pub))]
-pub(crate) struct AlignedBuf<T> {
+pub struct AlignedBuf<T> {
     ptr: NonNull<T>,
     len: usize,
     _marker: PhantomData<T>,
