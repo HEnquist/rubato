@@ -1,3 +1,16 @@
+//! Helpers for positional interpolation, to be used together with
+//! [SincInterpolator](crate::sinc_interpolator::SincInterpolator).
+//!
+//! The `get_nearest_time*` functions convert a fractional position to the nearest
+//! (index, subindex) pairs of an oversampled sinc table.
+//! The `interp_*` functions combine the values found at those points,
+//! and the `*_weights` variants return the blending weights instead.
+
+pub use crate::asynchro_sinc::{
+    interp_cubic, interp_cubic_weights, interp_lin, interp_lin_weights, interp_quad,
+    interp_quad_weights,
+};
+
 /// Get the two nearest time points for time t in format (index, subindex).
 pub fn get_nearest_times_2(t: f64, factor: isize, points: &mut [(isize, isize); 2]) {
     let mut index = t.floor() as isize;

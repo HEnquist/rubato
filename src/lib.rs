@@ -45,7 +45,7 @@ mod asynchro;
 mod asynchro_fast;
 mod asynchro_sinc;
 mod error;
-mod interpolation;
+pub mod interpolation;
 mod sample;
 mod sinc;
 mod slip;

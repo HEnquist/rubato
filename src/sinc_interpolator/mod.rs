@@ -1,9 +1,58 @@
+//! Sinc interpolators, usable for reading an in-memory wave at arbitrary fractional positions.
+//!
+//! [make_interpolator] builds the fastest interpolator available on the running CPU
+//! (AVX, SSE or NEON, falling back to a scalar implementation).
+//! [SincInterpolator::get_sinc_interpolated] returns the wave at position
+//! `index + nbr_points / 2 - 1 + (subindex + 1) / nbr_sincs`.
+//! To read at an arbitrary position `pos`, map it to `t = pos - nbr_points / 2 + 1 - 1 / nbr_sincs`,
+//! find the four nearest table points with
+//! [get_nearest_times_4](crate::interpolation::get_nearest_times_4),
+//! evaluate each, and blend the results with
+//! [interp_cubic](crate::interpolation::interp_cubic).
+//!
+//! The wave must be padded so that `index + nbr_points` stays inside it.
+//! The cutoff is fixed when the interpolator is built.
+//! Reading slower than the ratio used for construction while downsampling can therefore alias.
+//!
+//! ```
+//! use rubato::interpolation::{get_nearest_times_4, interp_cubic};
+//! use rubato::sinc_interpolator::{make_interpolator, SincInterpolator};
+//! use rubato::WindowFunction;
+//!
+//! // Build an interpolator for ratio 1.0, with no downsampling cutoff reduction.
+//! let interpolator = make_interpolator::<f64>(128, 1.0, None, 256, WindowFunction::BlackmanHarris2);
+//! let nbr_points = interpolator.nbr_points();
+//! let nbr_sincs = interpolator.nbr_sincs();
+//!
+//! // A slow sine, padded with zeros at both ends.
+//! let pad = nbr_points;
+//! let mut wave = vec![0.0f64; 2000 + 2 * pad];
+//! for (n, v) in wave[pad..pad + 2000].iter_mut().enumerate() {
+//!     *v = (n as f64 * 0.05).sin();
+//! }
+//!
+//! // Read at a fractional position, here 1000.37 frames into the unpadded wave.
+//! let pos = 1000.37 + pad as f64;
+//! let t = pos - (nbr_points / 2) as f64 + 1.0 - 1.0 / nbr_sincs as f64;
+//! let mut nearest = [(0isize, 0isize); 4];
+//! get_nearest_times_4(t, nbr_sincs as isize, &mut nearest);
+//! let mut points = [0.0f64; 4];
+//! for (p, (index, subindex)) in points.iter_mut().zip(nearest) {
+//!     *p = interpolator.get_sinc_interpolated(&wave, index as usize, subindex as usize);
+//! }
+//! // Fractional position between the first and second nearest point.
+//! let frac = (t * nbr_sincs as f64).fract();
+//! let value = interp_cubic(frac, &points);
+//! assert!((value - (1000.37f64 * 0.05).sin()).abs() < 1e-4);
+//! ```
+
 use crate::sinc::make_sincs;
 use crate::windows::WindowFunction;
 use crate::Sample;
 
-pub(crate) mod aligned_buf;
-pub(crate) use aligned_buf::AlignedBuf;
+pub mod aligned_buf;
+pub use crate::asynchro_sinc::make_interpolator;
+pub use aligned_buf::AlignedBuf;
 
 /// Helper macro to define a dummy implementation of the sample trait if a
 /// feature is not supported.
@@ -52,8 +101,7 @@ interpolator! {
 }
 
 /// Functions for making the scalar product with a sinc.
-#[cfg_attr(feature = "bench_asyncro", visibility::make(pub))]
-pub(crate) trait SincInterpolator<T>: Send {
+pub trait SincInterpolator<T>: Send {
     /// Compute the dot product of the wave starting at `index` with the provided sinc slice.
     fn get_sinc_dot_product(&self, wave: &[T], index: usize, sinc: &[T]) -> T;
 
@@ -136,8 +184,7 @@ pub(crate) trait SincInterpolator<T>: Send {
 ///
 /// The bounds `T: AvxSample + SseSample + NeonSample` collapse to `T: Sample`
 /// on each platform because the non-native SIMD traits have blanket impls.
-#[cfg_attr(feature = "bench_asyncro", visibility::make(pub))]
-pub(crate) enum AnyInterpolator<T>
+pub enum AnyInterpolator<T>
 where
     T: AvxSample + SseSample + NeonSample + Sample,
 {
@@ -209,8 +256,7 @@ where
 }
 
 /// A plain scalar interpolator.
-#[cfg_attr(feature = "bench_asyncro", visibility::make(pub))]
-pub(crate) struct ScalarInterpolator<T> {
+pub struct ScalarInterpolator<T> {
     sincs: Vec<AlignedBuf<T>>,
     length: usize,
     nbr_sincs: usize,

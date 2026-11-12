@@ -15,14 +15,15 @@ use std::ops::{Deref, DerefMut};
 use std::ptr::NonNull;
 use std::slice;
 
+use crate::Sample;
+
 const ALIGN: usize = 32;
 
 /// Heap buffer of `T` with 32-byte alignment.
 ///
 /// Only safe to call `zeroed` for types whose all-zero bit pattern is a valid
 /// value (true for the numeric `Sample` types we use here).
-#[cfg_attr(feature = "bench_asyncro", visibility::make(pub))]
-pub(crate) struct AlignedBuf<T> {
+pub struct AlignedBuf<T> {
     ptr: NonNull<T>,
     len: usize,
     _marker: PhantomData<T>,
@@ -39,25 +40,8 @@ impl<T: Copy> AlignedBuf<T> {
         Layout::from_size_align(size, ALIGN).expect("invalid AlignedBuf layout")
     }
 
-    pub(crate) fn zeroed(len: usize) -> Self {
-        if len == 0 {
-            return Self {
-                ptr: NonNull::dangling(),
-                len: 0,
-                _marker: PhantomData,
-            };
-        }
-        let layout = Self::layout(len);
-        let raw = unsafe { alloc::alloc_zeroed(layout) } as *mut T;
-        let ptr = NonNull::new(raw).unwrap_or_else(|| alloc::handle_alloc_error(layout));
-        Self {
-            ptr,
-            len,
-            _marker: PhantomData,
-        }
-    }
-
-    pub(crate) fn from_slice(src: &[T]) -> Self {
+    /// Create an aligned buffer holding a copy of `src`.
+    pub fn from_slice(src: &[T]) -> Self {
         if src.is_empty() {
             return Self {
                 ptr: NonNull::dangling(),
@@ -74,6 +58,30 @@ impl<T: Copy> AlignedBuf<T> {
         Self {
             ptr,
             len: src.len(),
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<T: Sample> AlignedBuf<T> {
+    /// Create an aligned buffer of `len` zeros.
+    ///
+    /// This is only available for the sample types, since it relies on
+    /// all-zero bits being a valid value of `T`.
+    pub fn zeroed(len: usize) -> Self {
+        if len == 0 {
+            return Self {
+                ptr: NonNull::dangling(),
+                len: 0,
+                _marker: PhantomData,
+            };
+        }
+        let layout = Self::layout(len);
+        let raw = unsafe { alloc::alloc_zeroed(layout) } as *mut T;
+        let ptr = NonNull::new(raw).unwrap_or_else(|| alloc::handle_alloc_error(layout));
+        Self {
+            ptr,
+            len,
             _marker: PhantomData,
         }
     }

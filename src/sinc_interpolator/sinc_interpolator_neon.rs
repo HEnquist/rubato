@@ -163,8 +163,7 @@ impl NeonSample for f64 {
 }
 
 /// A NEON accelerated interpolator.
-#[cfg_attr(feature = "bench_asyncro", visibility::make(pub))]
-pub(crate) struct NeonInterpolator<T>
+pub struct NeonInterpolator<T>
 where
     T: NeonSample,
 {
